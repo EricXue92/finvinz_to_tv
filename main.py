@@ -28,6 +28,15 @@ def run_screener(filters: list[str], signal: str | None = None) -> list[str]:
     return [stock["Ticker"] for stock in stock_list.data]
 
 
+def parse_number(value: str) -> float:
+    """Parse a finviz number string like '6.96M', '1.23B', '500K', or '5,366,687'."""
+    value = value.strip().replace(",", "")
+    suffixes = {"K": 1e3, "M": 1e6, "B": 1e9}
+    if value and value[-1] in suffixes:
+        return float(value[:-1]) * suffixes[value[-1]]
+    return float(value)
+
+
 def filter_dollar_volume(
     filters: list[str], signal: str | None, min_dollar_volume: float
 ) -> tuple[int, list[str]]:
@@ -42,8 +51,8 @@ def filter_dollar_volume(
     tickers = []
     for stock in stock_list.data:
         try:
-            price = float(stock["Price"].replace(",", ""))
-            avg_vol = float(stock["Avg Volume"].replace(",", ""))
+            price = parse_number(stock["Price"])
+            avg_vol = parse_number(stock["Avg Volume"])
             if price * avg_vol >= min_dollar_volume:
                 tickers.append(stock["Ticker"])
         except (KeyError, ValueError):
