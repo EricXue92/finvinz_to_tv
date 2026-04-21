@@ -1,0 +1,39 @@
+[settings]
+output_dir = "output"
+delay_between_requests = 3.0
+output_format = "comma"    # "comma" = AAPL,MSFT  |  "newline" = 一行一个
+
+# --- Longs: 5 个策略合并去重，输出为 Longs.txt ---
+
+[[longs]]
+name = "Relative Volume Surge"
+filters = ["sh_avgvol_o500","sh_price_o20","sh_relvol_o3","ta_beta_o1","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
+
+[[longs]]
+name = "Top Gainers"
+signal = "ta_topgainers"
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1","ta_sma200_pa","ta_sma50_pa"]
+
+[[longs]]
+name = "Gap Up"
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1","ta_gap_u3","ta_sma200_pa","ta_sma50_pa"]
+
+[[longs]]
+name = "YTD Momentum"
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf2_ytd100o","ta_sma200_pa","ta_sma50_pa"]
+
+[[longs]]
+name = "52W New High"
+filters = ["cap_smallover","sh_avgvol_o1000","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
+
+# --- Shorts: 单独输出为 Shorts.txt ---
+
+[shorts]
+name = "Short Candidates"
+filters = ["cap_smallover","sh_curvol_o20000","ta_perf_d5o","ta_sma20_pa20"]
+
+# --- RS: 条件触发，仅当 SPY 和 QQQ 都跌超 1% 时运行 ---
+
+[rs]
+name = "Relative Strength"
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
