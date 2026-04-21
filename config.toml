@@ -2,6 +2,7 @@
 output_dir = "output"
 delay_between_requests = 8.0
 output_format = "comma"    # "comma" = AAPL,MSFT  |  "newline" = 一行一个
+min_dollar_volume = 100_000_000  # Longs 过滤: price * avg volume >= 100M
 
 # --- Longs: 5 个策略合并去重，输出为 Longs.txt ---
 

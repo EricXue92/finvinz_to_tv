@@ -28,6 +28,29 @@ def run_screener(filters: list[str], signal: str | None = None) -> list[str]:
     return [stock["Ticker"] for stock in stock_list.data]
 
 
+def filter_dollar_volume(
+    filters: list[str], signal: str | None, min_dollar_volume: float
+) -> tuple[int, list[str]]:
+    """Run screener with Ownership table and filter by dollar volume.
+    Returns (total_found, filtered_tickers)."""
+    kwargs = {"filters": filters, "table": "Ownership"}
+    if signal:
+        kwargs["signal"] = signal
+    stock_list = Screener(**kwargs)
+
+    total = len(stock_list.data)
+    tickers = []
+    for stock in stock_list.data:
+        try:
+            price = float(stock["Price"].replace(",", ""))
+            avg_vol = float(stock["Avg Volume"].replace(",", ""))
+            if price * avg_vol >= min_dollar_volume:
+                tickers.append(stock["Ticker"])
+        except (KeyError, ValueError):
+            pass
+    return total, tickers
+
+
 def check_market_down(threshold: float = -1.0) -> bool:
     """Check if both SPY and QQQ are down more than threshold%."""
     spy = get_stock("SPY")
@@ -83,14 +106,22 @@ def main() -> int:
     delay = settings.get("delay_between_requests", 3.0)
     fmt = settings.get("output_format", "comma")
 
+    min_dollar_volume = settings.get("min_dollar_volume", 0)
+
     # --- Longs ---
     longs_tickers: set[str] = set()
     for i, screener_cfg in enumerate(config.get("longs", [])):
         name = screener_cfg["name"]
         logger.info(f"[Longs] Running: {name}")
         try:
-            tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
-            logger.info(f"  Found {len(tickers)} tickers")
+            if min_dollar_volume > 0:
+                total, tickers = filter_dollar_volume(
+                    screener_cfg["filters"], screener_cfg.get("signal"), min_dollar_volume
+                )
+                logger.info(f"  Found {total} tickers, {len(tickers)} after dollar volume filter")
+            else:
+                tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
+                logger.info(f"  Found {len(tickers)} tickers")
             longs_tickers.update(tickers)
         except Exception as e:
             logger.warning(f"  Failed: {e}")
