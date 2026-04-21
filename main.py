@@ -5,6 +5,7 @@ import logging
 import sys
 import time
 import tomllib
+from datetime import date
 from pathlib import Path
 
 from finviz import get_stock
@@ -96,10 +97,13 @@ def main() -> int:
         if i < len(config.get("longs", [])) - 1:
             time.sleep(delay)
 
+    today = date.today().strftime("%Y_%m_%d")
+
     if longs_tickers:
         sorted_longs = sorted(longs_tickers)
         if safe_write_watchlist(sorted_longs, output_dir / "Longs.txt", fmt):
             logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/Longs.txt")
+            safe_write_watchlist(sorted_longs, output_dir / f"{today}_Longs.txt", fmt)
     else:
         logger.warning("[Longs] No tickers found")
 
@@ -115,6 +119,7 @@ def main() -> int:
                 sorted_shorts = sorted(set(shorts_tickers))
                 if safe_write_watchlist(sorted_shorts, output_dir / "Shorts.txt", fmt):
                     logger.info(f"[Shorts] Found {len(sorted_shorts)} tickers -> output/Shorts.txt")
+                    safe_write_watchlist(sorted_shorts, output_dir / f"{today}_Shorts.txt", fmt)
             else:
                 logger.warning("[Shorts] No tickers found")
         except Exception as e:
@@ -135,6 +140,7 @@ def main() -> int:
                     sorted_rs = sorted(set(rs_tickers))
                     if safe_write_watchlist(sorted_rs, output_dir / "RS.txt", fmt):
                         logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/RS.txt")
+                        safe_write_watchlist(sorted_rs, output_dir / f"{today}_RS.txt", fmt)
                 else:
                     logger.warning("[RS] No tickers found")
             else:
