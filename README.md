@@ -65,8 +65,9 @@ uv run main.py
 The script is configured to run daily after US market close:
 
 ```bash
-# Tue-Sat 5:00 AM HKT = Mon-Fri ~4:30 PM ET (after market close)
-0 5 * * 2-6 /path/to/uv run --directory /path/to/finviz_to_tv main.py >> output/cron.log 2>&1
+# Tue-Sat 6:00 AM HKT = Mon-Fri after market close
+# 6 AM HKT is safe for both EDT (2h after close) and EST (1h after close)
+0 6 * * 2-6 /path/to/uv run --directory /path/to/finviz_to_tv main.py >> output/cron.log 2>&1
 ```
 
 ## Configuration
