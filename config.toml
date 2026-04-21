@@ -1,6 +1,6 @@
 [settings]
 output_dir = "output"
-delay_between_requests = 3.0
+delay_between_requests = 8.0
 output_format = "comma"    # "comma" = AAPL,MSFT  |  "newline" = 一行一个
 
 # --- Longs: 5 个策略合并去重，输出为 Longs.txt ---
