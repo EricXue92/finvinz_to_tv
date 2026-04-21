@@ -36,12 +36,15 @@ Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY a
 
 ```
 output/
-├── Longs.txt    # Combined long candidates
-├── Shorts.txt   # Short candidates
-└── RS.txt       # Relative strength (only generated when market condition met)
+├── Longs.txt              # Latest long candidates (overwritten daily)
+├── Shorts.txt             # Latest short candidates (overwritten daily)
+├── RS.txt                 # Latest relative strength (only when market condition met)
+├── 2026_04_21_Longs.txt   # Date-stamped archive
+├── 2026_04_21_Shorts.txt
+└── 2026_04_21_RS.txt
 ```
 
-Files are comma-separated ticker symbols (e.g. `AAPL,MSFT,NVDA`), ready for TradingView import.
+Each run generates both a latest file (e.g. `Longs.txt`) and a date-stamped copy (e.g. `2026_04_21_Longs.txt`) to preserve history. Files are comma-separated ticker symbols (e.g. `AAPL,MSFT,NVDA`), ready for TradingView import.
 
 ## Setup
 
