@@ -37,12 +37,29 @@ def check_market_down(threshold: float = -1.0) -> bool:
     return spy_change < threshold and qqq_change < threshold
 
 
-def write_watchlist(tickers: list[str], output_path: Path, fmt: str = "comma") -> None:
+def safe_write_watchlist(
+    tickers: list[str], output_path: Path, fmt: str = "comma", drop_threshold: float = 0.5
+) -> bool:
+    """Write tickers to file. If the file already exists and new count drops by
+    more than drop_threshold (e.g. 0.5 = 50%), keep the old file and warn.
+    Returns True if the file was written, False if skipped."""
+    if output_path.exists():
+        old_content = output_path.read_text().strip()
+        old_count = len(old_content.split(",")) if "," in old_content else len(old_content.splitlines())
+        if old_count > 0 and len(tickers) < old_count * (1 - drop_threshold):
+            logger.warning(
+                f"  SKIPPED writing {output_path.name}: new count ({len(tickers)}) "
+                f"is {(1 - len(tickers) / old_count) * 100:.0f}% less than previous ({old_count}). "
+                f"Possible rate limiting. Previous file kept."
+            )
+            return False
+
     if fmt == "comma":
         content = ",".join(tickers)
     else:
         content = "\n".join(tickers)
     output_path.write_text(content + "\n")
+    return True
 
 
 def main() -> int:
@@ -81,8 +98,8 @@ def main() -> int:
 
     if longs_tickers:
         sorted_longs = sorted(longs_tickers)
-        write_watchlist(sorted_longs, output_dir / "Longs.txt", fmt)
-        logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/Longs.txt")
+        if safe_write_watchlist(sorted_longs, output_dir / "Longs.txt", fmt):
+            logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/Longs.txt")
     else:
         logger.warning("[Longs] No tickers found")
 
@@ -96,8 +113,8 @@ def main() -> int:
             shorts_tickers = run_screener(shorts_cfg["filters"], shorts_cfg.get("signal"))
             if shorts_tickers:
                 sorted_shorts = sorted(set(shorts_tickers))
-                write_watchlist(sorted_shorts, output_dir / "Shorts.txt", fmt)
-                logger.info(f"[Shorts] Found {len(sorted_shorts)} tickers -> output/Shorts.txt")
+                if safe_write_watchlist(sorted_shorts, output_dir / "Shorts.txt", fmt):
+                    logger.info(f"[Shorts] Found {len(sorted_shorts)} tickers -> output/Shorts.txt")
             else:
                 logger.warning("[Shorts] No tickers found")
         except Exception as e:
@@ -116,8 +133,8 @@ def main() -> int:
                 rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
                 if rs_tickers:
                     sorted_rs = sorted(set(rs_tickers))
-                    write_watchlist(sorted_rs, output_dir / "RS.txt", fmt)
-                    logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/RS.txt")
+                    if safe_write_watchlist(sorted_rs, output_dir / "RS.txt", fmt):
+                        logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/RS.txt")
                 else:
                     logger.warning("[RS] No tickers found")
             else:
