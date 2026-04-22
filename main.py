@@ -147,9 +147,10 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
                 result.append(ticker)
                 continue
 
-            # Exclude today — count consecutive up days ending yesterday
+            # Count consecutive up days from the most recent close backwards
+            # (script runs after market close, so the last close is finalized)
             consecutive = 0
-            for i in range(len(closes) - 2, 0, -1):
+            for i in range(len(closes) - 1, 0, -1):
                 if closes.iloc[i] > closes.iloc[i - 1]:
                     consecutive += 1
                 else:
