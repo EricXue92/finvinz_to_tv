@@ -36,7 +36,7 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Monthly Perf (Large Cap ≥ $10B) | Up 50%+ in last month |
 | Monthly Perf (Mid Cap $2B–$10B) | Up 200%+ in last month |
 | Monthly Perf (Small Cap $300M–$2B) | Up 300%+ in last month |
-| Consecutive Up Days | 3+ consecutive green days (excluding today, via yfinance) |
+| Consecutive Up Days | 3+ consecutive green days (via yfinance; excludes today's incomplete data if market is still open) |
 
 ### RS - Relative Strength (conditional)
 
