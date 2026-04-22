@@ -5,8 +5,9 @@ import logging
 import sys
 import time
 import tomllib
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yfinance as yf
 from finviz import get_stock
@@ -135,6 +136,12 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
     data = yf.download(tickers, period="1mo", progress=False, group_by="ticker")
     result = []
 
+    # If US market is still open, today's data is incomplete — exclude it
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    market_open = now_et.hour < 16 and now_et.weekday() < 5
+    if market_open:
+        logger.info("  US market still open, excluding today's incomplete data")
+
     for ticker in tickers:
         try:
             if len(tickers) == 1:
@@ -142,13 +149,14 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
             else:
                 closes = data[ticker]["Close"].dropna()
 
+            if market_open and len(closes) > 0 and closes.index[-1].date() == now_et.date():
+                closes = closes.iloc[:-1]
+
             if len(closes) < 2:
                 logger.warning(f"  yfinance: no data for {ticker}, keeping it")
                 result.append(ticker)
                 continue
 
-            # Count consecutive up days from the most recent close backwards
-            # (script runs after market close, so the last close is finalized)
             consecutive = 0
             for i in range(len(closes) - 1, 0, -1):
                 if closes.iloc[i] > closes.iloc[i - 1]:
