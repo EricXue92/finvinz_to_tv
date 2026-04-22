@@ -16,13 +16,27 @@ Based on **Oliver Kell**'s momentum/breakout methodology:
 | YTD Momentum | Avg Vol > 500K, Price > $20, Beta > 1.5, YTD +100%+, Above SMA50 & SMA200 |
 | 52W New High | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
 
-### Shorts (1 strategy)
+### Shorts (1 strategy, multi-phase filtering)
 
-Based on **Lance Breitstein**'s short-selling criteria:
+Based on **Kristjan Kullamägi**'s short-selling criteria:
 
-| Strategy | Key Filters |
-|----------|-------------|
-| Short Candidates | Small Cap+, Current Vol > 20K, Day Down 5%+, Price 20%+ above SMA20 |
+**Phase 1 — Finviz filters:**
+
+| Filter | Criteria |
+|--------|----------|
+| SMA20 | Price 20%+ above 20-day moving average |
+| Avg Volume | > 1M shares |
+| Market Cap | > $300M (small cap and above) |
+
+**Phase 2 — Post-processing:**
+
+| Filter | Criteria |
+|--------|----------|
+| Dollar Volume | Price × Avg Volume >= $100M |
+| Monthly Perf (Large Cap ≥ $10B) | Up 50%+ in last month |
+| Monthly Perf (Mid Cap $2B–$10B) | Up 200%+ in last month |
+| Monthly Perf (Small Cap $300M–$2B) | Up 300%+ in last month |
+| Consecutive Up Days | 3+ consecutive green days (excluding today, via yfinance) |
 
 ### RS - Relative Strength (conditional)
 
@@ -91,3 +105,4 @@ All screener parameters are in `config.toml`. You can modify filters, add new sc
 
 - Python >= 3.12
 - [finviz](https://github.com/mariostoev/finviz) - Finviz web scraper (no API key or premium account required)
+- [yfinance](https://github.com/ranaroussi/yfinance) - Yahoo Finance data for consecutive up days filter (shorts)
