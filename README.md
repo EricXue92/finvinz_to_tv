@@ -73,6 +73,16 @@ The script is configured to run daily after US market close:
 0 6 * * 2-6 /path/to/uv run --directory /path/to/finviz_to_tv main.py >> output/cron.log 2>&1
 ```
 
+### macOS cron permission setup
+
+macOS requires cron to have **Full Disk Access**, otherwise scheduled tasks will be silently blocked.
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**
+2. Click `+`, press `Cmd+Shift+G`, type `/usr/sbin/cron`, then press Enter
+3. Select the `cron` file and click Open
+4. Ensure cron is toggled on in the list
+5. Restart cron: `sudo killall cron`
+
 ## Configuration
 
 All screener parameters are in `config.toml`. You can modify filters, add new screeners, or adjust settings (delay between requests, output format) without touching the code.
