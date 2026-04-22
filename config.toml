@@ -8,16 +8,16 @@ min_dollar_volume = 100_000_000  # Longs 过滤: price * avg volume >= 100M
 
 [[longs]]
 name = "Relative Volume Surge"
-filters = ["sh_avgvol_o500","sh_price_o20","sh_relvol_o3","ta_beta_o1","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
+filters = ["sh_avgvol_o500","sh_price_o20","sh_relvol_o3","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
 name = "Top Gainers"
 signal = "ta_topgainers"
-filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1","ta_sma200_pa","ta_sma50_pa"]
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
 name = "Gap Up"
-filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1","ta_gap_u3","ta_sma200_pa","ta_sma50_pa"]
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_gap_u3","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
 name = "YTD Momentum"
