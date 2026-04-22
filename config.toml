@@ -27,11 +27,17 @@ filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf2_ytd100o","ta
 name = "52W New High"
 filters = ["cap_smallover","sh_avgvol_o1000","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
 
-# --- Shorts: 单独输出为 Shorts.txt ---
+# --- Shorts: 基于 Kristjan Kullamägi 博客的做空筛选，单独输出为 Shorts.txt ---
 
 [shorts]
 name = "Short Candidates"
-filters = ["cap_smallover","sh_curvol_o20000","ta_perf_d5o","ta_sma20_pa20"]
+filters = ["ta_sma20_pa20", "sh_avgvol_o1000", "cap_smallover"]
+min_dollar_volume = 100_000_000
+min_consecutive_up_days = 3
+# Performance thresholds by cap size (month perf %)
+perf_large_cap = 50     # >= $10B: month perf >= 50%
+perf_mid_cap = 200      # $2B–$10B: month perf >= 200%
+perf_small_cap = 300    # $300M–$2B: month perf >= 300%
 
 # --- RS: 条件触发，仅当 SPY 和 QQQ 都跌超 1% 时运行 ---
 
