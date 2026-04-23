@@ -27,7 +27,7 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners and outp
 
 **Config format:** TOML. Filter strings (e.g. `sh_avgvol_o500`) map directly to Finviz URL parameters. The `signal` field is optional (used for Top Gainers).
 
-**Cron:** Runs Tue-Sat 6:00 AM HKT (covers US Mon-Fri market close in both EDT and EST).
+**Scheduling:** Runs Tue-Sat 6:00 AM HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`). Mac wakes at 5:59 AM via `pmset repeat`. Covers US Mon-Fri market close in both EDT and EST.
 
 ## Finviz Library
 
