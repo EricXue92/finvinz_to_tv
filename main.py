@@ -349,7 +349,7 @@ def main() -> int:
     if rs_cfg:
         logger.info("[RS] Checking market condition...")
         try:
-            if check_market_down(threshold=-1.0):
+            if check_market_down():
                 logger.info("[RS] Condition met, running screener...")
                 time.sleep(delay)
                 rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
