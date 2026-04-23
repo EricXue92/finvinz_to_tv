@@ -520,6 +520,7 @@ def main() -> int:
     delay = settings.get("delay_between_requests", 3.0)
     fmt = settings.get("output_format", "comma")
 
+    # Global dollar volume threshold ($100M) — shared by Longs and RS
     min_dollar_volume = settings.get("min_dollar_volume", 0)
 
     # --- Longs ---
