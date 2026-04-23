@@ -6,14 +6,38 @@ import sys
 import time
 import tomllib
 from datetime import date, datetime
+import io
 from pathlib import Path
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
 from finviz import get_stock
 from finviz.screener import Screener
+import openpyxl
 
 logger = logging.getLogger(__name__)
+
+HKEX_SECURITIES_URL = (
+    "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx"
+)
+
+
+def fetch_hkex_equities() -> list[str]:
+    """Fetch Main Board equity stock codes from the HKEX securities list.
+    Returns 4-digit codes like ['0001', '0002', '0700']."""
+    req = Request(HKEX_SECURITIES_URL, headers={"User-Agent": "Mozilla/5.0"})
+    resp = urlopen(req)
+    wb = openpyxl.load_workbook(io.BytesIO(resp.read()))
+    ws = wb.active
+
+    codes = []
+    for i, row in enumerate(ws.iter_rows(min_row=4, values_only=True)):
+        if row[2] == "Equity" and row[3] == "Equity Securities (Main Board)":
+            codes.append(row[0][1:])  # "00700" → "0700"
+
+    wb.close()
+    return codes
 
 
 def load_config(config_path: Path) -> dict:
