@@ -16,7 +16,7 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners and outp
 **Flow:** Load `config.toml` → Run screener groups sequentially → Deduplicate → Write output files
 
 **Three screener groups with different output behavior:**
-- **Longs** (`[[longs]]` in config): 5 strategies merged into one deduplicated set. Based on Oliver Kell's methodology.
+- **Longs** (`[[longs]]` in config): 4 strategies merged into one deduplicated set. Based on Oliver Kell's methodology.
 - **Shorts** (`[shorts]`): Single strategy with multi-phase filtering, output separately. Based on Kristjan Kullamägi's blog criteria. Runs Finviz filters (SMA20+20%, avg vol >1M, cap >$300M), then post-processes for dollar volume, cap-conditional monthly performance thresholds, and consecutive up days (via yfinance).
 - **RS** (`[rs]`): Conditional — only runs when both SPY and QQQ drop >1% (checked via `finviz.get_stock()`). Based on Oliver Kell's relative strength approach.
 

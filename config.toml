@@ -20,10 +20,6 @@ name = "Gap Up"
 filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_gap_u3","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
-name = "YTD Momentum"
-filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf2_ytd100o","ta_sma200_pa","ta_sma50_pa"]
-
-[[longs]]
 name = "52W New High"
 filters = ["cap_smallover","sh_avgvol_o1000","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
 

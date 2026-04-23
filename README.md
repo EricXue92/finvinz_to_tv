@@ -4,7 +4,7 @@ Automated stock screener that runs custom Finviz scans and exports results as Tr
 
 ## Screening Criteria
 
-### Longs (5 strategies, merged & deduplicated)
+### Longs (4 strategies, merged & deduplicated)
 
 Based on **Oliver Kell**'s momentum/breakout methodology:
 
@@ -13,7 +13,6 @@ Based on **Oliver Kell**'s momentum/breakout methodology:
 | Relative Volume Surge | Avg Vol > 500K, Price > $20, Rel Vol > 3, Beta > 1.5, Day Up, Above SMA50 & SMA200 |
 | Top Gainers | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA50 & SMA200, Signal: Top Gainers |
 | Gap Up | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA50 & SMA200 |
-| YTD Momentum | Avg Vol > 500K, Price > $20, Beta > 1.5, YTD +100%+, Above SMA50 & SMA200 |
 | 52W New High | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
 
 ### Shorts (1 strategy, multi-phase filtering)
