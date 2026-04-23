@@ -179,7 +179,7 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
     if not tickers:
         return []
 
-    data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=4)
+    data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
     result = []
 
     now_et = datetime.now(ZoneInfo("America/New_York"))
