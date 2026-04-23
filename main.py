@@ -51,7 +51,7 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     yf_tickers = [code + ".HK" for code in codes]
 
     now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
-    market_open = now_hk.hour < 16 and now_hk.weekday() < 5
+    market_open = 9 <= now_hk.hour < 16 and now_hk.weekday() < 5
     if market_open:
         logger.info("  HK market still open, excluding today's incomplete data")
 
@@ -274,7 +274,7 @@ def filter_shorts(
 
     data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    market_open = now_et.hour < 16 and now_et.weekday() < 5
+    market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
 
     perf_weeks = [2, 3, 4]
     passed: set[str] = set()
@@ -328,7 +328,7 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
 
     # If US market is still open, today's data is incomplete — exclude it
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    market_open = now_et.hour < 16 and now_et.weekday() < 5
+    market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
     if market_open:
         logger.info("  US market still open, excluding today's incomplete data")
 
@@ -373,7 +373,7 @@ def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: 
     result = []
 
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    market_open = now_et.hour < 16 and now_et.weekday() < 5
+    market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
 
     for ticker in tickers:
         try:
@@ -417,7 +417,7 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
     result = []
 
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    market_open = now_et.hour < 16 and now_et.weekday() < 5
+    market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
 
     for ticker in tickers:
         try:
