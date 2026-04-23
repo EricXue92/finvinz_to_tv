@@ -10,9 +10,9 @@ Based on **Oliver Kell**'s momentum/breakout methodology:
 
 | Strategy | Key Filters |
 |----------|-------------|
-| Relative Volume Surge | Avg Vol > 500K, Price > $20, Rel Vol > 3, Beta > 1.5, Day Up, Above SMA50 & SMA200 |
+| Relative Volume Surge | Avg Vol > 500K, Price > $20, Rel Vol > 3, Beta > 1.5, Day Up, Above SMA200 |
 | Top Gainers | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA50 & SMA200, Signal: Top Gainers |
-| Gap Up | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA50 & SMA200 |
+| Gap Up | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
 | 52W New High | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
 
 ### Shorts (1 strategy, multi-phase filtering)
