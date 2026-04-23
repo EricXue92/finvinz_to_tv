@@ -545,6 +545,29 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"[RS] Failed: {e}")
 
+    # --- HK Shorts ---
+    hk_shorts_cfg = config.get("hk_shorts")
+    if hk_shorts_cfg:
+        logger.info(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
+        try:
+            total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
+            logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
+
+            if hk_shorts_tickers:
+                hk_output_dir = output_dir / "HongKongShorts"
+                hk_output_dir.mkdir(exist_ok=True)
+                sorted_hk = sorted(hk_shorts_tickers)
+                if safe_write_watchlist(sorted_hk, hk_output_dir / "HK_Shorts.txt", fmt):
+                    logger.info(
+                        f"[HK Shorts] Final: {len(sorted_hk)} tickers "
+                        f"-> output/HongKongShorts/HK_Shorts.txt"
+                    )
+                    safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_HK_Shorts.txt", fmt)
+            else:
+                logger.warning("[HK Shorts] No tickers found after all filters")
+        except Exception as e:
+            logger.warning(f"[HK Shorts] Failed: {e}")
+
     logger.info("Done.")
     return 0
 

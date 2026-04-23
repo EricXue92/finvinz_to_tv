@@ -42,3 +42,19 @@ perf_small_cap = 300    # $300M–$2B: month perf >= 300%
 [rs]
 name = "Relative Strength"
 filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
+
+# --- HK Shorts: 基于 HKEX 数据的港股做空筛选，输出为 HongKongShorts/HK_Shorts.txt ---
+
+[hk_shorts]
+name = "HK Short Candidates"
+min_avg_volume = 1_000_000             # 日均成交量 (股)
+min_market_cap = 2_000_000_000         # 最低市值 (HKD, ~$300M USD)
+min_dollar_volume = 100_000_000        # 最低成交额 (HKD)
+min_consecutive_up_days = 3
+# 按市值分级的月涨幅阈值 (%)
+perf_large_cap = 50                    # >= 800亿 HKD (~$10B USD)
+perf_mid_cap = 200                     # 160亿-800亿 HKD (~$2B-$10B USD)
+perf_small_cap = 300                   # < 160亿 HKD
+# 市值分界线 (HKD)
+large_cap_threshold = 80_000_000_000
+mid_cap_threshold = 16_000_000_000
