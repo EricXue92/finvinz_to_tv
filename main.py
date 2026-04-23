@@ -145,38 +145,46 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     if not phase3:
         return len(codes), []
 
-    # Phase 4: Cap-conditional monthly performance
+    # Phase 4: Cap-conditional performance over 2, 3, 4 week windows
     large_cap_thr = config.get("large_cap_threshold", 80_000_000_000)
     mid_cap_thr = config.get("mid_cap_threshold", 16_000_000_000)
     perf_large = config.get("perf_large_cap", 50)
     perf_mid = config.get("perf_mid_cap", 200)
     perf_small = config.get("perf_small_cap", 300)
+    perf_weeks = [2, 3, 4]  # trading days: 10, 15, 22
 
-    phase4 = []
-    for ticker in phase3:
-        try:
-            if len(phase1) == 1:
-                closes = data["Close"].dropna()
-            else:
-                closes = data[ticker]["Close"].dropna()
-            if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
-                closes = closes.iloc[:-1]
-            if len(closes) < 22:
+    phase4: set[str] = set()
+    for weeks in perf_weeks:
+        trading_days = weeks * 5 + (2 if weeks == 4 else 0)  # 10, 15, 22
+        week_hits = 0
+        for ticker in phase3:
+            if ticker in phase4:
                 continue
-            month_perf = (closes.iloc[-1] - closes.iloc[-22]) / closes.iloc[-22] * 100
-            cap = market_caps[ticker]
-            if cap >= large_cap_thr:
-                threshold = perf_large
-            elif cap >= mid_cap_thr:
-                threshold = perf_mid
-            else:
-                threshold = perf_small
-            if month_perf >= threshold:
-                phase4.append(ticker)
-        except (KeyError, TypeError, ZeroDivisionError):
-            continue
+            try:
+                if len(phase1) == 1:
+                    closes = data["Close"].dropna()
+                else:
+                    closes = data[ticker]["Close"].dropna()
+                if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
+                    closes = closes.iloc[:-1]
+                if len(closes) < trading_days + 1:
+                    continue
+                perf = (closes.iloc[-1] - closes.iloc[-trading_days]) / closes.iloc[-trading_days] * 100
+                cap = market_caps[ticker]
+                if cap >= large_cap_thr:
+                    threshold = perf_large
+                elif cap >= mid_cap_thr:
+                    threshold = perf_mid
+                else:
+                    threshold = perf_small
+                if perf >= threshold:
+                    phase4.add(ticker)
+                    week_hits += 1
+            except (KeyError, TypeError, ZeroDivisionError):
+                continue
+        logger.info(f"  {weeks}-week window: {week_hits} new hits")
 
-    logger.info(f"  {len(phase4)} after monthly performance filter")
+    logger.info(f"  {len(phase4)} after performance filter (2/3/4 week combined)")
     if not phase4:
         return len(codes), []
 
