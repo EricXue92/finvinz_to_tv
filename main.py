@@ -50,9 +50,6 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
 
     yf_tickers = [code + ".HK" for code in codes]
 
-    logger.info("[HK Shorts] Downloading price data (this may take several minutes)...")
-    data = yf.download(yf_tickers, period="2mo", progress=False, group_by="ticker", threads=True)
-
     now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
     market_open = now_hk.hour < 16 and now_hk.weekday() < 5
     if market_open:
@@ -60,31 +57,49 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
 
     min_avg_volume = config.get("min_avg_volume", 1_000_000)
 
-    # Phase 1: SMA20 +20% and average volume
+    # Phase 1: Download in batches, apply SMA20 +20% and volume filter per batch
+    logger.info("[HK Shorts] Downloading price data and filtering (this may take several minutes)...")
+    batch_size = 500
     phase1 = []
-    for ticker in yf_tickers:
-        try:
-            closes = data[ticker]["Close"].dropna()
-            volumes = data[ticker]["Volume"].dropna()
+    for start in range(0, len(yf_tickers), batch_size):
+        batch = yf_tickers[start : start + batch_size]
+        logger.info(f"  Batch {start // batch_size + 1}/{(len(yf_tickers) - 1) // batch_size + 1} ({len(batch)} tickers)...")
+        batch_data = yf.download(batch, period="2mo", progress=False, group_by="ticker", threads=True)
 
-            if market_open:
-                if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
-                    closes = closes.iloc[:-1]
-                if len(volumes) > 0 and volumes.index[-1].date() == now_hk.date():
-                    volumes = volumes.iloc[:-1]
+        for ticker in batch:
+            try:
+                if len(batch) == 1:
+                    closes = batch_data["Close"].dropna()
+                    volumes = batch_data["Volume"].dropna()
+                else:
+                    closes = batch_data[ticker]["Close"].dropna()
+                    volumes = batch_data[ticker]["Volume"].dropna()
 
-            if len(closes) < 20 or len(volumes) < 20:
+                if market_open:
+                    if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
+                        closes = closes.iloc[:-1]
+                    if len(volumes) > 0 and volumes.index[-1].date() == now_hk.date():
+                        volumes = volumes.iloc[:-1]
+
+                if len(closes) < 20 or len(volumes) < 20:
+                    continue
+
+                sma20 = closes.iloc[-20:].mean()
+                if closes.iloc[-1] > sma20 * 1.2 and volumes.iloc[-20:].mean() >= min_avg_volume:
+                    phase1.append(ticker)
+            except (KeyError, TypeError):
                 continue
 
-            sma20 = closes.iloc[-20:].mean()
-            if closes.iloc[-1] > sma20 * 1.2 and volumes.iloc[-20:].mean() >= min_avg_volume:
-                phase1.append(ticker)
-        except (KeyError, TypeError):
-            continue
+        if start + batch_size < len(yf_tickers):
+            time.sleep(5)
 
     logger.info(f"  {len(phase1)} after SMA20 +20% and volume filter")
     if not phase1:
         return len(codes), []
+
+    # Re-download data for survivors only (small set, fast)
+    logger.info(f"  Re-downloading data for {len(phase1)} survivors...")
+    data = yf.download(phase1, period="2mo", progress=False, group_by="ticker", threads=False)
 
     # Phase 2: Market cap
     min_market_cap = config.get("min_market_cap", 2_000_000_000)
@@ -96,8 +111,10 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
             if cap and cap >= min_market_cap:
                 phase2.append(ticker)
                 market_caps[ticker] = cap
-        except Exception:
+        except Exception as e:
+            logger.warning(f"  yfinance: failed to get market cap for {ticker}: {e}")
             continue
+        time.sleep(0.5)
 
     logger.info(f"  {len(phase2)} after market cap filter (>= {min_market_cap:,.0f} HKD)")
     if not phase2:
@@ -108,8 +125,12 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     phase3 = []
     for ticker in phase2:
         try:
-            closes = data[ticker]["Close"].dropna()
-            volumes = data[ticker]["Volume"].dropna()
+            if len(phase1) == 1:
+                closes = data["Close"].dropna()
+                volumes = data["Volume"].dropna()
+            else:
+                closes = data[ticker]["Close"].dropna()
+                volumes = data[ticker]["Volume"].dropna()
             if market_open:
                 if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
                     closes = closes.iloc[:-1]
@@ -134,7 +155,10 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     phase4 = []
     for ticker in phase3:
         try:
-            closes = data[ticker]["Close"].dropna()
+            if len(phase1) == 1:
+                closes = data["Close"].dropna()
+            else:
+                closes = data[ticker]["Close"].dropna()
             if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
                 closes = closes.iloc[:-1]
             if len(closes) < 22:
@@ -161,7 +185,10 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     phase5 = []
     for ticker in phase4:
         try:
-            closes = data[ticker]["Close"].dropna()
+            if len(phase1) == 1:
+                closes = data["Close"].dropna()
+            else:
+                closes = data[ticker]["Close"].dropna()
             if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
                 closes = closes.iloc[:-1]
             if len(closes) < 2:
