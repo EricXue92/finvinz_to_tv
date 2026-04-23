@@ -40,6 +40,150 @@ def fetch_hkex_equities() -> list[str]:
     return codes
 
 
+def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
+    """Run HK shorts pipeline: fetch HKEX universe, download data via yfinance,
+    apply SMA20/volume/cap/dollar-volume/performance/up-days filters.
+    Returns (universe_size, filtered_tickers_in_tv_format)."""
+    logger.info("[HK Shorts] Fetching HKEX equity universe...")
+    codes = fetch_hkex_equities()
+    logger.info(f"  Found {len(codes)} Main Board equities")
+
+    yf_tickers = [code + ".HK" for code in codes]
+
+    logger.info("[HK Shorts] Downloading price data (this may take several minutes)...")
+    data = yf.download(yf_tickers, period="2mo", progress=False, group_by="ticker", threads=True)
+
+    now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    market_open = now_hk.hour < 16 and now_hk.weekday() < 5
+    if market_open:
+        logger.info("  HK market still open, excluding today's incomplete data")
+
+    min_avg_volume = config.get("min_avg_volume", 1_000_000)
+
+    # Phase 1: SMA20 +20% and average volume
+    phase1 = []
+    for ticker in yf_tickers:
+        try:
+            closes = data[ticker]["Close"].dropna()
+            volumes = data[ticker]["Volume"].dropna()
+
+            if market_open:
+                if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
+                    closes = closes.iloc[:-1]
+                if len(volumes) > 0 and volumes.index[-1].date() == now_hk.date():
+                    volumes = volumes.iloc[:-1]
+
+            if len(closes) < 20 or len(volumes) < 20:
+                continue
+
+            sma20 = closes.iloc[-20:].mean()
+            if closes.iloc[-1] > sma20 * 1.2 and volumes.iloc[-20:].mean() >= min_avg_volume:
+                phase1.append(ticker)
+        except (KeyError, TypeError):
+            continue
+
+    logger.info(f"  {len(phase1)} after SMA20 +20% and volume filter")
+    if not phase1:
+        return len(codes), []
+
+    # Phase 2: Market cap
+    min_market_cap = config.get("min_market_cap", 2_000_000_000)
+    phase2 = []
+    market_caps: dict[str, float] = {}
+    for ticker in phase1:
+        try:
+            cap = yf.Ticker(ticker).fast_info.market_cap
+            if cap and cap >= min_market_cap:
+                phase2.append(ticker)
+                market_caps[ticker] = cap
+        except Exception:
+            continue
+
+    logger.info(f"  {len(phase2)} after market cap filter (>= {min_market_cap:,.0f} HKD)")
+    if not phase2:
+        return len(codes), []
+
+    # Phase 3: Dollar volume (price * 20-day avg volume)
+    min_dv = config.get("min_dollar_volume", 100_000_000)
+    phase3 = []
+    for ticker in phase2:
+        try:
+            closes = data[ticker]["Close"].dropna()
+            volumes = data[ticker]["Volume"].dropna()
+            if market_open:
+                if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
+                    closes = closes.iloc[:-1]
+                if len(volumes) > 0 and volumes.index[-1].date() == now_hk.date():
+                    volumes = volumes.iloc[:-1]
+            if closes.iloc[-1] * volumes.iloc[-20:].mean() >= min_dv:
+                phase3.append(ticker)
+        except (KeyError, TypeError):
+            continue
+
+    logger.info(f"  {len(phase3)} after dollar volume filter (>= {min_dv:,.0f} HKD)")
+    if not phase3:
+        return len(codes), []
+
+    # Phase 4: Cap-conditional monthly performance
+    large_cap_thr = config.get("large_cap_threshold", 80_000_000_000)
+    mid_cap_thr = config.get("mid_cap_threshold", 16_000_000_000)
+    perf_large = config.get("perf_large_cap", 50)
+    perf_mid = config.get("perf_mid_cap", 200)
+    perf_small = config.get("perf_small_cap", 300)
+
+    phase4 = []
+    for ticker in phase3:
+        try:
+            closes = data[ticker]["Close"].dropna()
+            if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
+                closes = closes.iloc[:-1]
+            if len(closes) < 22:
+                continue
+            month_perf = (closes.iloc[-1] - closes.iloc[-22]) / closes.iloc[-22] * 100
+            cap = market_caps[ticker]
+            if cap >= large_cap_thr:
+                threshold = perf_large
+            elif cap >= mid_cap_thr:
+                threshold = perf_mid
+            else:
+                threshold = perf_small
+            if month_perf >= threshold:
+                phase4.append(ticker)
+        except (KeyError, TypeError, ZeroDivisionError):
+            continue
+
+    logger.info(f"  {len(phase4)} after monthly performance filter")
+    if not phase4:
+        return len(codes), []
+
+    # Phase 5: Consecutive up days
+    min_up_days = config.get("min_consecutive_up_days", 3)
+    phase5 = []
+    for ticker in phase4:
+        try:
+            closes = data[ticker]["Close"].dropna()
+            if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
+                closes = closes.iloc[:-1]
+            if len(closes) < 2:
+                continue
+            consecutive = 0
+            for i in range(len(closes) - 1, 0, -1):
+                if closes.iloc[i] > closes.iloc[i - 1]:
+                    consecutive += 1
+                else:
+                    break
+            if consecutive >= min_up_days:
+                phase5.append(ticker)
+        except (KeyError, TypeError):
+            continue
+
+    logger.info(f"  {len(phase5)} after consecutive up days filter (>= {min_up_days})")
+
+    # Convert to TradingView format: 0700.HK → HKEX:0700
+    tv_tickers = ["HKEX:" + t.replace(".HK", "") for t in phase5]
+    return len(codes), tv_tickers
+
+
 def load_config(config_path: Path) -> dict:
     with open(config_path, "rb") as f:
         return tomllib.load(f)
