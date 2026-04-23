@@ -562,11 +562,16 @@ def main() -> int:
 
     today = date.today().strftime("%Y_%m_%d")
 
+    us_output_dir = output_dir / "US"
+    us_output_dir.mkdir(exist_ok=True)
+    hk_output_dir = output_dir / "HK"
+    hk_output_dir.mkdir(exist_ok=True)
+
     if longs_tickers:
         sorted_longs = sorted(longs_tickers)
-        if safe_write_watchlist(sorted_longs, output_dir / "Longs.txt", fmt):
-            logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/Longs.txt")
-            safe_write_watchlist(sorted_longs, output_dir / f"{today}_Longs.txt", fmt)
+        if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
+            logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
+            safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
     else:
         logger.warning("[Longs] No tickers found")
 
@@ -599,9 +604,9 @@ def main() -> int:
 
             if shorts_tickers:
                 sorted_shorts = sorted(set(shorts_tickers))
-                if safe_write_watchlist(sorted_shorts, output_dir / "Shorts.txt", fmt):
-                    logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> output/Shorts.txt")
-                    safe_write_watchlist(sorted_shorts, output_dir / f"{today}_Shorts.txt", fmt)
+                if safe_write_watchlist(sorted_shorts, us_output_dir / "Shorts.txt", fmt):
+                    logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> output/US/Shorts.txt")
+                    safe_write_watchlist(sorted_shorts, us_output_dir / f"{today}_Shorts.txt", fmt)
             else:
                 logger.warning("[Shorts] No tickers found after all filters")
         except Exception as e:
@@ -620,9 +625,9 @@ def main() -> int:
                 rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
                 if rs_tickers:
                     sorted_rs = sorted(set(rs_tickers))
-                    if safe_write_watchlist(sorted_rs, output_dir / "RS.txt", fmt):
-                        logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/RS.txt")
-                        safe_write_watchlist(sorted_rs, output_dir / f"{today}_RS.txt", fmt)
+                    if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
+                        logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
+                        safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
                 else:
                     logger.warning("[RS] No tickers found")
             else:
@@ -639,15 +644,13 @@ def main() -> int:
             logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
 
             if hk_shorts_tickers:
-                hk_output_dir = output_dir / "HongKongShorts"
-                hk_output_dir.mkdir(exist_ok=True)
                 sorted_hk = sorted(hk_shorts_tickers)
-                if safe_write_watchlist(sorted_hk, hk_output_dir / "HK_Shorts.txt", fmt):
+                if safe_write_watchlist(sorted_hk, hk_output_dir / "Shorts.txt", fmt):
                     logger.info(
                         f"[HK Shorts] Final: {len(sorted_hk)} tickers "
-                        f"-> output/HongKongShorts/HK_Shorts.txt"
+                        f"-> output/HK/Shorts.txt"
                     )
-                    safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_HK_Shorts.txt", fmt)
+                    safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_Shorts.txt", fmt)
             else:
                 logger.warning("[HK Shorts] No tickers found after all filters")
         except Exception as e:

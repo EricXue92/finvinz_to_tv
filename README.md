@@ -1,6 +1,6 @@
 # Finviz to TradingView
 
-Automated stock screener that runs custom Finviz scans and exports results as TradingView-importable watchlists.
+Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance scans (Hong Kong), exporting results as TradingView-importable watchlists.
 
 ## Screening Criteria
 
@@ -34,10 +34,12 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Filter | Criteria |
 |--------|----------|
 | Dollar Volume | Price × 20-day avg volume >= $100M (via yfinance) |
-| Monthly Perf (Large Cap ≥ $10B) | Up 50%+ in last month |
-| Monthly Perf (Mid Cap $2B–$10B) | Up 200%+ in last month |
-| Monthly Perf (Small Cap $300M–$2B) | Up 300%+ in last month |
+| Performance (Large Cap ≥ $10B) | Up 50%+ over 2, 3, or 4 weeks |
+| Performance (Mid Cap $2B–$10B) | Up 200%+ over 2, 3, or 4 weeks |
+| Performance (Small Cap $300M–$2B) | Up 300%+ over 2, 3, or 4 weeks |
 | Consecutive Up Days | 3+ consecutive green days (via yfinance; excludes today's incomplete data if market is still open) |
+
+Performance is checked over 4-week window via Finviz first, then 2-week and 3-week windows via yfinance for tickers that didn't pass the 4-week check. Results are aggregated.
 
 ### RS - Relative Strength (conditional)
 
@@ -47,19 +49,48 @@ Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY a
 |----------|-------------|
 | Relative Strength | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200 |
 
+### HK Shorts (1 strategy, multi-phase filtering)
+
+Hong Kong market short candidates using the same methodology as US Shorts, sourced from **HKEX + yfinance** instead of Finviz.
+
+**Phase 1 — HKEX universe + yfinance filtering:**
+
+| Filter | Criteria |
+|--------|----------|
+| Universe | HKEX Main Board equities (~2,400 stocks) |
+| SMA20 | Price 20%+ above 20-day moving average |
+| Avg Volume | > 1M shares/day (20-day average) |
+
+**Phase 2 — Post-processing:**
+
+| Filter | Criteria |
+|--------|----------|
+| Market Cap | >= HKD 3 billion (~$300M USD) |
+| Dollar Volume | Price × 20-day avg volume >= HKD 100M |
+| Performance (Large Cap ≥ HKD 10B) | Up 50%+ over 2, 3, or 4 weeks |
+| Performance (Mid Cap HKD 2B–10B) | Up 200%+ over 2, 3, or 4 weeks |
+| Performance (Small Cap HKD 300M–2B) | Up 300%+ over 2, 3, or 4 weeks |
+| Consecutive Up Days | 3+ consecutive green days |
+
+HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
+
 ## Output
 
 ```
 output/
-├── Longs.txt              # Latest long candidates (overwritten daily)
-├── Shorts.txt             # Latest short candidates (overwritten daily)
-├── RS.txt                 # Latest relative strength (only when market condition met)
-├── 2026_04_21_Longs.txt   # Date-stamped archive
-├── 2026_04_21_Shorts.txt
-└── 2026_04_21_RS.txt
+├── US/
+│   ├── Longs.txt              # Latest US long candidates
+│   ├── Shorts.txt             # Latest US short candidates
+│   ├── RS.txt                 # Latest relative strength (conditional)
+│   ├── 2026_04_21_Longs.txt   # Date-stamped archives
+│   ├── 2026_04_21_Shorts.txt
+│   └── 2026_04_21_RS.txt
+└── HK/
+    ├── Shorts.txt             # Latest HK short candidates
+    └── 2026_04_21_Shorts.txt
 ```
 
-Each run generates both a latest file (e.g. `Longs.txt`) and a date-stamped copy (e.g. `2026_04_21_Longs.txt`) to preserve history. Files are comma-separated ticker symbols (e.g. `AAPL,MSFT,NVDA`), ready for TradingView import.
+Each run generates both a latest file (e.g. `Shorts.txt`) and a date-stamped copy to preserve history. Files are comma-separated ticker symbols, ready for TradingView import.
 
 ## Setup
 
@@ -76,7 +107,7 @@ uv run main.py
 1. Open TradingView
 2. Right panel -> Watchlist -> Click the list name
 3. Select "Import list..."
-4. Choose `output/Longs.txt` (or Shorts/RS)
+4. Choose `output/US/Longs.txt` (or Shorts/RS for US, `output/HK/Shorts.txt` for HK)
 
 ## Automation (launchd + pmset)
 
@@ -123,4 +154,5 @@ All screener parameters are in `config.toml`. You can modify filters, add new sc
 
 - Python >= 3.12
 - [finviz](https://github.com/mariostoev/finviz) - Finviz web scraper (no API key or premium account required)
-- [yfinance](https://github.com/ranaroussi/yfinance) - Yahoo Finance data for consecutive up days filter (shorts)
+- [yfinance](https://github.com/ranaroussi/yfinance) - Yahoo Finance data for post-processing filters and HK market data
+- [openpyxl](https://openpyxl.readthedocs.io/) - HKEX securities list xlsx parsing
