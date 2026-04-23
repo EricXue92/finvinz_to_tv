@@ -77,25 +77,42 @@ uv run main.py
 3. 选择"导入列表..."
 4. 选择 `output/Longs.txt`（或 Shorts/RS）
 
-## 自动化 (Cron)
+## 自动化 (launchd + pmset)
 
-脚本配置为每日美股收盘后自动运行：
+脚本通过 macOS launchd 在每日美股收盘后自动运行，配合 `pmset` 定时唤醒 Mac。
+
+**调度时间：** 周二至周六 6:00 AM HKT = 周一至周五美股收盘后。6 AM HKT 在夏令时 (EDT, 收盘后2小时) 和冬令时 (EST, 收盘后1小时) 下均安全。
+
+### 工作原理
+
+1. **`pmset repeat`** 在每周二至周六 5:59 AM HKT 唤醒 Mac
+2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) 在 6:00 AM 执行脚本
+3. 执行完成后，Mac 自动恢复睡眠
+
+### 设置方法
 
 ```bash
-# 周二至周六 6:00 AM HKT = 周一至周五美股收盘后
-# 6 AM HKT 在夏令时 (EDT) 和冬令时 (EST) 下均安全
-0 6 * * 2-6 /path/to/uv run --directory /path/to/finviz_to_tv main.py >> output/cron.log 2>&1
+# 设置 Mac 在周二至周六 5:59 AM 自动唤醒
+sudo pmset repeat wakeorpoweron TWRFS 05:59:00
+
+# 验证唤醒计划
+pmset -g sched
 ```
 
-### macOS cron 权限设置
+launchd 配置文件位于 `~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`。管理命令：
 
-macOS 要求 cron 拥有**完全磁盘访问权限**，否则定时任务会被静默阻止。
+```bash
+# 加载（启用）
+launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
 
-1. 打开**系统设置 → 隐私与安全性 → 完全磁盘访问权限**
-2. 点击 `+`，按 `Cmd+Shift+G`，输入 `/usr/sbin/cron`，然后回车
-3. 选择 `cron` 文件并点击打开
-4. 确保 cron 在列表中已开启
-5. 重启 cron：`sudo killall cron`
+# 卸载（停用）
+launchctl unload ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
+
+# 检查状态
+launchctl list | grep finviz
+```
+
+> **注意：** 与 cron 不同，launchd 会补执行错过的任务——如果 Mac 在 6:00 AM 时处于睡眠状态，任务会在 Mac 唤醒后立即执行。
 
 ## 配置
 

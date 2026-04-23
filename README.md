@@ -77,25 +77,42 @@ uv run main.py
 3. Select "Import list..."
 4. Choose `output/Longs.txt` (or Shorts/RS)
 
-## Automation (Cron)
+## Automation (launchd + pmset)
 
-The script is configured to run daily after US market close:
+The script runs daily after US market close via macOS launchd, with `pmset` to wake the Mac from sleep.
+
+**Schedule:** Tue-Sat 6:00 AM HKT = Mon-Fri after US market close. 6 AM HKT is safe for both EDT (2h after close) and EST (1h after close).
+
+### How it works
+
+1. **`pmset repeat`** wakes the Mac at 5:59 AM HKT (Tue-Sat)
+2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 6:00 AM
+3. After execution, the Mac automatically returns to sleep
+
+### Setup
 
 ```bash
-# Tue-Sat 6:00 AM HKT = Mon-Fri after market close
-# 6 AM HKT is safe for both EDT (2h after close) and EST (1h after close)
-0 6 * * 2-6 /path/to/uv run --directory /path/to/finviz_to_tv main.py >> output/cron.log 2>&1
+# Schedule Mac to wake at 5:59 AM Tue-Sat
+sudo pmset repeat wakeorpoweron TWRFS 05:59:00
+
+# Verify wake schedule
+pmset -g sched
 ```
 
-### macOS cron permission setup
+The launchd plist is installed at `~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`. To manage it:
 
-macOS requires cron to have **Full Disk Access**, otherwise scheduled tasks will be silently blocked.
+```bash
+# Load (enable)
+launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
 
-1. Open **System Settings → Privacy & Security → Full Disk Access**
-2. Click `+`, press `Cmd+Shift+G`, type `/usr/sbin/cron`, then press Enter
-3. Select the `cron` file and click Open
-4. Ensure cron is toggled on in the list
-5. Restart cron: `sudo killall cron`
+# Unload (disable)
+launchctl unload ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
+
+# Check status
+launchctl list | grep finviz
+```
+
+> **Note:** Unlike cron, launchd will catch up on missed runs — if the Mac was asleep at 6:00 AM, the task executes as soon as the Mac wakes up.
 
 ## Configuration
 
