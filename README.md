@@ -29,17 +29,17 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Avg Volume | > 1M shares (Finviz 3-month avg, pre-filter) |
 | Market Cap | > $300M (small cap and above) |
 
-**Phase 2 — Post-processing:**
+**Phase 2 — Post-processing (via yfinance):**
 
 | Filter | Criteria |
 |--------|----------|
-| Dollar Volume | Price × 20-day avg volume >= $100M (via yfinance) |
+| Dollar Volume | Price × 20-day avg volume >= $100M |
 | Performance (Large Cap ≥ $10B) | Up 50%+ over 2, 3, or 4 weeks |
 | Performance (Mid Cap $2B–$10B) | Up 200%+ over 2, 3, or 4 weeks |
 | Performance (Small Cap $300M–$2B) | Up 300%+ over 2, 3, or 4 weeks |
-| Consecutive Up Days | 3+ consecutive green days (via yfinance; excludes today's incomplete data if market is still open) |
+| Consecutive Up Days | 3+ consecutive green days (excludes today's incomplete data if market is still open) |
 
-Performance is checked over 4-week window via Finviz first, then 2-week and 3-week windows via yfinance for tickers that didn't pass the 4-week check. Results are aggregated.
+Performance is checked over 2-week (10 trading days), 3-week (15 trading days), and 4-week (22 trading days) windows via yfinance. A ticker passes if it meets the cap-conditional threshold in any window. Results are aggregated.
 
 ### RS - Relative Strength (conditional)
 
@@ -65,7 +65,7 @@ Hong Kong market short candidates using the same methodology as US Shorts, sourc
 
 | Filter | Criteria |
 |--------|----------|
-| Market Cap | >= HKD 3 billion (~$300M USD) |
+| Market Cap | >= HKD 300M |
 | Dollar Volume | Price × 20-day avg volume >= HKD 100M |
 | Performance (Large Cap ≥ HKD 10B) | Up 50%+ over 2, 3, or 4 weeks |
 | Performance (Mid Cap HKD 2B–10B) | Up 200%+ over 2, 3, or 4 weeks |

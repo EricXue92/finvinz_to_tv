@@ -248,11 +248,9 @@ def filter_shorts(
     perf_large_cap: float,
     perf_mid_cap: float,
     perf_small_cap: float,
-    delay: float,
 ) -> tuple[int, list[str]]:
-    """Run screener twice (Ownership + Performance), apply cap-conditional
-    4-week performance filter via Finviz, then check 2/3-week performance
-    via yfinance for tickers that didn't pass.
+    """Run Finviz screener for Ownership data (market cap), then apply
+    cap-conditional performance filter over 2/3/4-week windows via yfinance.
     Returns (total_found, filtered_tickers)."""
     kwargs_own = {"filters": filters, "table": "Ownership"}
     if signal:
@@ -260,93 +258,62 @@ def filter_shorts(
     ownership = Screener(**kwargs_own)
     total = len(ownership.data)
 
-    own_by_ticker: dict[str, dict] = {}
+    tickers = []
+    market_caps: dict[str, float] = {}
     for stock in ownership.data:
-        own_by_ticker[stock["Ticker"]] = stock
-
-    time.sleep(delay)
-
-    kwargs_perf = {"filters": filters, "table": "Performance"}
-    if signal:
-        kwargs_perf["signal"] = signal
-    performance = Screener(**kwargs_perf)
-
-    perf_by_ticker: dict[str, dict] = {}
-    for stock in performance.data:
-        perf_by_ticker[stock["Ticker"]] = stock
-
-    # 4-week check via Finviz Perf Month
-    passed: set[str] = set()
-    failed: list[str] = []
-    failed_caps: dict[str, float] = {}
-    for ticker, own in own_by_ticker.items():
+        ticker = stock["Ticker"]
         try:
-            market_cap = parse_number(own["Market Cap"])
-
-            perf = perf_by_ticker.get(ticker)
-            if not perf:
-                continue
-            month_perf_str = perf.get("Perf Month", "0%").strip("%")
-            month_perf = float(month_perf_str)
-
-            if market_cap >= 10e9:
-                threshold = perf_large_cap
-            elif market_cap >= 2e9:
-                threshold = perf_mid_cap
-            else:
-                threshold = perf_small_cap
-
-            if month_perf >= threshold:
-                passed.add(ticker)
-            else:
-                failed.append(ticker)
-                failed_caps[ticker] = market_cap
+            cap = parse_number(stock["Market Cap"])
+            tickers.append(ticker)
+            market_caps[ticker] = cap
         except (KeyError, ValueError):
-            pass
+            continue
 
-    logger.info(f"  4-week (Finviz): {len(passed)} hits")
+    if not tickers:
+        return total, []
 
-    # 2/3-week check via yfinance for tickers that didn't pass 4-week
-    if failed:
-        data = yf.download(failed, period="2mo", progress=False, group_by="ticker", threads=False)
-        now_et = datetime.now(ZoneInfo("America/New_York"))
-        market_open = now_et.hour < 16 and now_et.weekday() < 5
+    data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    market_open = now_et.hour < 16 and now_et.weekday() < 5
 
-        for weeks in [2, 3]:
-            trading_days = weeks * 5  # 10, 15
-            week_hits = 0
-            for ticker in failed:
-                if ticker in passed:
+    perf_weeks = [2, 3, 4]
+    passed: set[str] = set()
+    for weeks in perf_weeks:
+        trading_days = weeks * 5 + (2 if weeks == 4 else 0)  # 10, 15, 22
+        week_hits = 0
+        for ticker in tickers:
+            if ticker in passed:
+                continue
+            try:
+                if len(tickers) == 1:
+                    closes = data["Close"].dropna()
+                else:
+                    closes = data[ticker]["Close"].dropna()
+
+                if market_open and len(closes) > 0 and closes.index[-1].date() == now_et.date():
+                    closes = closes.iloc[:-1]
+
+                if len(closes) < trading_days + 1:
                     continue
-                try:
-                    if len(failed) == 1:
-                        closes = data["Close"].dropna()
-                    else:
-                        closes = data[ticker]["Close"].dropna()
 
-                    if market_open and len(closes) > 0 and closes.index[-1].date() == now_et.date():
-                        closes = closes.iloc[:-1]
+                perf = (closes.iloc[-1] - closes.iloc[-trading_days]) / closes.iloc[-trading_days] * 100
+                cap = market_caps[ticker]
 
-                    if len(closes) < trading_days + 1:
-                        continue
+                if cap >= 10e9:
+                    threshold = perf_large_cap
+                elif cap >= 2e9:
+                    threshold = perf_mid_cap
+                else:
+                    threshold = perf_small_cap
 
-                    perf = (closes.iloc[-1] - closes.iloc[-trading_days]) / closes.iloc[-trading_days] * 100
-                    market_cap = failed_caps[ticker]
+                if perf >= threshold:
+                    passed.add(ticker)
+                    week_hits += 1
+            except (KeyError, ValueError, ZeroDivisionError):
+                continue
+        logger.info(f"  {weeks}-week window: {week_hits} new hits")
 
-                    if market_cap >= 10e9:
-                        threshold = perf_large_cap
-                    elif market_cap >= 2e9:
-                        threshold = perf_mid_cap
-                    else:
-                        threshold = perf_small_cap
-
-                    if perf >= threshold:
-                        passed.add(ticker)
-                        week_hits += 1
-                except (KeyError, ValueError):
-                    continue
-            logger.info(f"  {weeks}-week (yfinance): {week_hits} new hits")
-
+    logger.info(f"  {len(passed)} after performance filter (2/3/4 week combined)")
     return total, list(passed)
 
 
@@ -588,7 +555,6 @@ def main() -> int:
                 perf_large_cap=shorts_cfg.get("perf_large_cap", 50),
                 perf_mid_cap=shorts_cfg.get("perf_mid_cap", 200),
                 perf_small_cap=shorts_cfg.get("perf_small_cap", 300),
-                delay=delay,
             )
             logger.info(f"  Found {total} tickers, {len(shorts_tickers)} after performance filter")
 

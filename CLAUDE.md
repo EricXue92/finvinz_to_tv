@@ -17,7 +17,7 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 
 **Four screener groups with different output behavior:**
 - **Longs** (`[[longs]]` in config): 4 strategies merged into one deduplicated set → `output/US/Longs.txt`. Based on Oliver Kell's methodology. Relative Volume Surge uses yfinance post-processing for 20-day relative volume (configurable via `min_relative_volume` and `relative_volume_days` per strategy).
-- **Shorts** (`[shorts]`): Single strategy with multi-phase filtering → `output/US/Shorts.txt`. Based on Kristjan Kullamägi's blog criteria. Runs Finviz filters (SMA20+20%, avg vol >1M, cap >$300M), then post-processes for dollar volume, cap-conditional performance (2/3/4-week windows), and consecutive up days (via yfinance).
+- **Shorts** (`[shorts]`): Single strategy with multi-phase filtering → `output/US/Shorts.txt`. Based on Kristjan Kullamägi's blog criteria. Runs Finviz Ownership screener (SMA20+20%, avg vol >1M, cap >$300M) for market cap data, then post-processes via yfinance for cap-conditional performance (2/3/4-week windows: 10, 15, 22 trading days), dollar volume, and consecutive up days.
 - **RS** (`[rs]`): Conditional → `output/US/RS.txt`. Only runs when both SPY and QQQ drop >1.5% (checked via `finviz.get_stock()`). Based on Oliver Kell's relative strength approach.
 - **HK Shorts** (`[hk_shorts]`): Hong Kong market short candidates → `output/HK/Shorts.txt`. Same methodology as US Shorts but sources data from HKEX securities list + yfinance. Uses HKD-native cap thresholds. Batch-downloads ~2,400 tickers in groups of 500.
 
