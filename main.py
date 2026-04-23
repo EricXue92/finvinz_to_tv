@@ -39,41 +39,16 @@ def parse_number(value: str) -> float:
     return float(value)
 
 
-def filter_dollar_volume(
-    filters: list[str], signal: str | None, min_dollar_volume: float
-) -> tuple[int, list[str]]:
-    """Run screener with Ownership table and filter by dollar volume.
-    Returns (total_found, filtered_tickers)."""
-    kwargs = {"filters": filters, "table": "Ownership"}
-    if signal:
-        kwargs["signal"] = signal
-    stock_list = Screener(**kwargs)
-
-    total = len(stock_list.data)
-    tickers = []
-    for stock in stock_list.data:
-        try:
-            price = parse_number(stock["Price"])
-            avg_vol = parse_number(stock["Avg Volume"])
-            if price * avg_vol >= min_dollar_volume:
-                tickers.append(stock["Ticker"])
-        except (KeyError, ValueError):
-            pass
-    return total, tickers
-
-
 def filter_shorts(
     filters: list[str],
     signal: str | None,
-    min_dollar_volume: float,
     perf_large_cap: float,
     perf_mid_cap: float,
     perf_small_cap: float,
     delay: float,
 ) -> tuple[int, list[str]]:
-    """Run screener twice (Ownership + Performance), merge, and apply:
-    - dollar volume filter (price * avg vol >= min_dollar_volume)
-    - cap-conditional month performance filter
+    """Run screener twice (Ownership + Performance), merge, and apply
+    cap-conditional month performance filter.
     Returns (total_found, filtered_tickers)."""
     kwargs_own = {"filters": filters, "table": "Ownership"}
     if signal:
@@ -99,11 +74,6 @@ def filter_shorts(
     tickers = []
     for ticker, own in own_by_ticker.items():
         try:
-            price = parse_number(own["Price"])
-            avg_vol = parse_number(own["Avg Volume"])
-            if price * avg_vol < min_dollar_volume:
-                continue
-
             market_cap = parse_number(own["Market Cap"])
 
             perf = perf_by_ticker.get(ticker)
@@ -165,6 +135,50 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
                     break
 
             if consecutive >= min_days:
+                result.append(ticker)
+        except (KeyError, TypeError):
+            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
+            result.append(ticker)
+
+    return result
+
+
+def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: int = 20) -> list[str]:
+    """Filter tickers by dollar volume using yfinance N-day average volume.
+    Dollar volume = latest close price * N-day average volume."""
+    if not tickers:
+        return []
+
+    data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
+    result = []
+
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    market_open = now_et.hour < 16 and now_et.weekday() < 5
+
+    for ticker in tickers:
+        try:
+            if len(tickers) == 1:
+                closes = data["Close"].dropna()
+                volumes = data["Volume"].dropna()
+            else:
+                closes = data[ticker]["Close"].dropna()
+                volumes = data[ticker]["Volume"].dropna()
+
+            if market_open:
+                if len(closes) > 0 and closes.index[-1].date() == now_et.date():
+                    closes = closes.iloc[:-1]
+                if len(volumes) > 0 and volumes.index[-1].date() == now_et.date():
+                    volumes = volumes.iloc[:-1]
+
+            if len(volumes) < days or len(closes) < 1:
+                logger.warning(f"  yfinance: insufficient data for {ticker}, keeping it")
+                result.append(ticker)
+                continue
+
+            price = closes.iloc[-1]
+            avg_vol = volumes.iloc[-days:].mean()
+
+            if price * avg_vol >= min_dollar_volume:
                 result.append(ticker)
         except (KeyError, TypeError):
             logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
@@ -277,14 +291,11 @@ def main() -> int:
         name = screener_cfg["name"]
         logger.info(f"[Longs] Running: {name}")
         try:
-            if min_dollar_volume > 0:
-                total, tickers = filter_dollar_volume(
-                    screener_cfg["filters"], screener_cfg.get("signal"), min_dollar_volume
-                )
-                logger.info(f"  Found {total} tickers, {len(tickers)} after dollar volume filter")
-            else:
-                tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
-                logger.info(f"  Found {len(tickers)} tickers")
+            tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
+            logger.info(f"  Found {len(tickers)} tickers")
+            if min_dollar_volume > 0 and tickers:
+                tickers = filter_dollar_volume_yf(tickers, min_dollar_volume)
+                logger.info(f"  {len(tickers)} after dollar volume filter (20-day avg)")
             min_rvol = screener_cfg.get("min_relative_volume")
             if min_rvol and tickers:
                 rvol_days = screener_cfg.get("relative_volume_days", 20)
@@ -313,19 +324,20 @@ def main() -> int:
     if shorts_cfg:
         logger.info(f"[Shorts] Running: {shorts_cfg['name']}")
         try:
-            shorts_min_dv = shorts_cfg.get("min_dollar_volume", 100_000_000)
             total, shorts_tickers = filter_shorts(
                 shorts_cfg["filters"],
                 shorts_cfg.get("signal"),
-                min_dollar_volume=shorts_min_dv,
                 perf_large_cap=shorts_cfg.get("perf_large_cap", 50),
                 perf_mid_cap=shorts_cfg.get("perf_mid_cap", 200),
                 perf_small_cap=shorts_cfg.get("perf_small_cap", 300),
                 delay=delay,
             )
-            logger.info(
-                f"  Found {total} tickers, {len(shorts_tickers)} after dollar volume + performance filter"
-            )
+            logger.info(f"  Found {total} tickers, {len(shorts_tickers)} after performance filter")
+
+            shorts_min_dv = shorts_cfg.get("min_dollar_volume", 100_000_000)
+            if shorts_min_dv > 0 and shorts_tickers:
+                shorts_tickers = filter_dollar_volume_yf(shorts_tickers, shorts_min_dv)
+                logger.info(f"  {len(shorts_tickers)} after dollar volume filter (20-day avg)")
 
             min_up_days = shorts_cfg.get("min_consecutive_up_days", 3)
             if shorts_tickers and min_up_days > 0:

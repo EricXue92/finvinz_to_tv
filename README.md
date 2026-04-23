@@ -15,6 +15,8 @@ Based on **Oliver Kell**'s momentum/breakout methodology:
 | Gap Up | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
 | 52W New High | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
 
+All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
+
 ### Shorts (1 strategy, multi-phase filtering)
 
 Based on **Kristjan Kullamägi**'s short-selling criteria:
@@ -24,14 +26,14 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Filter | Criteria |
 |--------|----------|
 | SMA20 | Price 20%+ above 20-day moving average |
-| Avg Volume | > 1M shares |
+| Avg Volume | > 1M shares (Finviz 3-month avg, pre-filter) |
 | Market Cap | > $300M (small cap and above) |
 
 **Phase 2 — Post-processing:**
 
 | Filter | Criteria |
 |--------|----------|
-| Dollar Volume | Price × Avg Volume >= $100M |
+| Dollar Volume | Price × 20-day avg volume >= $100M (via yfinance) |
 | Monthly Perf (Large Cap ≥ $10B) | Up 50%+ in last month |
 | Monthly Perf (Mid Cap $2B–$10B) | Up 200%+ in last month |
 | Monthly Perf (Small Cap $300M–$2B) | Up 300%+ in last month |
