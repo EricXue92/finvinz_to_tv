@@ -59,7 +59,7 @@ Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY a
 
 | Strategy / 策略 | Key Filters / 关键筛选条件 |
 |----------|-------------|
-| Relative Strength / 相对强度 | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200 |
+| Relative Strength / 相对强度 | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
 
 ### HK Shorts / 港股做空（1 strategy, multi-phase filtering / 1 个策略，多阶段筛选）
 

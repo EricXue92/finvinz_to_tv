@@ -606,6 +606,10 @@ def main() -> int:
                 logger.info("[RS] Condition met, running screener...")
                 time.sleep(delay)
                 rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
+                logger.info(f"  Found {len(rs_tickers)} tickers")
+                if min_dollar_volume > 0 and rs_tickers:
+                    rs_tickers = filter_dollar_volume_yf(rs_tickers, min_dollar_volume)
+                    logger.info(f"  {len(rs_tickers)} after dollar volume filter (20-day avg)")
                 if rs_tickers:
                     sorted_rs = sorted(set(rs_tickers))
                     if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
