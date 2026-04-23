@@ -173,6 +173,47 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
     return result
 
 
+def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) -> list[str]:
+    """Filter tickers by relative volume: latest day's volume / N-day average volume >= min_rvol.
+    Uses yfinance to fetch daily volume data."""
+    if not tickers:
+        return []
+
+    data = yf.download(tickers, period="2mo", progress=False, group_by="ticker")
+    result = []
+
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    market_open = now_et.hour < 16 and now_et.weekday() < 5
+
+    for ticker in tickers:
+        try:
+            if len(tickers) == 1:
+                volumes = data["Volume"].dropna()
+            else:
+                volumes = data[ticker]["Volume"].dropna()
+
+            if market_open and len(volumes) > 0 and volumes.index[-1].date() == now_et.date():
+                volumes = volumes.iloc[:-1]
+
+            if len(volumes) < days + 1:
+                logger.warning(f"  yfinance: insufficient volume data for {ticker}, keeping it")
+                result.append(ticker)
+                continue
+
+            current_vol = volumes.iloc[-1]
+            avg_vol = volumes.iloc[-(days + 1):-1].mean()
+
+            if avg_vol > 0:
+                rvol = current_vol / avg_vol
+                if rvol >= min_rvol:
+                    result.append(ticker)
+        except (KeyError, TypeError):
+            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
+            result.append(ticker)
+
+    return result
+
+
 def check_market_down(threshold: float = -1.5) -> bool:
     """Check if both SPY and QQQ are down more than threshold%."""
     spy = get_stock("SPY")
@@ -244,6 +285,11 @@ def main() -> int:
             else:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
+            min_rvol = screener_cfg.get("min_relative_volume")
+            if min_rvol and tickers:
+                rvol_days = screener_cfg.get("relative_volume_days", 20)
+                tickers = filter_relative_volume(tickers, min_rvol, rvol_days)
+                logger.info(f"  {len(tickers)} after relative volume filter (>= {min_rvol}x {rvol_days}-day avg)")
             longs_tickers.update(tickers)
         except Exception as e:
             logger.warning(f"  Failed: {e}")
