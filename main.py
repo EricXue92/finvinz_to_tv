@@ -173,7 +173,7 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
     return result
 
 
-def check_market_down(threshold: float = -1.0) -> bool:
+def check_market_down(threshold: float = -1.5) -> bool:
     """Check if both SPY and QQQ are down more than threshold%."""
     spy = get_stock("SPY")
     qqq = get_stock("QQQ")
@@ -315,7 +315,7 @@ def main() -> int:
                 else:
                     logger.warning("[RS] No tickers found")
             else:
-                logger.info("[RS] Condition not met (SPY/QQQ not both down >1%), skipping")
+                logger.info("[RS] Condition not met (SPY/QQQ not both down >1.5%), skipping")
         except Exception as e:
             logger.warning(f"[RS] Failed: {e}")
 

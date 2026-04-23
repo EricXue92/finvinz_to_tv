@@ -39,7 +39,7 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 
 ### RS - Relative Strength (conditional)
 
-Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY and QQQ drop more than 1% on the day — identifies stocks showing strength in a weak market.
+Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY and QQQ drop more than 1.5% on the day — identifies stocks showing strength in a weak market.
 
 | Strategy | Key Filters |
 |----------|-------------|
