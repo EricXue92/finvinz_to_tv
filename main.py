@@ -40,6 +40,46 @@ def fetch_hkex_equities() -> list[str]:
     return codes
 
 
+def _yf_download_with_retry(tickers, max_retries=3, **kwargs):
+    """Download yfinance data with retries on failure."""
+    for attempt in range(max_retries):
+        data = yf.download(tickers, **kwargs)
+        if data is not None and not data.empty:
+            return data
+        if attempt < max_retries - 1:
+            time.sleep(3)
+            logger.warning(f"  yfinance download returned empty, retrying ({attempt + 2}/{max_retries})...")
+    return data
+
+
+def _get_market_cap(ticker: str, max_retries: int = 3) -> float | None:
+    """Get market cap with retries."""
+    for attempt in range(max_retries):
+        try:
+            cap = yf.Ticker(ticker).fast_info.market_cap
+            if cap:
+                return cap
+        except Exception:
+            pass
+        if attempt < max_retries - 1:
+            time.sleep(1)
+    return None
+
+
+def _get_closes_volumes(data, ticker: str, single: bool):
+    """Extract closes and volumes series for a ticker from downloaded data."""
+    if single:
+        return data["Close"].dropna(), data["Volume"].dropna()
+    return data[ticker]["Close"].dropna(), data[ticker]["Volume"].dropna()
+
+
+def _trim_today(series, market_open: bool, today_date):
+    """Remove today's incomplete data if market is open."""
+    if market_open and len(series) > 0 and series.index[-1].date() == today_date:
+        return series.iloc[:-1]
+    return series
+
+
 def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     """Run HK shorts pipeline: fetch HKEX universe, download data via yfinance,
     apply SMA20/volume/cap/dollar-volume/performance/up-days filters.
@@ -52,34 +92,35 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
 
     now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
     market_open = 9 <= now_hk.hour < 16 and now_hk.weekday() < 5
+    today = now_hk.date()
     if market_open:
         logger.info("  HK market still open, excluding today's incomplete data")
 
     min_avg_volume = config.get("min_avg_volume", 1_000_000)
 
-    # Phase 1: Download in batches, apply SMA20 +20% and volume filter per batch
+    # Phase 1: Download in batches, apply SMA20 +20% and volume filter
+    # Store per-ticker data to avoid re-downloading later
     logger.info("[HK Shorts] Downloading price data and filtering (this may take several minutes)...")
     batch_size = 500
     phase1 = []
+    ticker_closes: dict[str, object] = {}
+    ticker_volumes: dict[str, object] = {}
     for start in range(0, len(yf_tickers), batch_size):
         batch = yf_tickers[start : start + batch_size]
         logger.info(f"  Batch {start // batch_size + 1}/{(len(yf_tickers) - 1) // batch_size + 1} ({len(batch)} tickers)...")
-        batch_data = yf.download(batch, period="2mo", progress=False, group_by="ticker", threads=True)
+        batch_data = _yf_download_with_retry(
+            batch, period="2mo", progress=False, group_by="ticker", threads=True,
+        )
+        if batch_data is None or batch_data.empty:
+            logger.warning(f"  Batch failed after retries, skipping")
+            continue
 
+        single = len(batch) == 1
         for ticker in batch:
             try:
-                if len(batch) == 1:
-                    closes = batch_data["Close"].dropna()
-                    volumes = batch_data["Volume"].dropna()
-                else:
-                    closes = batch_data[ticker]["Close"].dropna()
-                    volumes = batch_data[ticker]["Volume"].dropna()
-
-                if market_open:
-                    if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
-                        closes = closes.iloc[:-1]
-                    if len(volumes) > 0 and volumes.index[-1].date() == now_hk.date():
-                        volumes = volumes.iloc[:-1]
+                closes, volumes = _get_closes_volumes(batch_data, ticker, single)
+                closes = _trim_today(closes, market_open, today)
+                volumes = _trim_today(volumes, market_open, today)
 
                 if len(closes) < 20 or len(volumes) < 20:
                     continue
@@ -87,6 +128,8 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
                 sma20 = closes.iloc[-20:].mean()
                 if closes.iloc[-1] > sma20 * 1.2 and volumes.iloc[-20:].mean() >= min_avg_volume:
                     phase1.append(ticker)
+                    ticker_closes[ticker] = closes
+                    ticker_volumes[ticker] = volumes
             except (KeyError, TypeError):
                 continue
 
@@ -97,23 +140,15 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     if not phase1:
         return len(codes), []
 
-    # Re-download data for survivors only (small set, fast)
-    logger.info(f"  Re-downloading data for {len(phase1)} survivors...")
-    data = yf.download(phase1, period="2mo", progress=False, group_by="ticker", threads=False)
-
-    # Phase 2: Market cap
+    # Phase 2: Market cap (with retries)
     min_market_cap = config.get("min_market_cap", 2_000_000_000)
     phase2 = []
     market_caps: dict[str, float] = {}
     for ticker in phase1:
-        try:
-            cap = yf.Ticker(ticker).fast_info.market_cap
-            if cap and cap >= min_market_cap:
-                phase2.append(ticker)
-                market_caps[ticker] = cap
-        except Exception as e:
-            logger.warning(f"  yfinance: failed to get market cap for {ticker}: {e}")
-            continue
+        cap = _get_market_cap(ticker)
+        if cap and cap >= min_market_cap:
+            phase2.append(ticker)
+            market_caps[ticker] = cap
         time.sleep(0.5)
 
     logger.info(f"  {len(phase2)} after market cap filter (>= {min_market_cap:,.0f} HKD)")
@@ -125,17 +160,8 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     phase3 = []
     for ticker in phase2:
         try:
-            if len(phase1) == 1:
-                closes = data["Close"].dropna()
-                volumes = data["Volume"].dropna()
-            else:
-                closes = data[ticker]["Close"].dropna()
-                volumes = data[ticker]["Volume"].dropna()
-            if market_open:
-                if len(closes) > 0 and closes.index[-1].date() == now_hk.date():
-                    closes = closes.iloc[:-1]
-                if len(volumes) > 0 and volumes.index[-1].date() == now_hk.date():
-                    volumes = volumes.iloc[:-1]
+            closes = ticker_closes[ticker]
+            volumes = ticker_volumes[ticker]
             if closes.iloc[-1] * volumes.iloc[-20:].mean() >= min_dv:
                 phase3.append(ticker)
         except (KeyError, TypeError):
@@ -161,12 +187,7 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
             if ticker in phase4:
                 continue
             try:
-                if len(phase1) == 1:
-                    closes = data["Close"].dropna()
-                else:
-                    closes = data[ticker]["Close"].dropna()
-                if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
-                    closes = closes.iloc[:-1]
+                closes = ticker_closes[ticker]
                 if len(closes) < trading_days + 1:
                     continue
                 perf = (closes.iloc[-1] - closes.iloc[-trading_days]) / closes.iloc[-trading_days] * 100
@@ -193,12 +214,7 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     phase5 = []
     for ticker in phase4:
         try:
-            if len(phase1) == 1:
-                closes = data["Close"].dropna()
-            else:
-                closes = data[ticker]["Close"].dropna()
-            if market_open and len(closes) > 0 and closes.index[-1].date() == now_hk.date():
-                closes = closes.iloc[:-1]
+            closes = ticker_closes[ticker]
             if len(closes) < 2:
                 continue
             consecutive = 0
@@ -489,6 +505,7 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
     project_root = Path(__file__).parent
     config_path = project_root / "config.toml"

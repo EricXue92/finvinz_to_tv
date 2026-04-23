@@ -47,9 +47,9 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Performance (Small Cap $300M–$2B) / 涨幅（小盘股 3-20 亿美元） | Up 300%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 300% |
 | Consecutive Up Days / 连续上涨天数 | 3+ consecutive green days (excludes today's incomplete data if market is still open) / 连续 3 天以上收涨（盘中扫描排除当天未完成数据） |
 
-Performance is checked over 2-week (10 trading days), 3-week (15 trading days), and 4-week (22 trading days) windows via yfinance. A ticker passes if it meets the cap-conditional threshold in any window. Results are aggregated.
+Performance is checked over 2-week (10 trading days), 3-week (15 trading days), and 4-week (22 trading days) windows via yfinance. A ticker passes if it meets the cap-conditional threshold in any window. Results are aggregated. Then the 3+ consecutive up days filter is applied to the aggregated results.
 
-涨幅通过 yfinance 在 2 周（10 个交易日）、3 周（15 个交易日）和 4 周（22 个交易日）窗口中检查。任意窗口满足对应市值级别的阈值即通过，三个窗口的结果合并。
+涨幅通过 yfinance 在 2 周（10 个交易日）、3 周（15 个交易日）和 4 周（22 个交易日）窗口中检查。任意窗口满足对应市值级别的阈值即通过，三个窗口的结果合并。然后对合并后的结果再过滤，要求最近至少连续 3 天收涨。
 
 ### RS - Relative Strength / 相对强度（conditional / 条件触发）
 
