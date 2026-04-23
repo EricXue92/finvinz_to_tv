@@ -250,8 +250,9 @@ def filter_shorts(
     perf_small_cap: float,
     delay: float,
 ) -> tuple[int, list[str]]:
-    """Run screener twice (Ownership + Performance), merge, and apply
-    cap-conditional month performance filter.
+    """Run screener twice (Ownership + Performance), apply cap-conditional
+    4-week performance filter via Finviz, then check 2/3-week performance
+    via yfinance for tickers that didn't pass.
     Returns (total_found, filtered_tickers)."""
     kwargs_own = {"filters": filters, "table": "Ownership"}
     if signal:
@@ -274,7 +275,10 @@ def filter_shorts(
     for stock in performance.data:
         perf_by_ticker[stock["Ticker"]] = stock
 
-    tickers = []
+    # 4-week check via Finviz Perf Month
+    passed: set[str] = set()
+    failed: list[str] = []
+    failed_caps: dict[str, float] = {}
     for ticker, own in own_by_ticker.items():
         try:
             market_cap = parse_number(own["Market Cap"])
@@ -293,11 +297,57 @@ def filter_shorts(
                 threshold = perf_small_cap
 
             if month_perf >= threshold:
-                tickers.append(ticker)
+                passed.add(ticker)
+            else:
+                failed.append(ticker)
+                failed_caps[ticker] = market_cap
         except (KeyError, ValueError):
             pass
 
-    return total, tickers
+    logger.info(f"  4-week (Finviz): {len(passed)} hits")
+
+    # 2/3-week check via yfinance for tickers that didn't pass 4-week
+    if failed:
+        data = yf.download(failed, period="2mo", progress=False, group_by="ticker", threads=False)
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        market_open = now_et.hour < 16 and now_et.weekday() < 5
+
+        for weeks in [2, 3]:
+            trading_days = weeks * 5  # 10, 15
+            week_hits = 0
+            for ticker in failed:
+                if ticker in passed:
+                    continue
+                try:
+                    if len(failed) == 1:
+                        closes = data["Close"].dropna()
+                    else:
+                        closes = data[ticker]["Close"].dropna()
+
+                    if market_open and len(closes) > 0 and closes.index[-1].date() == now_et.date():
+                        closes = closes.iloc[:-1]
+
+                    if len(closes) < trading_days + 1:
+                        continue
+
+                    perf = (closes.iloc[-1] - closes.iloc[-trading_days]) / closes.iloc[-trading_days] * 100
+                    market_cap = failed_caps[ticker]
+
+                    if market_cap >= 10e9:
+                        threshold = perf_large_cap
+                    elif market_cap >= 2e9:
+                        threshold = perf_mid_cap
+                    else:
+                        threshold = perf_small_cap
+
+                    if perf >= threshold:
+                        passed.add(ticker)
+                        week_hits += 1
+                except (KeyError, ValueError):
+                    continue
+            logger.info(f"  {weeks}-week (yfinance): {week_hits} new hits")
+
+    return total, list(passed)
 
 
 def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
