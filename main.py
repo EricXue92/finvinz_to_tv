@@ -264,9 +264,11 @@ def filter_shorts(
     perf_large_cap: float,
     perf_mid_cap: float,
     perf_small_cap: float,
+    min_dollar_volume: float,
+    min_consecutive_up_days: int,
 ) -> tuple[int, list[str]]:
-    """Run Finviz screener for Ownership data (market cap), then apply
-    cap-conditional performance filter over 2/3/4-week windows via yfinance.
+    """Run shorts pipeline: finviz Ownership → single yfinance download →
+    performance / dollar-volume / consecutive-up-days filters.
     Returns (total_found, filtered_tickers)."""
     kwargs_own = {"filters": filters, "table": "Ownership"}
     if signal:
@@ -288,10 +290,20 @@ def filter_shorts(
     if not tickers:
         return total, []
 
-    data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
+    # Single yfinance download — shared by all three filters
+    data = _yf_download_with_retry(
+        tickers, period="2mo", progress=False, group_by="ticker", threads=False
+    )
+
     now_et = datetime.now(ZoneInfo("America/New_York"))
     market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
+    today_et = now_et.date()
+    if market_open:
+        logger.info("  US market still open, excluding today's incomplete data")
 
+    single = len(tickers) == 1
+
+    # 1. Performance filter (cap-conditional, 2/3/4-week windows)
     perf_weeks = [2, 3, 4]
     passed: set[str] = set()
     for weeks in perf_weeks:
@@ -301,13 +313,11 @@ def filter_shorts(
             if ticker in passed:
                 continue
             try:
-                if len(tickers) == 1:
+                if single:
                     closes = data["Close"].dropna()
                 else:
                     closes = data[ticker]["Close"].dropna()
-
-                if market_open and len(closes) > 0 and closes.index[-1].date() == now_et.date():
-                    closes = closes.iloc[:-1]
+                closes = _trim_today(closes, market_open, today_et)
 
                 if len(closes) < trading_days + 1:
                     continue
@@ -329,8 +339,28 @@ def filter_shorts(
                 continue
         logger.info(f"  {weeks}-week window: {week_hits} new hits")
 
-    logger.info(f"  {len(passed)} after performance filter (2/3/4 week combined)")
-    return total, list(passed)
+    perf_passed = list(passed)
+    logger.info(f"  {len(perf_passed)} after performance filter (2/3/4 week combined)")
+
+    # 2. Dollar volume filter (uses same data)
+    if min_dollar_volume > 0 and perf_passed:
+        dv_passed = _filter_dollar_volume_from_data(
+            perf_passed, data, min_dollar_volume, market_open, today_et
+        )
+        logger.info(f"  {len(dv_passed)} after dollar volume filter (20-day avg)")
+    else:
+        dv_passed = perf_passed
+
+    # 3. Consecutive up days filter (uses same data)
+    if min_consecutive_up_days > 0 and dv_passed:
+        final = _filter_consecutive_up_days_from_data(
+            dv_passed, data, min_consecutive_up_days, market_open, today_et
+        )
+        logger.info(f"  {len(final)} after consecutive up days filter (>= {min_consecutive_up_days})")
+    else:
+        final = dv_passed
+
+    return total, final
 
 
 def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
