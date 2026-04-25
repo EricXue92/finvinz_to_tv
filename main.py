@@ -345,7 +345,7 @@ def filter_shorts(
     # 2. Dollar volume filter (uses same data)
     if min_dollar_volume > 0 and perf_passed:
         dv_passed = _filter_dollar_volume_from_data(
-            perf_passed, data, min_dollar_volume, market_open, today_et
+            perf_passed, data, min_dollar_volume, market_open, today_et, single
         )
         logger.info(f"  {len(dv_passed)} after dollar volume filter (20-day avg)")
     else:
@@ -354,7 +354,7 @@ def filter_shorts(
     # 3. Consecutive up days filter (uses same data)
     if min_consecutive_up_days > 0 and dv_passed:
         final = _filter_consecutive_up_days_from_data(
-            dv_passed, data, min_consecutive_up_days, market_open, today_et
+            dv_passed, data, min_consecutive_up_days, market_open, today_et, single
         )
         logger.info(f"  {len(final)} after consecutive up days filter (>= {min_consecutive_up_days})")
     else:
@@ -415,6 +415,7 @@ def _filter_consecutive_up_days_from_data(
     min_days: int,
     market_open: bool,
     today_date,
+    single: bool,
 ) -> list[str]:
     """Filter tickers to those with >= min_days consecutive up days,
     using a pre-downloaded yfinance DataFrame.
@@ -422,7 +423,6 @@ def _filter_consecutive_up_days_from_data(
     if not tickers:
         return []
 
-    single = len(tickers) == 1
     result = []
     for ticker in tickers:
         try:
@@ -503,6 +503,7 @@ def _filter_dollar_volume_from_data(
     min_dollar_volume: float,
     market_open: bool,
     today_date,
+    single: bool,
     days: int = 20,
 ) -> list[str]:
     """Filter tickers by dollar volume using a pre-downloaded yfinance DataFrame.
@@ -511,7 +512,6 @@ def _filter_dollar_volume_from_data(
     if not tickers:
         return []
 
-    single = len(tickers) == 1
     result = []
     for ticker in tickers:
         try:
