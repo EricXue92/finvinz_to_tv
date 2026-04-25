@@ -133,21 +133,21 @@ The script runs daily after US market close via macOS launchd, with `pmset` to w
 
 脚本通过 macOS launchd 在美股收盘后每日自动运行，使用 `pmset` 从睡眠中唤醒 Mac。
 
-**Schedule / 时间表:** Tue-Sat 6:00 AM HKT = Mon-Fri after US market close. 6 AM HKT is safe for both EDT (2h after close) and EST (1h after close).
+**Schedule / 时间表:** Tue-Sat 8:30 AM HKT = Mon-Fri after US market close. 8:30 AM HKT is safe for both EDT (4.5h after close) and EST (3.5h after close), and allows yfinance/Finviz EOD data to fully settle before the run — earlier times (e.g. 6 AM) can produce noisier results due to stale or partial data.
 
-**时间表：**周二至周六早上 6:00（香港时间）= 周一至周五美股收盘后。6:00 HKT 在 EDT（收盘后 2 小时）和 EST（收盘后 1 小时）下均安全。
+**时间表：**周二至周六早上 8:30（香港时间）= 周一至周五美股收盘后。8:30 HKT 在 EDT（收盘后 4.5 小时）和 EST（收盘后 3.5 小时）下均安全，且能让 yfinance/Finviz 的 EOD 数据完全落盘再运行 —— 过早的时间（如 6:00）可能因数据未稳定而产生波动较大的结果。
 
 ### How it works / 工作原理
 
-1. **`pmset repeat`** wakes the Mac at 5:59 AM HKT (Tue-Sat) / 在 5:59 AM HKT 唤醒 Mac
-2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 6:00 AM / 在 6:00 AM 运行脚本
+1. **`pmset repeat`** wakes the Mac at 8:29 AM HKT (Tue-Sat) / 在 8:29 AM HKT 唤醒 Mac
+2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 8:30 AM / 在 8:30 AM 运行脚本
 3. After execution, the Mac automatically returns to sleep / 执行完毕后 Mac 自动回到睡眠
 
 ### Setup / 设置
 
 ```bash
-# Schedule Mac to wake at 5:59 AM Tue-Sat / 设置 Mac 在周二至周六 5:59 AM 唤醒
-sudo pmset repeat wakeorpoweron TWRFS 05:59:00
+# Schedule Mac to wake at 8:29 AM Tue-Sat / 设置 Mac 在周二至周六 8:29 AM 唤醒
+sudo pmset repeat wakeorpoweron TWRFS 08:29:00
 
 # Verify wake schedule / 验证唤醒计划
 pmset -g sched
@@ -168,7 +168,7 @@ launchctl unload ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
 launchctl list | grep finviz
 ```
 
-> **Note / 注意:** Unlike cron, launchd will catch up on missed runs — if the Mac was asleep at 6:00 AM, the task executes as soon as the Mac wakes up. / 与 cron 不同，launchd 会补执行错过的任务 — 如果 Mac 在 6:00 AM 处于睡眠状态，任务会在唤醒后立即执行。
+> **Note / 注意:** Unlike cron, launchd will catch up on missed runs — if the Mac was asleep at 8:30 AM, the task executes as soon as the Mac wakes up. / 与 cron 不同，launchd 会补执行错过的任务 — 如果 Mac 在 8:30 AM 处于睡眠状态，任务会在唤醒后立即执行。
 
 ## Configuration / 配置
 
