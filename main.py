@@ -686,18 +686,10 @@ def main() -> int:
                 perf_large_cap=shorts_cfg.get("perf_large_cap", 50),
                 perf_mid_cap=shorts_cfg.get("perf_mid_cap", 200),
                 perf_small_cap=shorts_cfg.get("perf_small_cap", 300),
+                min_dollar_volume=shorts_cfg.get("min_dollar_volume", 100_000_000),
+                min_consecutive_up_days=shorts_cfg.get("min_consecutive_up_days", 3),
             )
-            logger.info(f"  Found {total} tickers, {len(shorts_tickers)} after performance filter")
-
-            shorts_min_dv = shorts_cfg.get("min_dollar_volume", 100_000_000)
-            if shorts_min_dv > 0 and shorts_tickers:
-                shorts_tickers = filter_dollar_volume_yf(shorts_tickers, shorts_min_dv)
-                logger.info(f"  {len(shorts_tickers)} after dollar volume filter (20-day avg)")
-
-            min_up_days = shorts_cfg.get("min_consecutive_up_days", 3)
-            if shorts_tickers and min_up_days > 0:
-                shorts_tickers = filter_consecutive_up_days(shorts_tickers, min_up_days)
-                logger.info(f"  {len(shorts_tickers)} after consecutive up days filter (>= {min_up_days})")
+            logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
             if shorts_tickers:
                 sorted_shorts = sorted(set(shorts_tickers))
