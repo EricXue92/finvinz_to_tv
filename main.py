@@ -419,7 +419,7 @@ def _filter_consecutive_up_days_from_data(
 ) -> list[str]:
     """Filter tickers to those with >= min_days consecutive up days,
     using a pre-downloaded yfinance DataFrame.
-    Lenient: tickers with no data are kept."""
+    Strict: tickers with no data are dropped."""
     if not tickers:
         return []
 
@@ -433,8 +433,7 @@ def _filter_consecutive_up_days_from_data(
             closes = _trim_today(closes, market_open, today_date)
 
             if len(closes) < 2:
-                logger.warning(f"  yfinance: no data for {ticker}, keeping it")
-                result.append(ticker)
+                logger.warning(f"  yfinance: no data for {ticker}, dropping")
                 continue
 
             consecutive = 0
@@ -447,15 +446,16 @@ def _filter_consecutive_up_days_from_data(
             if consecutive >= min_days:
                 result.append(ticker)
         except (KeyError, TypeError):
-            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
-            result.append(ticker)
+            logger.warning(f"  yfinance: failed to process {ticker}, dropping")
 
     return result
 
 
 def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: int = 20) -> list[str]:
     """Filter tickers by dollar volume using yfinance N-day average volume.
-    Dollar volume = latest close price * N-day average volume."""
+    Dollar volume = latest close price * N-day average volume.
+    Strict: tickers with missing/insufficient data are dropped — safe_write_watchlist
+    guards against catastrophic yfinance failures."""
     if not tickers:
         return []
 
@@ -481,8 +481,7 @@ def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: 
                     volumes = volumes.iloc[:-1]
 
             if len(volumes) < days or len(closes) < 1:
-                logger.warning(f"  yfinance: insufficient data for {ticker}, keeping it")
-                result.append(ticker)
+                logger.warning(f"  yfinance: insufficient data for {ticker}, dropping")
                 continue
 
             price = closes.iloc[-1]
@@ -491,8 +490,7 @@ def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: 
             if price * avg_vol >= min_dollar_volume:
                 result.append(ticker)
         except (KeyError, TypeError):
-            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
-            result.append(ticker)
+            logger.warning(f"  yfinance: failed to process {ticker}, dropping")
 
     return result
 
@@ -508,7 +506,7 @@ def _filter_dollar_volume_from_data(
 ) -> list[str]:
     """Filter tickers by dollar volume using a pre-downloaded yfinance DataFrame.
     Dollar volume = latest close price * N-day average volume.
-    Lenient: tickers with insufficient data are kept."""
+    Strict: tickers with insufficient data are dropped."""
     if not tickers:
         return []
 
@@ -520,8 +518,7 @@ def _filter_dollar_volume_from_data(
             volumes = _trim_today(volumes, market_open, today_date)
 
             if len(volumes) < days or len(closes) < 1:
-                logger.warning(f"  yfinance: insufficient data for {ticker}, keeping it")
-                result.append(ticker)
+                logger.warning(f"  yfinance: insufficient data for {ticker}, dropping")
                 continue
 
             price = closes.iloc[-1]
@@ -530,15 +527,15 @@ def _filter_dollar_volume_from_data(
             if price * avg_vol >= min_dollar_volume:
                 result.append(ticker)
         except (KeyError, TypeError):
-            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
-            result.append(ticker)
+            logger.warning(f"  yfinance: failed to process {ticker}, dropping")
 
     return result
 
 
 def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) -> list[str]:
     """Filter tickers by relative volume: latest day's volume / N-day average volume >= min_rvol.
-    Uses yfinance to fetch daily volume data."""
+    Uses yfinance to fetch daily volume data.
+    Strict: tickers with missing/insufficient data are dropped."""
     if not tickers:
         return []
 
@@ -559,8 +556,7 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
                 volumes = volumes.iloc[:-1]
 
             if len(volumes) < days + 1:
-                logger.warning(f"  yfinance: insufficient volume data for {ticker}, keeping it")
-                result.append(ticker)
+                logger.warning(f"  yfinance: insufficient volume data for {ticker}, dropping")
                 continue
 
             current_vol = volumes.iloc[-1]
@@ -571,8 +567,7 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
                 if rvol >= min_rvol:
                     result.append(ticker)
         except (KeyError, TypeError):
-            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
-            result.append(ticker)
+            logger.warning(f"  yfinance: failed to process {ticker}, dropping")
 
     return result
 
