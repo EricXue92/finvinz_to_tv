@@ -379,6 +379,50 @@ def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
     return result
 
 
+def _filter_consecutive_up_days_from_data(
+    tickers: list[str],
+    data,
+    min_days: int,
+    market_open: bool,
+    today_date,
+) -> list[str]:
+    """Filter tickers to those with >= min_days consecutive up days,
+    using a pre-downloaded yfinance DataFrame.
+    Lenient: tickers with no data are kept."""
+    if not tickers:
+        return []
+
+    single = len(tickers) == 1
+    result = []
+    for ticker in tickers:
+        try:
+            if single:
+                closes = data["Close"].dropna()
+            else:
+                closes = data[ticker]["Close"].dropna()
+            closes = _trim_today(closes, market_open, today_date)
+
+            if len(closes) < 2:
+                logger.warning(f"  yfinance: no data for {ticker}, keeping it")
+                result.append(ticker)
+                continue
+
+            consecutive = 0
+            for i in range(len(closes) - 1, 0, -1):
+                if closes.iloc[i] > closes.iloc[i - 1]:
+                    consecutive += 1
+                else:
+                    break
+
+            if consecutive >= min_days:
+                result.append(ticker)
+        except (KeyError, TypeError):
+            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
+            result.append(ticker)
+
+    return result
+
+
 def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: int = 20) -> list[str]:
     """Filter tickers by dollar volume using yfinance N-day average volume.
     Dollar volume = latest close price * N-day average volume."""
