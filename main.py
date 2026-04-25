@@ -423,6 +423,45 @@ def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: 
     return result
 
 
+def _filter_dollar_volume_from_data(
+    tickers: list[str],
+    data,
+    min_dollar_volume: float,
+    market_open: bool,
+    today_date,
+    days: int = 20,
+) -> list[str]:
+    """Filter tickers by dollar volume using a pre-downloaded yfinance DataFrame.
+    Dollar volume = latest close price * N-day average volume.
+    Lenient: tickers with insufficient data are kept."""
+    if not tickers:
+        return []
+
+    single = len(tickers) == 1
+    result = []
+    for ticker in tickers:
+        try:
+            closes, volumes = _get_closes_volumes(data, ticker, single)
+            closes = _trim_today(closes, market_open, today_date)
+            volumes = _trim_today(volumes, market_open, today_date)
+
+            if len(volumes) < days or len(closes) < 1:
+                logger.warning(f"  yfinance: insufficient data for {ticker}, keeping it")
+                result.append(ticker)
+                continue
+
+            price = closes.iloc[-1]
+            avg_vol = volumes.iloc[-days:].mean()
+
+            if price * avg_vol >= min_dollar_volume:
+                result.append(ticker)
+        except (KeyError, TypeError):
+            logger.warning(f"  yfinance: failed to process {ticker}, keeping it")
+            result.append(ticker)
+
+    return result
+
+
 def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) -> list[str]:
     """Filter tickers by relative volume: latest day's volume / N-day average volume >= min_rvol.
     Uses yfinance to fetch daily volume data."""
