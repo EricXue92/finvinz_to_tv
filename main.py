@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Finviz screener to TradingView watchlist generator."""
 
+import argparse
 import logging
 import sys
 import time
@@ -762,6 +763,16 @@ def safe_write_watchlist(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        choices=["eod", "morning-gap"],
+        default="eod",
+        help="eod: run end-of-day scanners (Longs/Shorts/RS/HK Shorts). "
+             "morning-gap: run intraday gap-up scanner.",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -785,28 +796,6 @@ def main() -> int:
     # Global dollar volume threshold ($100M) — shared by Longs and RS
     min_dollar_volume = settings.get("min_dollar_volume", 0)
 
-    # --- Longs ---
-    longs_tickers: set[str] = set()
-    for i, screener_cfg in enumerate(config.get("longs", [])):
-        name = screener_cfg["name"]
-        logger.info(f"[Longs] Running: {name}")
-        try:
-            tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
-            logger.info(f"  Found {len(tickers)} tickers")
-            if min_dollar_volume > 0 and tickers:
-                tickers = filter_dollar_volume_yf(tickers, min_dollar_volume)
-                logger.info(f"  {len(tickers)} after dollar volume filter (20-day avg)")
-            min_rvol = screener_cfg.get("min_relative_volume")
-            if min_rvol and tickers:
-                rvol_days = screener_cfg.get("relative_volume_days", 20)
-                tickers = filter_relative_volume(tickers, min_rvol, rvol_days)
-                logger.info(f"  {len(tickers)} after relative volume filter (>= {min_rvol}x {rvol_days}-day avg)")
-            longs_tickers.update(tickers)
-        except Exception as e:
-            logger.warning(f"  Failed: {e}")
-        if i < len(config.get("longs", [])) - 1:
-            time.sleep(delay)
-
     today = date.today().strftime("%Y_%m_%d")
 
     us_output_dir = output_dir / "US"
@@ -814,91 +803,151 @@ def main() -> int:
     hk_output_dir = output_dir / "HK"
     hk_output_dir.mkdir(exist_ok=True)
 
-    if longs_tickers:
-        sorted_longs = sorted(longs_tickers)
-        if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
-            logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
-            safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
-    else:
-        logger.warning("[Longs] No tickers found")
-
-    time.sleep(delay)
-
-    # --- Shorts ---
-    shorts_cfg = config.get("shorts")
-    if shorts_cfg:
-        logger.info(f"[Shorts] Running: {shorts_cfg['name']}")
-        try:
-            total, shorts_tickers = filter_shorts(
-                shorts_cfg["filters"],
-                shorts_cfg.get("signal"),
-                perf_large_cap=shorts_cfg.get("perf_large_cap", 50),
-                perf_mid_cap=shorts_cfg.get("perf_mid_cap", 200),
-                perf_small_cap=shorts_cfg.get("perf_small_cap", 300),
-                min_dollar_volume=shorts_cfg.get("min_dollar_volume", 100_000_000),
-                min_consecutive_up_days=shorts_cfg.get("min_consecutive_up_days", 3),
-            )
-            logger.info(f"  Found {total} tickers from finviz Ownership screener")
-
-            if shorts_tickers:
-                sorted_shorts = sorted(set(shorts_tickers))
-                if safe_write_watchlist(sorted_shorts, us_output_dir / "Shorts.txt", fmt):
-                    logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> output/US/Shorts.txt")
-                    safe_write_watchlist(sorted_shorts, us_output_dir / f"{today}_Shorts.txt", fmt)
-            else:
-                logger.warning("[Shorts] No tickers found after all filters")
-        except Exception as e:
-            logger.warning(f"[Shorts] Failed: {e}")
-
-    time.sleep(delay)
-
-    # --- RS (conditional) ---
-    rs_cfg = config.get("rs")
-    if rs_cfg:
-        logger.info("[RS] Checking market condition...")
-        try:
-            if check_market_down():
-                logger.info("[RS] Condition met, running screener...")
+    if args.mode == "eod":
+        # --- Longs ---
+        longs_tickers: set[str] = set()
+        for i, screener_cfg in enumerate(config.get("longs", [])):
+            name = screener_cfg["name"]
+            logger.info(f"[Longs] Running: {name}")
+            try:
+                tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
+                logger.info(f"  Found {len(tickers)} tickers")
+                if min_dollar_volume > 0 and tickers:
+                    tickers = filter_dollar_volume_yf(tickers, min_dollar_volume)
+                    logger.info(f"  {len(tickers)} after dollar volume filter (20-day avg)")
+                min_rvol = screener_cfg.get("min_relative_volume")
+                if min_rvol and tickers:
+                    rvol_days = screener_cfg.get("relative_volume_days", 20)
+                    tickers = filter_relative_volume(tickers, min_rvol, rvol_days)
+                    logger.info(f"  {len(tickers)} after relative volume filter (>= {min_rvol}x {rvol_days}-day avg)")
+                longs_tickers.update(tickers)
+            except Exception as e:
+                logger.warning(f"  Failed: {e}")
+            if i < len(config.get("longs", [])) - 1:
                 time.sleep(delay)
-                rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
-                logger.info(f"  Found {len(rs_tickers)} tickers")
-                if min_dollar_volume > 0 and rs_tickers:
-                    rs_tickers = filter_dollar_volume_yf(rs_tickers, min_dollar_volume)
-                    logger.info(f"  {len(rs_tickers)} after dollar volume filter (20-day avg)")
-                if rs_tickers:
-                    sorted_rs = sorted(set(rs_tickers))
-                    if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
-                        logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
-                        safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
+
+        if longs_tickers:
+            sorted_longs = sorted(longs_tickers)
+            if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
+                logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
+                safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
+        else:
+            logger.warning("[Longs] No tickers found")
+
+        time.sleep(delay)
+
+        # --- Shorts ---
+        shorts_cfg = config.get("shorts")
+        if shorts_cfg:
+            logger.info(f"[Shorts] Running: {shorts_cfg['name']}")
+            try:
+                total, shorts_tickers = filter_shorts(
+                    shorts_cfg["filters"],
+                    shorts_cfg.get("signal"),
+                    perf_large_cap=shorts_cfg.get("perf_large_cap", 50),
+                    perf_mid_cap=shorts_cfg.get("perf_mid_cap", 200),
+                    perf_small_cap=shorts_cfg.get("perf_small_cap", 300),
+                    min_dollar_volume=shorts_cfg.get("min_dollar_volume", 100_000_000),
+                    min_consecutive_up_days=shorts_cfg.get("min_consecutive_up_days", 3),
+                )
+                logger.info(f"  Found {total} tickers from finviz Ownership screener")
+
+                if shorts_tickers:
+                    sorted_shorts = sorted(set(shorts_tickers))
+                    if safe_write_watchlist(sorted_shorts, us_output_dir / "Shorts.txt", fmt):
+                        logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> output/US/Shorts.txt")
+                        safe_write_watchlist(sorted_shorts, us_output_dir / f"{today}_Shorts.txt", fmt)
                 else:
-                    logger.warning("[RS] No tickers found")
-            else:
-                logger.info("[RS] Condition not met (SPY/QQQ not both down >1.5%), skipping")
-        except Exception as e:
-            logger.warning(f"[RS] Failed: {e}")
+                    logger.warning("[Shorts] No tickers found after all filters")
+            except Exception as e:
+                logger.warning(f"[Shorts] Failed: {e}")
 
-    # --- HK Shorts ---
-    hk_shorts_cfg = config.get("hk_shorts")
-    if hk_shorts_cfg:
-        logger.info(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
+        time.sleep(delay)
+
+        # --- RS (conditional) ---
+        rs_cfg = config.get("rs")
+        if rs_cfg:
+            logger.info("[RS] Checking market condition...")
+            try:
+                if check_market_down():
+                    logger.info("[RS] Condition met, running screener...")
+                    time.sleep(delay)
+                    rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
+                    logger.info(f"  Found {len(rs_tickers)} tickers")
+                    if min_dollar_volume > 0 and rs_tickers:
+                        rs_tickers = filter_dollar_volume_yf(rs_tickers, min_dollar_volume)
+                        logger.info(f"  {len(rs_tickers)} after dollar volume filter (20-day avg)")
+                    if rs_tickers:
+                        sorted_rs = sorted(set(rs_tickers))
+                        if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
+                            logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
+                            safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
+                    else:
+                        logger.warning("[RS] No tickers found")
+                else:
+                    logger.info("[RS] Condition not met (SPY/QQQ not both down >1.5%), skipping")
+            except Exception as e:
+                logger.warning(f"[RS] Failed: {e}")
+
+        # --- HK Shorts ---
+        hk_shorts_cfg = config.get("hk_shorts")
+        if hk_shorts_cfg:
+            logger.info(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
+            try:
+                total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
+                logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
+
+                if hk_shorts_tickers:
+                    sorted_hk = sorted(hk_shorts_tickers)
+                    if safe_write_watchlist(sorted_hk, hk_output_dir / "Shorts.txt", fmt):
+                        logger.info(
+                            f"[HK Shorts] Final: {len(sorted_hk)} tickers "
+                            f"-> output/HK/Shorts.txt"
+                        )
+                        safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_Shorts.txt", fmt)
+                else:
+                    logger.warning("[HK Shorts] No tickers found after all filters")
+            except Exception as e:
+                logger.warning(f"[HK Shorts] Failed: {e}")
+
+        logger.info("Done.")
+        return 0
+
+    if args.mode == "morning-gap":
+        morning_cfg = config.get("morning_gap")
+        if not morning_cfg:
+            logger.error("[Morning Gap] No [morning_gap] config section found")
+            return 1
+
+        logger.info(f"[Morning Gap] Running: {morning_cfg['name']}")
         try:
-            total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
-            logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
-
-            if hk_shorts_tickers:
-                sorted_hk = sorted(hk_shorts_tickers)
-                if safe_write_watchlist(sorted_hk, hk_output_dir / "Shorts.txt", fmt):
-                    logger.info(
-                        f"[HK Shorts] Final: {len(sorted_hk)} tickers "
-                        f"-> output/HK/Shorts.txt"
-                    )
-                    safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_Shorts.txt", fmt)
-            else:
-                logger.warning("[HK Shorts] No tickers found after all filters")
+            offset, tickers = run_morning_gap(morning_cfg)
         except Exception as e:
-            logger.warning(f"[HK Shorts] Failed: {e}")
+            logger.warning(f"[Morning Gap] Failed: {e}")
+            return 1
 
-    logger.info("Done.")
+        if offset == -1:
+            return 0  # Outside scan window — not an error
+
+        if tickers:
+            sorted_tickers = sorted(set(tickers))
+            if safe_write_watchlist(sorted_tickers, us_output_dir / "MorningGap.txt", fmt):
+                logger.info(
+                    f"[Morning Gap] +{offset}min: {len(sorted_tickers)} tickers "
+                    f"-> output/US/MorningGap.txt"
+                )
+                if offset == morning_cfg.get("archive_offset", 30):
+                    safe_write_watchlist(
+                        sorted_tickers,
+                        us_output_dir / f"{today}_MorningGap.txt",
+                        fmt,
+                    )
+        else:
+            logger.warning("[Morning Gap] No tickers passed filters")
+
+        logger.info("Done.")
+        return 0
+
     return 0
 
 
