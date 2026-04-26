@@ -229,7 +229,18 @@ launchctl list | grep morning-gap
 tail -f /tmp/finviz-to-tv-morning-gap.log
 ```
 
-> **Wake-up / 唤醒:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). The intraday scanner assumes the Mac is awake during 21:00–23:00 HKT (typical evening use). If your Mac sleeps in this window, intraday scans will be missed — add a `pmset schedule` per-day entry if needed. / `pmset repeat` 只支持一组唤醒计划（已被 8:29 AM 的 EOD 唤醒占用）。盘中扫描默认 Mac 在 21:00–23:00 HKT 期间处于活跃状态（晚间使用）。如果该时段 Mac 自动睡眠会漏跑 —— 可按需用 `pmset schedule` 添加单次预约。
+> **Wake-up / 唤醒:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). For the intraday scanner, run `scripts/schedule_morning_gap_wakes.py` to schedule per-day `pmset schedule wake` entries at 21:29 and 22:29 HKT (covers EDT and EST). Re-run weekly to top up. / `pmset repeat` 只支持一组唤醒计划（已被 8:29 AM 的 EOD 唤醒占用）。盘中扫描的唤醒通过 `scripts/schedule_morning_gap_wakes.py` 添加每日单次预约（21:29 和 22:29 HKT，覆盖 EDT 和 EST），每周重跑一次补充新的预约。
+
+```bash
+# Schedule next 14 weekdays of wakes (one-shot events, requires sudo)
+sudo uv run scripts/schedule_morning_gap_wakes.py
+
+# Or specify number of days
+sudo uv run scripts/schedule_morning_gap_wakes.py 30
+
+# Verify
+pmset -g sched
+```
 
 ## Configuration / 配置
 
