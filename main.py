@@ -5,7 +5,7 @@ import logging
 import sys
 import time
 import tomllib
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import io
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -528,6 +528,59 @@ def _filter_dollar_volume_from_data(
                 result.append(ticker)
         except (KeyError, TypeError):
             logger.warning(f"  yfinance: failed to process {ticker}, dropping")
+
+    return result
+
+
+def _filter_intraday_cumulative_volume(
+    tickers: list[str],
+    intraday_data,
+    avg_daily_volumes: dict[str, float],
+    offset_minutes: int,
+) -> list[str]:
+    """For each ticker, sum the 1-minute volume bars from 9:30 ET up to
+    9:30 + offset_minutes ET (exclusive of the +offset bar) and keep
+    tickers whose cumulative volume >= their 20-day average daily volume.
+    Strict: tickers with missing data are dropped."""
+    if not tickers:
+        return []
+
+    et = ZoneInfo("America/New_York")
+    today_et = datetime.now(et).date()
+    open_ts = datetime.combine(today_et, datetime.min.time(), tzinfo=et).replace(hour=9, minute=30)
+    end_ts = open_ts + timedelta(minutes=offset_minutes)
+
+    single = len(tickers) == 1
+    result = []
+    for ticker in tickers:
+        try:
+            if single:
+                volumes = intraday_data["Volume"].dropna()
+            else:
+                volumes = intraday_data[ticker]["Volume"].dropna()
+
+            if len(volumes) == 0:
+                logger.warning(f"  yfinance 1m: no data for {ticker}, dropping")
+                continue
+
+            # yfinance 1m index is tz-aware in ET (or UTC depending on version).
+            # Normalize to ET for comparison.
+            idx = volumes.index
+            if idx.tz is None:
+                idx = idx.tz_localize("America/New_York")
+            else:
+                idx = idx.tz_convert("America/New_York")
+            mask = (idx >= open_ts) & (idx < end_ts)
+            cumulative = volumes[mask.values].sum()
+
+            avg_daily = avg_daily_volumes.get(ticker)
+            if avg_daily is None or avg_daily <= 0:
+                continue
+
+            if cumulative >= avg_daily:
+                result.append(ticker)
+        except (KeyError, TypeError, AttributeError):
+            logger.warning(f"  yfinance 1m: failed to process {ticker}, dropping")
 
     return result
 
