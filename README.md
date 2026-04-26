@@ -90,6 +90,33 @@ HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
 
 港股代码以 `HKEX:XXXX` 格式输出，适用于 TradingView（如 `HKEX:0700`）。
 
+### Morning Gap / 盘中跳空（intraday, 5 scans / 盘中扫描，5 次）
+
+Intraday scanner running at +10/+15/+20/+25/+30 minutes after US market open. Captures stocks with a strong gap-up that have already traded their full daily average volume in the first 30 minutes — a signal of catalyst-driven institutional buying (earnings, FDA, M&A, sector news).
+
+盘中扫描器，在美股开盘后 +10/+15/+20/+25/+30 分钟各运行一次。捕捉跳空高开且在头 30 分钟内累计成交量已达到日均量的股票 —— 这通常是催化剂驱动机构买入的信号（财报、FDA、并购、行业新闻）。
+
+**Phase 1 — Finviz filters / 第一阶段 — Finviz 筛选：**
+
+| Filter / 筛选条件 | Criteria / 标准 |
+|--------|----------|
+| Avg Volume / 日均成交量 | > 500K |
+| Price / 股价 | > $10 |
+| Beta | > 1.5 |
+| Gap Up / 跳空 | >= 5% |
+| SMA200 | Price above SMA200 / 价格在 200 日均线之上 |
+
+**Phase 2 — Post-processing (via yfinance) / 第二阶段 — 后处理（通过 yfinance）：**
+
+| Filter / 筛选条件 | Criteria / 标准 |
+|--------|----------|
+| Dollar Volume / 成交额 | Price × 20-day avg volume >= $100M / 价格 × 20 日均量 >= 1 亿美元 |
+| Intraday Cumulative Volume / 盘中累计成交量 | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume / 9:30 ET 起到 9:30+offset ET 的累计成交量 >= 20 日全天均量 |
+
+The intraday volume threshold is the key signal — by 10-30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15-30 minutes after the open."
+
+盘中成交量阈值是关键信号 —— 在开盘后 10-30 分钟内,股票已完成一天的交易量。按 Kullamägi 方法论:"最强的票在开盘后 15-30 分钟内就交易完一天的均量。"
+
 ## Output / 输出
 
 ```
@@ -101,6 +128,9 @@ output/
 │   ├── 2026_04_21_Longs.txt   # Date-stamped archives / 日期归档
 │   ├── 2026_04_21_Shorts.txt
 │   └── 2026_04_21_RS.txt
+├── US/
+│   ├── MorningGap.txt           # Latest intraday morning-gap snapshot / 最新盘中跳空快照
+│   └── 2026_04_27_MorningGap.txt # Date-stamped (only +30min scan archived) / 日期归档（仅 +30 分钟那次）
 └── HK/
     ├── Shorts.txt             # Latest HK short candidates / 最新港股做空候选
     └── 2026_04_21_Shorts.txt
@@ -116,9 +146,16 @@ Each run generates both a latest file (e.g. `Shorts.txt`) and a date-stamped cop
 # Install dependencies / 安装依赖
 uv sync
 
-# Run manually / 手动运行
+# Run EOD pipeline manually (Longs/Shorts/RS/HK Shorts) / 手动运行 EOD 流程
 uv run main.py
+
+# Run intraday morning-gap scan manually / 手动运行盘中扫描
+uv run main.py --mode morning-gap
 ```
+
+The morning-gap scanner auto-detects current US ET time and runs the matching scan (+10/+15/+20/+25/+30 min after open, ±2 min tolerance). Outside this window it logs and exits cleanly.
+
+盘中扫描器会自动检测当前美东时间，匹配对应的扫描时点（开盘后 +10/+15/+20/+25/+30 分钟，容差 ±2 分钟）。窗口外会 log 后正常退出。
 
 ## Import to TradingView / 导入 TradingView
 
@@ -169,6 +206,30 @@ launchctl list | grep finviz
 ```
 
 > **Note / 注意:** Unlike cron, launchd will catch up on missed runs — if the Mac was asleep at 8:30 AM, the task executes as soon as the Mac wakes up. / 与 cron 不同，launchd 会补执行错过的任务 — 如果 Mac 在 8:30 AM 处于睡眠状态，任务会在唤醒后立即执行。
+
+### Intraday Morning Gap Schedule / 盘中扫描时间表
+
+The intraday scanner is driven by a separate plist `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` with 50 calendar entries (Mon–Fri × 5 offsets × EDT/EST). The script self-validates current ET time on each trigger — if not within ±2 min of any scan offset (e.g. on a DST transition day or off-hours run), it exits cleanly without writing.
+
+盘中扫描由独立的 plist 文件 `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` 驱动，包含 50 条触发条目（周一至周五 × 5 个 offset × EDT/EST）。脚本在每次触发时会校验当前美东时间 —— 若不在任何 scan offset 的 ±2 分钟内（例如 DST 切换日或非交易时段），会 log 后正常退出，不写入文件。
+
+| Time (HKT) / 香港时间 | NY Time / 纽约时间 | DST / 夏令时 | Offset |
+|---|---|---|---|
+| 21:40 / 21:45 / 21:50 / 21:55 / 22:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EDT | +10 / +15 / +20 / +25 / +30 |
+| 22:40 / 22:45 / 22:50 / 22:55 / 23:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EST | +10 / +15 / +20 / +25 / +30 |
+
+```bash
+# Load (enable) / 加载（启用）
+launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist
+
+# Check status / 检查状态
+launchctl list | grep morning-gap
+
+# Tail logs / 查看日志
+tail -f /tmp/finviz-to-tv-morning-gap.log
+```
+
+> **Wake-up / 唤醒:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). The intraday scanner assumes the Mac is awake during 21:00–23:00 HKT (typical evening use). If your Mac sleeps in this window, intraday scans will be missed — add a `pmset schedule` per-day entry if needed. / `pmset repeat` 只支持一组唤醒计划（已被 8:29 AM 的 EOD 唤醒占用）。盘中扫描默认 Mac 在 21:00–23:00 HKT 期间处于活跃状态（晚间使用）。如果该时段 Mac 自动睡眠会漏跑 —— 可按需用 `pmset schedule` 添加单次预约。
 
 ## Configuration / 配置
 
