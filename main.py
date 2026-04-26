@@ -582,6 +582,25 @@ def check_market_down(threshold: float = -1.5) -> bool:
     return spy_change < threshold and qqq_change < threshold
 
 
+def _get_et_scan_offset(
+    scan_offsets: list[int], tolerance_minutes: int
+) -> int | None:
+    """Determine which scan offset (in minutes after 9:30 ET) the current
+    ET time matches, within tolerance. Returns None if outside any window
+    or outside trading hours / weekend."""
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    if now_et.weekday() >= 5:
+        return None
+    market_open_et = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    minutes_since_open = (now_et - market_open_et).total_seconds() / 60
+    if minutes_since_open < 0 or minutes_since_open > max(scan_offsets) + tolerance_minutes:
+        return None
+    best = min(scan_offsets, key=lambda o: abs(o - minutes_since_open))
+    if abs(best - minutes_since_open) <= tolerance_minutes:
+        return best
+    return None
+
+
 def safe_write_watchlist(
     tickers: list[str], output_path: Path, fmt: str = "comma", drop_threshold: float = 0.5
 ) -> bool:
