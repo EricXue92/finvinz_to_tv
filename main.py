@@ -363,6 +363,88 @@ def filter_shorts(
     return total, final
 
 
+def run_morning_gap(config: dict) -> tuple[int, list[str]]:
+    """Run the intraday morning-gap scan. Determines current scan offset
+    from ET time, runs Finviz screener, applies dollar-volume and
+    intraday cumulative volume filters. Returns (offset, tickers).
+    Returns (-1, []) if outside scan window."""
+    scan_offsets = config.get("scan_offsets", [10, 15, 20, 25, 30])
+    tolerance = config.get("offset_tolerance_minutes", 2)
+    offset = _get_et_scan_offset(scan_offsets, tolerance)
+    if offset is None:
+        logger.info("[Morning Gap] Not in scan window, exiting")
+        return -1, []
+
+    logger.info(f"[Morning Gap] Running for offset +{offset}min")
+
+    # Phase 1: Finviz screener
+    tickers = run_screener(config["filters"], config.get("signal"))
+    logger.info(f"  Found {len(tickers)} tickers from Finviz screener")
+    if not tickers:
+        return offset, []
+
+    # Phase 2: 20-day daily data — used by both dollar volume and avg volume
+    daily_data = _yf_download_with_retry(
+        tickers, period="2mo", interval="1d", progress=False,
+        group_by="ticker", threads=False,
+    )
+    if daily_data is None or daily_data.empty:
+        logger.warning("  Daily yfinance download failed, exiting")
+        return offset, []
+
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    market_open = True  # we only run during market hours
+    today_et = now_et.date()
+
+    # Phase 3: Dollar volume filter
+    min_dv = config.get("min_dollar_volume", 0)
+    if min_dv > 0:
+        tickers = _filter_dollar_volume_from_data(
+            tickers, daily_data, min_dv, market_open, today_et, len(tickers) == 1
+        )
+        logger.info(f"  {len(tickers)} after dollar volume filter (>= ${min_dv:,.0f})")
+    if not tickers:
+        return offset, []
+
+    # Phase 4: Compute 20-day avg daily volume per ticker
+    avg_days = config.get("avg_volume_days", 20)
+    single = len(tickers) == 1
+    avg_daily_volumes: dict[str, float] = {}
+    for ticker in tickers:
+        try:
+            if single:
+                volumes = daily_data["Volume"].dropna()
+            else:
+                volumes = daily_data[ticker]["Volume"].dropna()
+            volumes = _trim_today(volumes, market_open, today_et)
+            if len(volumes) < avg_days:
+                continue
+            avg_daily_volumes[ticker] = float(volumes.iloc[-avg_days:].mean())
+        except (KeyError, TypeError):
+            continue
+
+    tickers = [t for t in tickers if t in avg_daily_volumes]
+    logger.info(f"  {len(tickers)} have sufficient 20-day daily volume data")
+    if not tickers:
+        return offset, []
+
+    # Phase 5: Pull intraday 1m data and apply cumulative volume filter
+    intraday_data = _yf_download_with_retry(
+        tickers, period="1d", interval="1m", progress=False,
+        group_by="ticker", threads=False,
+    )
+    if intraday_data is None or intraday_data.empty:
+        logger.warning("  Intraday yfinance download failed, exiting")
+        return offset, []
+
+    final = _filter_intraday_cumulative_volume(
+        tickers, intraday_data, avg_daily_volumes, offset
+    )
+    logger.info(f"  {len(final)} after intraday cumulative volume filter (offset={offset}m)")
+
+    return offset, final
+
+
 def filter_consecutive_up_days(tickers: list[str], min_days: int) -> list[str]:
     """Filter tickers to those with >= min_days consecutive up days.
     Uses yfinance to fetch recent daily close prices."""
