@@ -17,6 +17,7 @@ shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
 morning_gap = "MorningGap"
+leaders = "Leaders"
 
 # --- Longs: 5 个策略合并去重，输出为 Longs.txt ---
 
@@ -38,6 +39,31 @@ filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_gap_u3","ta_sma200
 [[longs]]
 name = "52W New High"
 filters = ["cap_smallover","sh_avgvol_o1000","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
+
+# --- Leaders: 高 beta + 强势 + 站上均线，5 个 perf 窗口合并去重，输出为 Leaders.txt ---
+# 共同条件: cap >= small, avg vol > 500K, price > $20, beta > 1.5,
+#           价格在 SMA50 / SMA200 之上;
+# 全局 min_dollar_volume ($100M, 20-day avg) 也会自动套用。
+
+[[leaders]]
+name = "Leaders 4W +30%"
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_4w30o","ta_sma200_pa","ta_sma50_pa"]
+
+[[leaders]]
+name = "Leaders 13W +50%"
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_13w50o","ta_sma200_pa","ta_sma50_pa"]
+
+[[leaders]]
+name = "Leaders 26W +100%"
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_26w100o","ta_sma200_pa","ta_sma50_pa"]
+
+[[leaders]]
+name = "Leaders YTD +100%"
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_ytd100o","ta_sma200_pa","ta_sma50_pa"]
+
+[[leaders]]
+name = "Leaders 52W +200%"
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_52w200o","ta_sma200_pa","ta_sma50_pa"]
 
 # --- Shorts: 基于 Kristjan Kullamägi 博客的做空筛选，单独输出为 Shorts.txt ---
 

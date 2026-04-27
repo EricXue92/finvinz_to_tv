@@ -15,8 +15,9 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 
 **Flow:** Load `config.toml` → Run screener groups sequentially → Deduplicate → Write output files to `output/US/` and `output/HK/`
 
-**Four screener groups with different output behavior:**
+**Five screener groups with different output behavior:**
 - **Longs** (`[[longs]]` in config): 4 strategies merged into one deduplicated set → `output/US/Longs.txt`. Based on Oliver Kell's methodology. Relative Volume Surge uses yfinance post-processing for 20-day relative volume (configurable via `min_relative_volume` and `relative_volume_days` per strategy).
+- **Leaders** (`[[leaders]]`): 5 strategies sharing a base filter set (cap_smallover, avg vol >500K, price >$20, beta >1.5, above SMA50/SMA200) but differing in performance window (4w/13w/26w/YTD/52w), merged → `output/US/Leaders.txt`. Global `min_dollar_volume` ($100M, 20-day avg) applies.
 - **Shorts** (`[shorts]`): Single strategy with multi-phase filtering → `output/US/Shorts.txt`. Based on Kristjan Kullamägi's blog criteria. Runs Finviz Ownership screener (SMA20+20%, avg vol >1M, cap >$300M) for market cap data, then post-processes via yfinance for cap-conditional performance (2/3/4-week windows: 10, 15, 22 trading days), dollar volume, and consecutive up days.
 - **RS** (`[rs]`): Conditional → `output/US/RS.txt`. Only runs when both SPY and QQQ drop >1.5% (checked via `finviz.get_stock()`). Based on Oliver Kell's relative strength approach.
 - **HK Shorts** (`[hk_shorts]`): Hong Kong market short candidates → `output/HK/Shorts.txt`. Same methodology as US Shorts but sources data from HKEX securities list + yfinance. Uses HKD-native cap thresholds. Batch-downloads ~2,400 tickers in groups of 500.
@@ -24,6 +25,7 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 **Key mechanisms:**
 - `safe_write_watchlist()`: Protects against data source issues — if new result count drops >50% vs existing file, the write is skipped and old file preserved.
 - Each run writes both a latest file (e.g. `Shorts.txt`) and a date-stamped archive (e.g. `2026_04_21_Shorts.txt`). The latest file is used for safe_write comparison.
+- **Cross-group dedup (Longs/Leaders/RS)**: After all three long-side groups have been collected, tickers are deduplicated with priority `Longs > Leaders > RS` so each ticker appears in exactly one group per run. The collection-then-write split means Longs/Leaders/RS files are written only after RS has finished. Shorts and HK Shorts are independent and written inline. Note: the first run after this rule was introduced may trigger `safe_write_watchlist`'s 50% drop guard for Leaders/RS, since yesterday's file isn't deduped — delete the affected `.txt` if needed to force a fresh write.
 - 8-second delay between Finviz requests to avoid rate limiting (configurable in `config.toml`).
 
 **Config format:** TOML. Filter strings (e.g. `sh_avgvol_o500`) map directly to Finviz URL parameters. The `signal` field is optional (used for Top Gainers).
@@ -41,13 +43,13 @@ Uses `finviz` package (web scraping, no API key needed):
 `futu_sync.py` mirrors each successfully-written watchlist into a Futu custom watchlist group via the `futu-api` SDK. The `.txt` files remain the primary artifact — Futu sync is a soft side-effect that logs a warning on any failure and never raises.
 
 **Architecture:**
-- Hooks fire after every `safe_write_watchlist` of the *latest* file (not the dated archive) in `main.py` — one call per group: Longs, Shorts, RS, HKShorts, MorningGap.
+- Hooks fire after every `safe_write_watchlist` of the *latest* file (not the dated archive) in `main.py` — one call per group: Longs, Leaders, Shorts, RS, HKShorts, MorningGap.
 - `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running.
 - `sync_to_futu()` is **diff-based**: calls `get_user_security(group_name)` for current contents, computes set diff, then issues at most one `DEL` and one `ADD` (under the 10-call/30s API rate limit).
 
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
-2. In the Futu PC client, manually create the 5 custom watchlist groups: `Longs`, `Shorts`, `RS`, `HKShorts`, `MorningGap`. **The API cannot create groups — it can only modify existing custom groups.**
+2. In the Futu PC client, manually create the 6 custom watchlist groups: `Longs`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap`. **The API cannot create groups — it can only modify existing custom groups.**
 
 **Config (`[futu]` in `config.toml`):**
 ```toml
@@ -62,6 +64,7 @@ shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
 morning_gap = "MorningGap"
+leaders = "Leaders"
 ```
 
 **Ticker format conversion (`_to_futu_code`):**

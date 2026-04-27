@@ -823,7 +823,7 @@ def main() -> int:
     hk_output_dir.mkdir(exist_ok=True)
 
     if args.mode == "eod":
-        # --- Longs ---
+        # --- Longs (collect only — write deferred until after cross-group dedup) ---
         longs_tickers: set[str] = set()
         for i, screener_cfg in enumerate(config.get("longs", [])):
             name = screener_cfg["name"]
@@ -845,18 +845,29 @@ def main() -> int:
             if i < len(config.get("longs", [])) - 1:
                 time.sleep(delay)
 
-        if longs_tickers:
-            sorted_longs = sorted(longs_tickers)
-            if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
-                logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
-                safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
-                _futu_sync(config, "longs", sorted_longs, "US")
-        else:
-            logger.warning("[Longs] No tickers found")
-
         time.sleep(delay)
 
-        # --- Shorts ---
+        # --- Leaders (collect only) ---
+        leaders_tickers: set[str] = set()
+        for i, screener_cfg in enumerate(config.get("leaders", [])):
+            name = screener_cfg["name"]
+            logger.info(f"[Leaders] Running: {name}")
+            try:
+                tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
+                logger.info(f"  Found {len(tickers)} tickers")
+                if min_dollar_volume > 0 and tickers:
+                    tickers = filter_dollar_volume_yf(tickers, min_dollar_volume)
+                    logger.info(f"  {len(tickers)} after dollar volume filter (20-day avg)")
+                leaders_tickers.update(tickers)
+            except Exception as e:
+                logger.warning(f"  Failed: {e}")
+            if i < len(config.get("leaders", [])) - 1:
+                time.sleep(delay)
+
+        if config.get("leaders"):
+            time.sleep(delay)
+
+        # --- Shorts (independent — write directly) ---
         shorts_cfg = config.get("shorts")
         if shorts_cfg:
             logger.info(f"[Shorts] Running: {shorts_cfg['name']}")
@@ -885,7 +896,9 @@ def main() -> int:
 
         time.sleep(delay)
 
-        # --- RS (conditional) ---
+        # --- RS (conditional, collect only) ---
+        rs_tickers: set[str] = set()
+        rs_ran = False
         rs_cfg = config.get("rs")
         if rs_cfg:
             logger.info("[RS] Checking market condition...")
@@ -893,23 +906,63 @@ def main() -> int:
                 if check_market_down():
                     logger.info("[RS] Condition met, running screener...")
                     time.sleep(delay)
-                    rs_tickers = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
-                    logger.info(f"  Found {len(rs_tickers)} tickers")
-                    if min_dollar_volume > 0 and rs_tickers:
-                        rs_tickers = filter_dollar_volume_yf(rs_tickers, min_dollar_volume)
-                        logger.info(f"  {len(rs_tickers)} after dollar volume filter (20-day avg)")
-                    if rs_tickers:
-                        sorted_rs = sorted(set(rs_tickers))
-                        if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
-                            logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
-                            safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
-                            _futu_sync(config, "rs", sorted_rs, "US")
-                    else:
-                        logger.warning("[RS] No tickers found")
+                    found = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
+                    logger.info(f"  Found {len(found)} tickers")
+                    if min_dollar_volume > 0 and found:
+                        found = filter_dollar_volume_yf(found, min_dollar_volume)
+                        logger.info(f"  {len(found)} after dollar volume filter (20-day avg)")
+                    rs_tickers.update(found)
+                    rs_ran = True
                 else:
                     logger.info("[RS] Condition not met (SPY/QQQ not both down >1.5%), skipping")
             except Exception as e:
                 logger.warning(f"[RS] Failed: {e}")
+
+        # --- Cross-group dedup: priority Longs > Leaders > RS ---
+        # A ticker firing in multiple long-side groups is kept only in the
+        # highest-priority one. Since each .txt and Futu group is rewritten
+        # every run, this also prevents day-over-day cross-group duplication.
+        before = (len(leaders_tickers), len(rs_tickers))
+        leaders_tickers -= longs_tickers
+        rs_tickers -= longs_tickers | leaders_tickers
+        removed_le = before[0] - len(leaders_tickers)
+        removed_rs = before[1] - len(rs_tickers)
+        if removed_le or removed_rs:
+            logger.info(
+                f"[Dedup] Priority Longs > Leaders > RS: "
+                f"removed {removed_le} from Leaders, {removed_rs} from RS"
+            )
+
+        # --- Write Longs ---
+        if longs_tickers:
+            sorted_longs = sorted(longs_tickers)
+            if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
+                logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
+                safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
+                _futu_sync(config, "longs", sorted_longs, "US")
+        else:
+            logger.warning("[Longs] No tickers found")
+
+        # --- Write Leaders ---
+        if leaders_tickers:
+            sorted_leaders = sorted(leaders_tickers)
+            if safe_write_watchlist(sorted_leaders, us_output_dir / "Leaders.txt", fmt):
+                logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> output/US/Leaders.txt")
+                safe_write_watchlist(sorted_leaders, us_output_dir / f"{today}_Leaders.txt", fmt)
+                _futu_sync(config, "leaders", sorted_leaders, "US")
+        elif config.get("leaders"):
+            logger.warning("[Leaders] No tickers found")
+
+        # --- Write RS (only if it actually ran) ---
+        if rs_ran:
+            if rs_tickers:
+                sorted_rs = sorted(rs_tickers)
+                if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
+                    logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
+                    safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
+                    _futu_sync(config, "rs", sorted_rs, "US")
+            else:
+                logger.warning("[RS] No tickers found")
 
         # --- HK Shorts ---
         hk_shorts_cfg = config.get("hk_shorts")

@@ -2,249 +2,234 @@
 
 Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance scans (Hong Kong), exporting results as TradingView-importable watchlists.
 
-自动化股票筛选工具，运行自定义 Finviz 扫描（美股）和 HKEX + yfinance 扫描（港股），导出为 TradingView 可导入的自选股列表。
+## Screening Criteria
 
-## Screening Criteria / 筛选标准
-
-### Longs / 做多（4 strategies, merged & deduplicated / 4 个策略，合并去重）
+### Longs (4 strategies, merged & deduplicated)
 
 Based on **Oliver Kell**'s momentum/breakout methodology:
 
-基于 **Oliver Kell** 的动量/突破方法论：
-
-| Strategy / 策略 | Key Filters / 关键筛选条件 |
+| Strategy | Key Filters |
 |----------|-------------|
-| Relative Volume Surge / 相对成交量飙升 | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
-| Top Gainers / 涨幅榜 | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
-| Gap Up / 跳空高开 | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
-| 52W New High / 52 周新高 | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
+| Relative Volume Surge | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
+| Top Gainers | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
+| Gap Up | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
+| 52W New High | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
 
 All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
 
-所有做多策略还要求**成交额 >= 1 亿美元**（价格 × 20 日均成交量，通过 yfinance 计算）。上表中的"Avg Vol"筛选条件为 Finviz 预过滤，使用 Finviz 的 3 个月均量来减少后处理前的结果数量。
+### Leaders (5 strategies, merged & deduplicated)
 
-### Shorts / 做空（1 strategy, multi-phase filtering / 1 个策略，多阶段筛选）
+Long-term trend leaders trading above both SMA50 and SMA200. The five strategies share the same base filters but differ in the performance-window threshold:
+
+**Shared base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA50, Above SMA200, Dollar Volume >= $100M (20-day avg, via yfinance).
+
+| Strategy | Performance Threshold |
+|----------|-----------------------|
+| Leaders 4W +30% | 4-week performance >= 30% |
+| Leaders 13W +50% | 13-week performance >= 50% |
+| Leaders 26W +100% | 26-week performance >= 100% |
+| Leaders YTD +100% | YTD performance >= 100% |
+| Leaders 52W +200% | 52-week performance >= 200% |
+
+### Cross-group dedup (Longs / Leaders / RS)
+
+After all three long-side groups run, tickers are deduplicated with priority **Longs > Leaders > RS** so each ticker appears in exactly one group per day. Because every `.txt` file and Futu group is rewritten on each run, this also prevents day-over-day cross-group duplication — a ticker that migrates between groups is automatically removed from its old group.
+
+Shorts, HK Shorts, and Morning Gap are independent and do not participate in the dedup.
+
+### Shorts (1 strategy, multi-phase filtering)
 
 Based on **Kristjan Kullamägi**'s short-selling criteria:
 
-基于 **Kristjan Kullamägi** 的做空标准：
+**Phase 1 — Finviz filters:**
 
-**Phase 1 — Finviz filters / 第一阶段 — Finviz 筛选：**
-
-| Filter / 筛选条件 | Criteria / 标准 |
+| Filter | Criteria |
 |--------|----------|
-| SMA20 | Price 20%+ above 20-day moving average / 价格高于 20 日均线 20% 以上 |
-| Avg Volume / 日均成交量 | > 1M shares (Finviz 3-month avg, pre-filter) / > 100 万股（Finviz 3 个月均量，预过滤） |
-| Market Cap / 市值 | > $300M (small cap and above) / > 3 亿美元（小盘股及以上） |
+| SMA20 | Price 20%+ above 20-day moving average |
+| Avg Volume | > 1M shares (Finviz 3-month avg, pre-filter) |
+| Market Cap | > $300M (small cap and above) |
 
-**Phase 2 — Post-processing (via yfinance) / 第二阶段 — 后处理（通过 yfinance）：**
+**Phase 2 — Post-processing (via yfinance):**
 
-| Filter / 筛选条件 | Criteria / 标准 |
+| Filter | Criteria |
 |--------|----------|
-| Dollar Volume / 成交额 | Price × 20-day avg volume >= $100M / 价格 × 20 日均量 >= 1 亿美元 |
-| Performance (Large Cap ≥ $10B) / 涨幅（大盘股 ≥ 100 亿美元） | Up 50%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 50% |
-| Performance (Mid Cap $2B–$10B) / 涨幅（中盘股 20-100 亿美元） | Up 200%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 200% |
-| Performance (Small Cap $300M–$2B) / 涨幅（小盘股 3-20 亿美元） | Up 300%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 300% |
-| Consecutive Up Days / 连续上涨天数 | 3+ consecutive green days (excludes today's incomplete data if market is still open) / 连续 3 天以上收涨（盘中扫描排除当天未完成数据） |
+| Dollar Volume | Price × 20-day avg volume >= $100M |
+| Performance (Large Cap ≥ $10B) | Up 50%+ over 2, 3, or 4 weeks |
+| Performance (Mid Cap $2B–$10B) | Up 200%+ over 2, 3, or 4 weeks |
+| Performance (Small Cap $300M–$2B) | Up 300%+ over 2, 3, or 4 weeks |
+| Consecutive Up Days | 3+ consecutive green days (excludes today's incomplete data if market is still open) |
 
-Performance is checked over 2-week (10 trading days), 3-week (15 trading days), and 4-week (22 trading days) windows via yfinance. A ticker passes if it meets the cap-conditional threshold in any window. Results are aggregated. Then the 3+ consecutive up days filter is applied to the aggregated results.
+Performance is checked over 2-week (10 trading days), 3-week (15 trading days), and 4-week (22 trading days) windows via yfinance. A ticker passes if it meets the cap-conditional threshold in any window. Results are aggregated, then the 3+ consecutive up days filter is applied.
 
-涨幅通过 yfinance 在 2 周（10 个交易日）、3 周（15 个交易日）和 4 周（22 个交易日）窗口中检查。任意窗口满足对应市值级别的阈值即通过，三个窗口的结果合并。然后对合并后的结果再过滤，要求最近至少连续 3 天收涨。
-
-### RS - Relative Strength / 相对强度（conditional / 条件触发）
+### RS - Relative Strength (conditional)
 
 Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY and QQQ drop more than 1.5% on the day — identifies stocks showing strength in a weak market.
 
-基于 **Oliver Kell** 的相对强度方法。仅当 SPY 和 QQQ 当日同时下跌超过 1.5% 时运行 — 识别弱市中表现强势的股票。
-
-| Strategy / 策略 | Key Filters / 关键筛选条件 |
+| Strategy | Key Filters |
 |----------|-------------|
-| Relative Strength / 相对强度 | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
+| Relative Strength | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
 
-### HK Shorts / 港股做空（1 strategy, multi-phase filtering / 1 个策略，多阶段筛选）
+### HK Shorts (1 strategy, multi-phase filtering)
 
 Hong Kong market short candidates using the same methodology as US Shorts, sourced from **HKEX + yfinance** instead of Finviz.
 
-港股做空候选，使用与美股做空相同的方法论，数据来源为 **HKEX + yfinance** 而非 Finviz。
+**Phase 1 — HKEX universe + yfinance filtering:**
 
-**Phase 1 — HKEX universe + yfinance filtering / 第一阶段 — HKEX 股票池 + yfinance 筛选：**
-
-| Filter / 筛选条件 | Criteria / 标准 |
+| Filter | Criteria |
 |--------|----------|
-| Universe / 股票池 | HKEX Main Board equities (~2,400 stocks) / 港交所主板股票（约 2,400 只） |
-| SMA20 | Price 20%+ above 20-day moving average / 价格高于 20 日均线 20% 以上 |
-| Avg Volume / 日均成交量 | > 1M shares/day (20-day average) / > 100 万股/天（20 日均量） |
+| Universe | HKEX Main Board equities (~2,400 stocks) |
+| SMA20 | Price 20%+ above 20-day moving average |
+| Avg Volume | > 1M shares/day (20-day average) |
 
-**Phase 2 — Post-processing / 第二阶段 — 后处理：**
+**Phase 2 — Post-processing:**
 
-| Filter / 筛选条件 | Criteria / 标准 |
+| Filter | Criteria |
 |--------|----------|
-| Market Cap / 市值 | >= HKD 300M / >= 3 亿港元 |
-| Dollar Volume / 成交额 | Price × 20-day avg volume >= HKD 100M / 价格 × 20 日均量 >= 1 亿港元 |
-| Performance (Large Cap ≥ HKD 10B) / 涨幅（大盘股 ≥ 100 亿港元） | Up 50%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 50% |
-| Performance (Mid Cap HKD 2B–10B) / 涨幅（中盘股 20-100 亿港元） | Up 200%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 200% |
-| Performance (Small Cap HKD 300M–2B) / 涨幅（小盘股 3-20 亿港元） | Up 300%+ over 2, 3, or 4 weeks / 2、3 或 4 周内涨幅 >= 300% |
-| Consecutive Up Days / 连续上涨天数 | 3+ consecutive green days / 连续 3 天以上收涨 |
+| Market Cap | >= HKD 300M |
+| Dollar Volume | Price × 20-day avg volume >= HKD 100M |
+| Performance (Large Cap ≥ HKD 10B) | Up 50%+ over 2, 3, or 4 weeks |
+| Performance (Mid Cap HKD 2B–10B) | Up 200%+ over 2, 3, or 4 weeks |
+| Performance (Small Cap HKD 300M–2B) | Up 300%+ over 2, 3, or 4 weeks |
+| Consecutive Up Days | 3+ consecutive green days |
 
 HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
 
-港股代码以 `HKEX:XXXX` 格式输出，适用于 TradingView（如 `HKEX:0700`）。
-
-### Morning Gap / 盘中跳空（intraday, 5 scans / 盘中扫描，5 次）
+### Morning Gap (intraday, 5 scans)
 
 Intraday scanner running at +10/+15/+20/+25/+30 minutes after US market open. Captures stocks with a strong gap-up that have already traded their full daily average volume in the first 30 minutes — a signal of catalyst-driven institutional buying (earnings, FDA, M&A, sector news).
 
-盘中扫描器，在美股开盘后 +10/+15/+20/+25/+30 分钟各运行一次。捕捉跳空高开且在头 30 分钟内累计成交量已达到日均量的股票 —— 这通常是催化剂驱动机构买入的信号（财报、FDA、并购、行业新闻）。
+**Phase 1 — Finviz filters:**
 
-**Phase 1 — Finviz filters / 第一阶段 — Finviz 筛选：**
-
-| Filter / 筛选条件 | Criteria / 标准 |
+| Filter | Criteria |
 |--------|----------|
-| Avg Volume / 日均成交量 | > 500K |
-| Price / 股价 | > $10 |
+| Avg Volume | > 500K |
+| Price | > $10 |
 | Beta | > 1.5 |
-| Gap Up / 跳空 | >= 5% |
-| SMA200 | Price above SMA200 / 价格在 200 日均线之上 |
+| Gap Up | >= 5% |
+| SMA200 | Price above SMA200 |
 
-**Phase 2 — Post-processing (via yfinance) / 第二阶段 — 后处理（通过 yfinance）：**
+**Phase 2 — Post-processing (via yfinance):**
 
-| Filter / 筛选条件 | Criteria / 标准 |
+| Filter | Criteria |
 |--------|----------|
-| Dollar Volume / 成交额 | Price × 20-day avg volume >= $100M / 价格 × 20 日均量 >= 1 亿美元 |
-| Intraday Cumulative Volume / 盘中累计成交量 | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume / 9:30 ET 起到 9:30+offset ET 的累计成交量 >= 20 日全天均量 |
+| Dollar Volume | Price × 20-day avg volume >= $100M |
+| Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume |
 
-The intraday volume threshold is the key signal — by 10-30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15-30 minutes after the open."
+The intraday volume threshold is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
 
-盘中成交量阈值是关键信号 —— 在开盘后 10-30 分钟内,股票已完成一天的交易量。按 Kullamägi 方法论:"最强的票在开盘后 15-30 分钟内就交易完一天的均量。"
-
-## Output / 输出
+## Output
 
 ```
 output/
 ├── US/
-│   ├── Longs.txt              # Latest US long candidates / 最新美股做多候选
-│   ├── Shorts.txt             # Latest US short candidates / 最新美股做空候选
-│   ├── RS.txt                 # Latest relative strength (conditional) / 最新相对强度（条件触发）
-│   ├── 2026_04_21_Longs.txt   # Date-stamped archives / 日期归档
-│   ├── 2026_04_21_Shorts.txt
-│   └── 2026_04_21_RS.txt
-├── US/
-│   ├── MorningGap.txt           # Latest intraday morning-gap snapshot / 最新盘中跳空快照
-│   └── 2026_04_27_MorningGap.txt # Date-stamped (only +30min scan archived) / 日期归档（仅 +30 分钟那次）
+│   ├── Longs.txt              # Latest US long candidates
+│   ├── Leaders.txt            # Latest US trend leaders
+│   ├── Shorts.txt             # Latest US short candidates
+│   ├── RS.txt                 # Latest relative strength (conditional)
+│   ├── MorningGap.txt         # Latest intraday morning-gap snapshot
+│   ├── 2026_04_27_Longs.txt   # Date-stamped archives
+│   ├── 2026_04_27_Leaders.txt
+│   ├── 2026_04_27_Shorts.txt
+│   ├── 2026_04_27_RS.txt
+│   └── 2026_04_27_MorningGap.txt # Only the +30min scan is archived
 └── HK/
-    ├── Shorts.txt             # Latest HK short candidates / 最新港股做空候选
-    └── 2026_04_21_Shorts.txt
+    ├── Shorts.txt             # Latest HK short candidates
+    └── 2026_04_27_Shorts.txt
 ```
 
 Each run generates both a latest file (e.g. `Shorts.txt`) and a date-stamped copy to preserve history. Files are comma-separated ticker symbols, ready for TradingView import.
 
-每次运行生成最新文件（如 `Shorts.txt`）和日期归档副本。文件为逗号分隔的股票代码，可直接导入 TradingView。
-
-### Futu (富途牛牛) Auto-Sync / 富途自选股自动同步
+### Futu (富途牛牛) Auto-Sync
 
 After each successful watchlist write, the script can sync tickers to a Futu custom watchlist group via OpenAPI. Configured via `[futu]` in `config.toml`. The `.txt` files remain the primary output — Futu sync failures (OpenD not running, group missing, etc.) only log a warning.
 
-每次成功写入清单后,脚本可通过 OpenAPI 把 ticker 同步到富途自选股自定义分组。在 `config.toml` 的 `[futu]` 中配置。`.txt` 文件仍是主要产物 —— 富途同步失败(OpenD 未启动、分组不存在等)仅记录警告。
-
-**Prerequisites / 前置条件:**
+**Prerequisites:**
 1. Download & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with your Futu account (default port `11111`).
-2. In the Futu PC client, manually create custom watchlist groups: `Longs`, `Shorts`, `RS`, `HKShorts`, `MorningGap` (the API can only modify custom groups, not create them).
+2. In the Futu PC client, manually create the custom watchlist groups: `Longs`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap` (the API can only modify custom groups, not create them).
 3. Set `enabled = true` in `[futu]` (already on by default).
 
 **Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
 
-**同步策略:** 基于 diff —— 拉取分组现有 ticker,只 ADD 新增的、DEL 移除的,节省 API 调用(富途限流:30 秒内最多 10 次)。
-
-## Setup / 安装
+## Setup
 
 ```bash
-# Install dependencies / 安装依赖
+# Install dependencies
 uv sync
 
-# Run EOD pipeline manually (Longs/Shorts/RS/HK Shorts) / 手动运行 EOD 流程
+# Run EOD pipeline manually (Longs / Leaders / Shorts / RS / HK Shorts)
 uv run main.py
 
-# Run intraday morning-gap scan manually / 手动运行盘中扫描
+# Run intraday morning-gap scan manually
 uv run main.py --mode morning-gap
 ```
 
 The morning-gap scanner auto-detects current US ET time and runs the matching scan (+10/+15/+20/+25/+30 min after open, ±2 min tolerance). Outside this window it logs and exits cleanly.
 
-盘中扫描器会自动检测当前美东时间，匹配对应的扫描时点（开盘后 +10/+15/+20/+25/+30 分钟，容差 ±2 分钟）。窗口外会 log 后正常退出。
+## Import to TradingView
 
-## Import to TradingView / 导入 TradingView
+1. Open TradingView
+2. Right panel → Watchlist → Click the list name
+3. Select "Import list..."
+4. Choose `output/US/Longs.txt` (or `Leaders` / `Shorts` / `RS` for US, `output/HK/Shorts.txt` for HK)
 
-1. Open TradingView / 打开 TradingView
-2. Right panel -> Watchlist -> Click the list name / 右侧面板 -> 自选股 -> 点击列表名称
-3. Select "Import list..." / 选择"导入列表..."
-4. Choose `output/US/Longs.txt` (or Shorts/RS for US, `output/HK/Shorts.txt` for HK) / 选择对应文件
-
-## Automation (launchd + pmset) / 自动化
+## Automation (launchd + pmset)
 
 The script runs daily after US market close via macOS launchd, with `pmset` to wake the Mac from sleep.
 
-脚本通过 macOS launchd 在美股收盘后每日自动运行，使用 `pmset` 从睡眠中唤醒 Mac。
+**Schedule:** Tue–Sat 8:30 AM HKT = Mon–Fri after US market close. 8:30 AM HKT is safe for both EDT (4.5h after close) and EST (3.5h after close), and allows yfinance/Finviz EOD data to fully settle before the run — earlier times (e.g. 6 AM) can produce noisier results due to stale or partial data.
 
-**Schedule / 时间表:** Tue-Sat 8:30 AM HKT = Mon-Fri after US market close. 8:30 AM HKT is safe for both EDT (4.5h after close) and EST (3.5h after close), and allows yfinance/Finviz EOD data to fully settle before the run — earlier times (e.g. 6 AM) can produce noisier results due to stale or partial data.
+### How it works
 
-**时间表：**周二至周六早上 8:30（香港时间）= 周一至周五美股收盘后。8:30 HKT 在 EDT（收盘后 4.5 小时）和 EST（收盘后 3.5 小时）下均安全，且能让 yfinance/Finviz 的 EOD 数据完全落盘再运行 —— 过早的时间（如 6:00）可能因数据未稳定而产生波动较大的结果。
+1. **`pmset repeat`** wakes the Mac at 8:29 AM HKT (Tue–Sat)
+2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 8:30 AM
+3. After execution, the Mac automatically returns to sleep
 
-### How it works / 工作原理
-
-1. **`pmset repeat`** wakes the Mac at 8:29 AM HKT (Tue-Sat) / 在 8:29 AM HKT 唤醒 Mac
-2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 8:30 AM / 在 8:30 AM 运行脚本
-3. After execution, the Mac automatically returns to sleep / 执行完毕后 Mac 自动回到睡眠
-
-### Setup / 设置
+### Setup
 
 ```bash
-# Schedule Mac to wake at 8:29 AM Tue-Sat / 设置 Mac 在周二至周六 8:29 AM 唤醒
+# Schedule Mac to wake at 8:29 AM Tue-Sat
 sudo pmset repeat wakeorpoweron TWRFS 08:29:00
 
-# Verify wake schedule / 验证唤醒计划
+# Verify wake schedule
 pmset -g sched
 ```
 
 The launchd plist is installed at `~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`. To manage it:
 
-launchd 配置文件位于 `~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`。管理命令：
-
 ```bash
-# Load (enable) / 加载（启用）
+# Load (enable)
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
 
-# Unload (disable) / 卸载（停用）
+# Unload (disable)
 launchctl unload ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
 
-# Check status / 检查状态
+# Check status
 launchctl list | grep finviz
 ```
 
-> **Note / 注意:** Unlike cron, launchd will catch up on missed runs — if the Mac was asleep at 8:30 AM, the task executes as soon as the Mac wakes up. / 与 cron 不同，launchd 会补执行错过的任务 — 如果 Mac 在 8:30 AM 处于睡眠状态，任务会在唤醒后立即执行。
+> **Note:** Unlike cron, launchd will catch up on missed runs — if the Mac was asleep at 8:30 AM, the task executes as soon as the Mac wakes up.
 
-### Intraday Morning Gap Schedule / 盘中扫描时间表
+### Intraday Morning Gap Schedule
 
 The intraday scanner is driven by a separate plist `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` with 50 calendar entries (Mon–Fri × 5 offsets × EDT/EST). The script self-validates current ET time on each trigger — if not within ±2 min of any scan offset (e.g. on a DST transition day or off-hours run), it exits cleanly without writing.
 
-盘中扫描由独立的 plist 文件 `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` 驱动，包含 50 条触发条目（周一至周五 × 5 个 offset × EDT/EST）。脚本在每次触发时会校验当前美东时间 —— 若不在任何 scan offset 的 ±2 分钟内（例如 DST 切换日或非交易时段），会 log 后正常退出，不写入文件。
-
-| Time (HKT) / 香港时间 | NY Time / 纽约时间 | DST / 夏令时 | Offset |
+| Time (HKT) | NY Time | DST | Offset |
 |---|---|---|---|
 | 21:40 / 21:45 / 21:50 / 21:55 / 22:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EDT | +10 / +15 / +20 / +25 / +30 |
 | 22:40 / 22:45 / 22:50 / 22:55 / 23:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EST | +10 / +15 / +20 / +25 / +30 |
 
 ```bash
-# Load (enable) / 加载（启用）
+# Load (enable)
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist
 
-# Check status / 检查状态
+# Check status
 launchctl list | grep morning-gap
 
-# Tail logs / 查看日志
+# Tail logs
 tail -f /tmp/finviz-to-tv-morning-gap.log
 ```
 
-> **Wake-up / 唤醒:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). For the intraday scanner, run `scripts/schedule_morning_gap_wakes.py` to schedule per-day `pmset schedule wake` entries at 21:29 and 22:29 HKT (covers EDT and EST). Re-run weekly to top up. / `pmset repeat` 只支持一组唤醒计划（已被 8:29 AM 的 EOD 唤醒占用）。盘中扫描的唤醒通过 `scripts/schedule_morning_gap_wakes.py` 添加每日单次预约（21:29 和 22:29 HKT，覆盖 EDT 和 EST），每周重跑一次补充新的预约。
+> **Wake-up:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). For the intraday scanner, run `scripts/schedule_morning_gap_wakes.py` to schedule per-day `pmset schedule wake` entries at 21:29 and 22:29 HKT (covers EDT and EST). Re-run weekly to top up.
 
 ```bash
 # Schedule next 14 weekdays of wakes (one-shot events, requires sudo)
@@ -257,15 +242,14 @@ sudo uv run scripts/schedule_morning_gap_wakes.py 30
 pmset -g sched
 ```
 
-## Configuration / 配置
+## Configuration
 
 All screener parameters are in `config.toml`. You can modify filters, add new screeners, or adjust settings (delay between requests, output format) without touching the code.
 
-所有筛选参数在 `config.toml` 中配置。可修改筛选条件、添加新策略或调整设置（请求间隔、输出格式），无需修改代码。
-
-## Dependencies / 依赖
+## Dependencies
 
 - Python >= 3.12
-- [finviz](https://github.com/mariostoev/finviz) - Finviz web scraper (no API key or premium account required) / Finviz 网页爬虫（无需 API 密钥或付费账户）
-- [yfinance](https://github.com/ranaroussi/yfinance) - Yahoo Finance data for post-processing filters and HK market data / Yahoo Finance 数据，用于后处理筛选和港股数据
-- [openpyxl](https://openpyxl.readthedocs.io/) - HKEX securities list xlsx parsing / HKEX 证券列表 xlsx 解析
+- [finviz](https://github.com/mariostoev/finviz) — Finviz web scraper (no API key or premium account required)
+- [yfinance](https://github.com/ranaroussi/yfinance) — Yahoo Finance data for post-processing filters and HK market data
+- [openpyxl](https://openpyxl.readthedocs.io/) — HKEX securities list xlsx parsing
+- [futu-api](https://pypi.org/project/futu-api/) — Optional, for Futu watchlist sync via OpenAPI
