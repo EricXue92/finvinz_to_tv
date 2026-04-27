@@ -31,30 +31,30 @@ morning_gap_pre = "MorningGapPre"
 [[longs]]
 key = "earnings_gap"
 name = "Earnings Gap"
-filters = ["cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o1.5","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o1.5","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
 
 [[longs]]
 key = "high_volume"
 name = "Relative Volume Surge"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa"]
 min_relative_volume = 3
 relative_volume_days = 20
 
 [[longs]]
 key = "gap_up"
 name = "Gap Up"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_gap_u3","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_gap_u3","ta_sma200_pa"]
 
 [[longs]]
 key = "new_high_52w"
 name = "52W New High"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
 key = "top_gainers"
 name = "Top Gainers"
 signal = "ta_topgainers"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_sma200_pa"]
 
 # --- Leaders: 高 beta + 强势 + 站上均线，5 个 perf 窗口合并去重，输出为 Leaders.txt ---
 # 共同条件: cap >= small, avg vol > 500K, price > $20, beta > 1.5,
@@ -63,29 +63,29 @@ filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_sm
 
 [[leaders]]
 name = "Leaders 4W +30%"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_4w30o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_4w30o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders 13W +50%"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_13w50o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_13w50o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders 26W +100%"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_26w100o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_26w100o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders YTD +100%"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_ytd100o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_ytd100o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders 52W +150%"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_52w150o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_52w150o","ta_sma200_pa","ta_sma50_pa"]
 
 # --- Shorts: 基于 Kristjan Kullamägi 博客的做空筛选，单独输出为 Shorts.txt ---
 
 [shorts]
 name = "Short Candidates"
-filters = ["ta_sma20_pa20", "sh_avgvol_o1000", "cap_smallover"]
+filters = ["ind_stocksonly", "ta_sma20_pa20", "sh_avgvol_o1000", "cap_smallover"]
 min_dollar_volume = 100_000_000
 min_consecutive_up_days = 3
 # Performance thresholds by cap size (month perf %)
@@ -97,7 +97,7 @@ perf_small_cap = 300    # $300M–$2B: month perf >= 300%
 
 [rs]
 name = "Relative Strength"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
 
 # --- HK Shorts: 基于 HKEX 数据的港股做空筛选，输出为 HongKongShorts/HK_Shorts.txt ---
 
@@ -122,7 +122,7 @@ mid_cap_threshold = 2_000_000_000
 
 [morning_gap]
 name = "Morning Gap Up"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o10","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [-20, -10, 10, 15, 20, 25, 30]

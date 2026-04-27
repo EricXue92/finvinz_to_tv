@@ -4,6 +4,8 @@ Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance 
 
 ## Screening Criteria
 
+> **Stocks-only universe:** All Finviz-based scans (Longs / Leaders / Shorts / RS / Morning Gap) include the `ind_stocksonly` filter to exclude ETFs, ETNs, and other non-stock instruments. HK Shorts is sourced from HKEX's equity list directly and is already stock-only by construction.
+
 ### Longs (5 strategies, each written to its own file)
 
 Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs to its own `.txt` file and Futu group; tickers are mutually exclusive across the 5 strategies (priority order shown below — earlier wins).
