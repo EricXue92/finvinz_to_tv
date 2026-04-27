@@ -4,6 +4,20 @@ delay_between_requests = 8.0
 output_format = "comma"    # "comma" = AAPL,MSFT  |  "newline" = 一行一个
 min_dollar_volume = 100_000_000  # Longs 过滤: price * avg volume >= 100M
 
+# --- Futu (富途牛牛) 自动同步 ---
+# 需要本地运行 FutuOpenD,且分组需在富途客户端预先手动建好(API 不能新建分组)
+[futu]
+enabled = true
+host = "127.0.0.1"
+port = 11111
+
+[futu.groups]
+longs = "Longs"
+shorts = "Shorts"
+rs = "RS"
+hk_shorts = "HKShorts"
+morning_gap = "MorningGap"
+
 # --- Longs: 5 个策略合并去重，输出为 Longs.txt ---
 
 [[longs]]

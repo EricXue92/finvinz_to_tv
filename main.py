@@ -17,7 +17,26 @@ from finviz import get_stock
 from finviz.screener import Screener
 import openpyxl
 
+from futu_sync import sync_to_futu
+
 logger = logging.getLogger(__name__)
+
+
+def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
+    """Sync to Futu if [futu] is enabled in config — silent no-op otherwise."""
+    futu_cfg = config.get("futu") or {}
+    if not futu_cfg.get("enabled", False):
+        return
+    group_name = (futu_cfg.get("groups") or {}).get(key)
+    if not group_name:
+        return
+    sync_to_futu(
+        tickers,
+        group_name,
+        market,  # type: ignore[arg-type]
+        host=futu_cfg.get("host", "127.0.0.1"),
+        port=futu_cfg.get("port", 11111),
+    )
 
 HKEX_SECURITIES_URL = (
     "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx"
@@ -831,6 +850,7 @@ def main() -> int:
             if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
                 logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
                 safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
+                _futu_sync(config, "longs", sorted_longs, "US")
         else:
             logger.warning("[Longs] No tickers found")
 
@@ -857,6 +877,7 @@ def main() -> int:
                     if safe_write_watchlist(sorted_shorts, us_output_dir / "Shorts.txt", fmt):
                         logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> output/US/Shorts.txt")
                         safe_write_watchlist(sorted_shorts, us_output_dir / f"{today}_Shorts.txt", fmt)
+                        _futu_sync(config, "shorts", sorted_shorts, "US")
                 else:
                     logger.warning("[Shorts] No tickers found after all filters")
             except Exception as e:
@@ -882,6 +903,7 @@ def main() -> int:
                         if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
                             logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
                             safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
+                            _futu_sync(config, "rs", sorted_rs, "US")
                     else:
                         logger.warning("[RS] No tickers found")
                 else:
@@ -905,6 +927,7 @@ def main() -> int:
                             f"-> output/HK/Shorts.txt"
                         )
                         safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_Shorts.txt", fmt)
+                        _futu_sync(config, "hk_shorts", sorted_hk, "HK")
                 else:
                     logger.warning("[HK Shorts] No tickers found after all filters")
             except Exception as e:
@@ -936,6 +959,7 @@ def main() -> int:
                     f"[Morning Gap] +{offset}min: {len(sorted_tickers)} tickers "
                     f"-> output/US/MorningGap.txt"
                 )
+                _futu_sync(config, "morning_gap", sorted_tickers, "US")
                 if offset == morning_cfg.get("archive_offset", 30):
                     safe_write_watchlist(
                         sorted_tickers,

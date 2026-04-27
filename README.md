@@ -140,6 +140,21 @@ Each run generates both a latest file (e.g. `Shorts.txt`) and a date-stamped cop
 
 每次运行生成最新文件（如 `Shorts.txt`）和日期归档副本。文件为逗号分隔的股票代码，可直接导入 TradingView。
 
+### Futu (富途牛牛) Auto-Sync / 富途自选股自动同步
+
+After each successful watchlist write, the script can sync tickers to a Futu custom watchlist group via OpenAPI. Configured via `[futu]` in `config.toml`. The `.txt` files remain the primary output — Futu sync failures (OpenD not running, group missing, etc.) only log a warning.
+
+每次成功写入清单后,脚本可通过 OpenAPI 把 ticker 同步到富途自选股自定义分组。在 `config.toml` 的 `[futu]` 中配置。`.txt` 文件仍是主要产物 —— 富途同步失败(OpenD 未启动、分组不存在等)仅记录警告。
+
+**Prerequisites / 前置条件:**
+1. Download & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with your Futu account (default port `11111`).
+2. In the Futu PC client, manually create custom watchlist groups: `Longs`, `Shorts`, `RS`, `HKShorts`, `MorningGap` (the API can only modify custom groups, not create them).
+3. Set `enabled = true` in `[futu]` (already on by default).
+
+**Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
+
+**同步策略:** 基于 diff —— 拉取分组现有 ticker,只 ADD 新增的、DEL 移除的,节省 API 调用(富途限流:30 秒内最多 10 次)。
+
 ## Setup / 安装
 
 ```bash
