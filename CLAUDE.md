@@ -44,13 +44,13 @@ Uses `finviz` package (web scraping, no API key needed):
 `futu_sync.py` mirrors each successfully-written watchlist into a Futu custom watchlist group via the `futu-api` SDK. The `.txt` files remain the primary artifact — Futu sync is a soft side-effect that logs a warning on any failure and never raises.
 
 **Architecture:**
-- Hooks fire after every `safe_write_watchlist` of the dated file in `main.py` — one call per group: each Longs split (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers), Leaders, Shorts, RS, HKShorts, MorningGap.
+- Hooks fire after every `safe_write_watchlist` of the dated file in `main.py` — one call per group: each Longs split (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers), Leaders, Shorts, RS, HKShorts, MorningGap, MorningGapPre.
 - `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running.
 - `sync_to_futu()` is **diff-based**: calls `get_user_security(group_name)` for current contents, computes set diff, then issues at most one `DEL` and one `ADD` (under the 10-call/30s API rate limit).
 
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
-2. In the Futu PC client, manually create the 10 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap`. **The API cannot create groups — it can only modify existing custom groups.**
+2. In the Futu PC client, manually create the 11 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap`, `MorningGapPre`. **The API cannot create groups — it can only modify existing custom groups.**
 
 **Config (`[futu]` in `config.toml`):**
 ```toml
@@ -69,6 +69,7 @@ shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
 morning_gap = "MorningGap"
+morning_gap_pre = "MorningGapPre"
 leaders = "Leaders"
 ```
 

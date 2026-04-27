@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Schedule pmset wake events for the intraday morning-gap scans.
+"""Schedule pmset wake events for the morning-gap scans.
 
-The launchd job triggers at 21:40-22:00 HKT (EDT) or 22:40-23:00 HKT (EST).
-This script schedules Mac wake-ups 11 min before each window's first scan:
-  - 21:29 HKT covers EDT (NY 9:30 AM)
-  - 22:29 HKT covers EST (NY 9:30 AM)
+The launchd job triggers at 21:10-22:00 HKT (EDT) or 22:10-23:00 HKT (EST),
+covering pre-market (-20/-10) and post-open (+10..+30) scans relative to
+NY 9:30 open. This script schedules Mac wake-ups 11 min before each
+window's first (pre-market -20) scan:
+  - 20:59 HKT covers EDT (NY 9:10 AM)
+  - 21:59 HKT covers EST (NY 9:10 AM)
 
 `pmset schedule` events are one-shot. Re-run periodically (e.g. weekly via
 cron/launchd or manually). Re-running is safe — past events expire on their
@@ -22,7 +24,7 @@ import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-WAKE_TIMES = ["21:29:00", "22:29:00"]
+WAKE_TIMES = ["20:59:00", "21:59:00"]
 DEFAULT_DAYS = 14
 
 

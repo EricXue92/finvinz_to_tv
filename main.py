@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 from finviz import get_stock
+from finviz.helper_functions.error_handling import NoResults
 from finviz.screener import Screener
 import openpyxl
 
@@ -261,11 +262,15 @@ def load_config(config_path: Path) -> dict:
 
 
 def run_screener(filters: list[str], signal: str | None = None) -> list[str]:
-    """Run a Finviz screener and return list of tickers."""
+    """Run a Finviz screener and return list of tickers. Empty result is
+    a valid outcome (returns []) — Finviz raises NoResults in that case."""
     kwargs = {"filters": filters}
     if signal:
         kwargs["signal"] = signal
-    stock_list = Screener(**kwargs)
+    try:
+        stock_list = Screener(**kwargs)
+    except NoResults:
+        return []
     return [stock["Ticker"] for stock in stock_list.data]
 
 
@@ -384,18 +389,18 @@ def filter_shorts(
 
 
 def run_morning_gap(config: dict) -> tuple[int, list[str]]:
-    """Run the intraday morning-gap scan. Determines current scan offset
-    from ET time, runs Finviz screener, applies dollar-volume and
-    intraday cumulative volume filters. Returns (offset, tickers).
-    Returns (-1, []) if outside scan window."""
-    scan_offsets = config.get("scan_offsets", [10, 15, 20, 25, 30])
+    """Run the morning-gap scan. Negative offset = pre-market (skips
+    intraday cumulative-volume filter); positive offset = post-open.
+    Returns (offset, tickers), or (None, []) if outside scan window."""
+    scan_offsets = config.get("scan_offsets", [-20, -10, 10, 15, 20, 25, 30])
     tolerance = config.get("offset_tolerance_minutes", 2)
     offset = _get_et_scan_offset(scan_offsets, tolerance)
     if offset is None:
         logger.info("[Morning Gap] Not in scan window, exiting")
-        return -1, []
+        return None, []
 
-    logger.info(f"[Morning Gap] Running for offset +{offset}min")
+    sign = "+" if offset >= 0 else ""
+    logger.info(f"[Morning Gap] Running for offset {sign}{offset}min")
 
     # Phase 1: Finviz screener
     tickers = run_screener(config["filters"], config.get("signal"))
@@ -413,7 +418,7 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
         return offset, []
 
     now_et = datetime.now(ZoneInfo("America/New_York"))
-    market_open = True  # we only run during market hours
+    market_open = True  # always trim today's partial bar (pre- or post-open)
     today_et = now_et.date()
 
     # Phase 3: Dollar volume filter
@@ -425,6 +430,11 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
         logger.info(f"  {len(tickers)} after dollar volume filter (>= ${min_dv:,.0f})")
     if not tickers:
         return offset, []
+
+    # Pre-market: skip intraday cumulative volume filter (no meaningful
+    # accumulated session volume yet).
+    if offset < 0:
+        return offset, tickers
 
     # Phase 4: Compute 20-day avg daily volume per ticker
     avg_days = config.get("avg_volume_days", 20)
@@ -740,15 +750,18 @@ def check_market_down(threshold: float = -1.5) -> bool:
 def _get_et_scan_offset(
     scan_offsets: list[int], tolerance_minutes: int
 ) -> int | None:
-    """Determine which scan offset (in minutes after 9:30 ET) the current
-    ET time matches, within tolerance. Returns None if outside any window
-    or outside trading hours / weekend."""
+    """Determine which scan offset (in minutes relative to 9:30 ET, negative
+    = pre-market) the current ET time matches, within tolerance. Returns
+    None if outside any window or weekend."""
     now_et = datetime.now(ZoneInfo("America/New_York"))
     if now_et.weekday() >= 5:
         return None
     market_open_et = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
     minutes_since_open = (now_et - market_open_et).total_seconds() / 60
-    if minutes_since_open < 0 or minutes_since_open > max(scan_offsets) + tolerance_minutes:
+    if (
+        minutes_since_open < min(scan_offsets) - tolerance_minutes
+        or minutes_since_open > max(scan_offsets) + tolerance_minutes
+    ):
         return None
     best = min(scan_offsets, key=lambda o: abs(o - minutes_since_open))
     if abs(best - minutes_since_open) <= tolerance_minutes:
@@ -1043,21 +1056,26 @@ def main() -> int:
             logger.warning(f"[Morning Gap] Failed: {e}")
             return 1
 
-        if offset == -1:
+        if offset is None:
             return 0  # Outside scan window — not an error
+
+        # Pre-market and post-open scans write to separate files / Futu groups
+        # so each gets its own drop-guard baseline (filter strictness differs).
+        is_pre = offset < 0
+        stem = "MorningGapPre" if is_pre else "MorningGap"
+        futu_key = "morning_gap_pre" if is_pre else "morning_gap"
+        sign = "" if is_pre else "+"
 
         if tickers:
             sorted_tickers = sorted(set(tickers))
-            # Each scan overwrites today's dated file; drop guard compares to
-            # the same path (i.e. an earlier scan within the same day).
-            dated = us_output_dir / f"{today}_MorningGap.txt"
+            dated = us_output_dir / f"{today}_{stem}.txt"
             if safe_write_watchlist(sorted_tickers, dated, fmt):
                 logger.info(
-                    f"[Morning Gap] +{offset}min: {len(sorted_tickers)} tickers -> {dated}"
+                    f"[Morning Gap] {sign}{offset}min: {len(sorted_tickers)} tickers -> {dated}"
                 )
-                _futu_sync(config, "morning_gap", sorted_tickers, "US")
+                _futu_sync(config, futu_key, sorted_tickers, "US")
         else:
-            logger.warning("[Morning Gap] No tickers passed filters")
+            logger.warning(f"[Morning Gap] {sign}{offset}min: no tickers passed filters")
 
         logger.info("Done.")
         return 0
