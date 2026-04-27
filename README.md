@@ -11,10 +11,10 @@ Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs 
 | Priority | Strategy (file stem) | Key Filters |
 |----|-----------------------|-------------|
 | 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 3 (Finviz), Beta > 1.5, Gap Up 5%+, Above SMA200 |
-| 2 | `HighVolume` | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
-| 3 | `GapUp` | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
+| 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
+| 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
 | 4 | `NewHigh52W` | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
-| 5 | `TopGainers` | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
+| 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
 
 All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
 
@@ -73,7 +73,7 @@ Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY a
 
 | Strategy | Key Filters |
 |----------|-------------|
-| Relative Strength | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
+| Relative Strength | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
 
 ### HK Shorts (1 strategy, multi-phase filtering)
 
@@ -100,14 +100,15 @@ Hong Kong market short candidates using the same methodology as US Shorts, sourc
 
 HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
 
-### Morning Gap (intraday, 5 scans)
+### Morning Gap (pre-market + intraday, 7 scans)
 
-Intraday scanner running at +10/+15/+20/+25/+30 minutes after US market open. Captures stocks with a strong gap-up that have already traded their full daily average volume in the first 30 minutes — a signal of catalyst-driven institutional buying (earnings, FDA, M&A, sector news).
+Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `MorningGapPre.txt` as an early candidate list — Finviz filters + dollar volume only, no intraday volume confirmation yet. **Post-open (+10 / +15 / +20 / +25 / +30 min)** writes to `MorningGap.txt` and adds the intraday cumulative-volume filter — captures stocks that have already traded their full daily average volume in the first 30 minutes, a signal of catalyst-driven institutional buying (earnings, FDA, M&A, sector news).
 
-**Phase 1 — Finviz filters:**
+**Phase 1 — Finviz filters (both pre-market and post-open):**
 
 | Filter | Criteria |
 |--------|----------|
+| Market Cap | Small Cap+ (>= $300M) |
 | Avg Volume | > 500K |
 | Price | > $10 |
 | Beta | > 1.5 |
@@ -116,12 +117,12 @@ Intraday scanner running at +10/+15/+20/+25/+30 minutes after US market open. Ca
 
 **Phase 2 — Post-processing (via yfinance):**
 
-| Filter | Criteria |
-|--------|----------|
-| Dollar Volume | Price × 20-day avg volume >= $100M |
-| Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume |
+| Filter | Criteria | Pre-market | Post-open |
+|--------|----------|------------|-----------|
+| Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ |
+| Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume | — | ✓ |
 
-The intraday volume threshold is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
+The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
 
 ## Output
 
@@ -136,7 +137,8 @@ output/
 │   ├── 2026_04_27_Leaders.txt       # US trend leaders
 │   ├── 2026_04_27_Shorts.txt        # US short candidates
 │   ├── 2026_04_27_RS.txt            # Relative strength (only on RS-eligible days)
-│   └── 2026_04_27_MorningGap.txt    # Intraday morning-gap snapshot (overwritten each scan)
+│   ├── 2026_04_27_MorningGapPre.txt # Pre-market morning-gap candidates (-20/-10 min)
+│   └── 2026_04_27_MorningGap.txt    # Post-open morning-gap snapshot (+10..+30 min)
 └── HK/
     └── 2026_04_27_Shorts.txt        # HK short candidates
 ```
@@ -151,7 +153,7 @@ After each successful watchlist write, the script can sync tickers to a Futu cus
 
 **Prerequisites:**
 1. Download & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with your Futu account (default port `11111`).
-2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap` (the API can only modify custom groups, not create them).
+2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap`, `MorningGapPre` (the API can only modify custom groups, not create them).
 3. Set `enabled = true` in `[futu]` (already on by default).
 
 **Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
@@ -169,14 +171,14 @@ uv run main.py
 uv run main.py --mode morning-gap
 ```
 
-The morning-gap scanner auto-detects current US ET time and runs the matching scan (+10/+15/+20/+25/+30 min after open, ±2 min tolerance). Outside this window it logs and exits cleanly.
+The morning-gap scanner auto-detects current US ET time and runs the matching scan (-20/-10 pre-market, +10/+15/+20/+25/+30 post-open, ±2 min tolerance). Outside any window it logs and exits cleanly.
 
 ## Import to TradingView
 
 1. Open TradingView
 2. Right panel → Watchlist → Click the list name
 3. Select "Import list..."
-4. Choose the latest dated file, e.g. `output/US/2026_04_27_HighVolume.txt` (or `EarningsGap` / `GapUp` / `NewHigh52W` / `TopGainers` / `Leaders` / `Shorts` / `RS` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
+4. Choose the latest dated file, e.g. `output/US/2026_04_27_HighVolume.txt` (or `EarningsGap` / `GapUp` / `NewHigh52W` / `TopGainers` / `Leaders` / `Shorts` / `RS` / `MorningGap` / `MorningGapPre` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
 
 ## Automation (launchd + pmset)
 
@@ -217,12 +219,14 @@ launchctl list | grep finviz
 
 ### Intraday Morning Gap Schedule
 
-The intraday scanner is driven by a separate plist `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` with 50 calendar entries (Mon–Fri × 5 offsets × EDT/EST). The script self-validates current ET time on each trigger — if not within ±2 min of any scan offset (e.g. on a DST transition day or off-hours run), it exits cleanly without writing.
+The intraday scanner is driven by a separate plist `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` with 70 calendar entries (Mon–Fri × 7 offsets × EDT/EST). The script self-validates current ET time on each trigger — if not within ±2 min of any scan offset (e.g. on a DST transition day or off-hours run), it exits cleanly without writing.
 
-| Time (HKT) | NY Time | DST | Offset |
-|---|---|---|---|
-| 21:40 / 21:45 / 21:50 / 21:55 / 22:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EDT | +10 / +15 / +20 / +25 / +30 |
-| 22:40 / 22:45 / 22:50 / 22:55 / 23:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EST | +10 / +15 / +20 / +25 / +30 |
+| Time (HKT) | NY Time | DST | Offset | Output |
+|---|---|---|---|---|
+| 21:10 / 21:20 | 09:10 / 09:20 | EDT | -20 / -10 | `MorningGapPre.txt` |
+| 21:40 / 21:45 / 21:50 / 21:55 / 22:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EDT | +10 / +15 / +20 / +25 / +30 | `MorningGap.txt` |
+| 22:10 / 22:20 | 09:10 / 09:20 | EST | -20 / -10 | `MorningGapPre.txt` |
+| 22:40 / 22:45 / 22:50 / 22:55 / 23:00 | 09:40 / 09:45 / 09:50 / 09:55 / 10:00 | EST | +10 / +15 / +20 / +25 / +30 | `MorningGap.txt` |
 
 ```bash
 # Load (enable)
@@ -235,7 +239,7 @@ launchctl list | grep morning-gap
 tail -f /tmp/finviz-to-tv-morning-gap.log
 ```
 
-> **Wake-up:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). For the intraday scanner, run `scripts/schedule_morning_gap_wakes.py` to schedule per-day `pmset schedule wake` entries at 21:29 and 22:29 HKT (covers EDT and EST). Re-run weekly to top up.
+> **Wake-up:** `pmset repeat` only supports one wake schedule (already used by the 8:29 AM EOD wake). For the intraday scanner, run `scripts/schedule_morning_gap_wakes.py` to schedule per-day `pmset schedule wake` entries at 20:59 and 21:59 HKT (11 min before each window's first pre-market scan, covers EDT and EST). Re-run weekly to top up.
 
 ```bash
 # Schedule next 14 weekdays of wakes (one-shot events, requires sudo)
