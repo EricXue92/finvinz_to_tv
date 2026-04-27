@@ -43,7 +43,7 @@ Result: each ticker appears in exactly one of the 7 long-side files (5 Longs spl
 
 Shorts, HK Shorts, and Morning Gap are independent and do not participate in the dedup.
 
-### Shorts (1 strategy, multi-phase filtering)
+### US Shorts (1 strategy, multi-phase filtering)
 
 Based on **Kristjan Kullamägi**'s short-selling criteria:
 
