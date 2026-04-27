@@ -838,11 +838,15 @@ def main() -> int:
     hk_output_dir.mkdir(exist_ok=True)
 
     if args.mode == "eod":
-        # --- Longs (collect only — write deferred until after cross-group dedup) ---
-        longs_tickers: set[str] = set()
-        for i, screener_cfg in enumerate(config.get("longs", [])):
+        # --- Longs (collect per-strategy — write deferred until after cross-group dedup) ---
+        # Config list order = priority order (earlier wins). After collection,
+        # tickers are assigned exclusively to the highest-priority strategy.
+        longs_cfgs = config.get("longs", [])
+        longs_per_strategy: list[tuple[str, str, set[str]]] = []  # (key, name, tickers)
+        for i, screener_cfg in enumerate(longs_cfgs):
             name = screener_cfg["name"]
-            logger.info(f"[Longs] Running: {name}")
+            key = screener_cfg["key"]
+            logger.info(f"[Longs/{key}] Running: {name}")
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
@@ -854,11 +858,25 @@ def main() -> int:
                     rvol_days = screener_cfg.get("relative_volume_days", 20)
                     tickers = filter_relative_volume(tickers, min_rvol, rvol_days)
                     logger.info(f"  {len(tickers)} after relative volume filter (>= {min_rvol}x {rvol_days}-day avg)")
-                longs_tickers.update(tickers)
+                longs_per_strategy.append((key, name, set(tickers)))
             except Exception as e:
                 logger.warning(f"  Failed: {e}")
-            if i < len(config.get("longs", [])) - 1:
+                longs_per_strategy.append((key, name, set()))
+            if i < len(longs_cfgs) - 1:
                 time.sleep(delay)
+
+        # Internal priority dedup: earlier strategy wins.
+        seen: set[str] = set()
+        longs_dedup: list[tuple[str, str, set[str]]] = []
+        for key, name, tickers in longs_per_strategy:
+            before = len(tickers)
+            exclusive = tickers - seen
+            seen.update(exclusive)
+            removed = before - len(exclusive)
+            if removed:
+                logger.info(f"[Longs/{key}] Dedup: removed {removed} (kept by higher-priority strategy)")
+            longs_dedup.append((key, name, exclusive))
+        longs_tickers: set[str] = seen  # union, used for Leaders/RS dedup
 
         time.sleep(delay)
 
@@ -949,16 +967,22 @@ def main() -> int:
                 f"removed {removed_le} from Leaders, {removed_rs} from RS"
             )
 
-        # --- Write Longs ---
-        if longs_tickers:
-            sorted_longs = sorted(longs_tickers)
-            dated = us_output_dir / f"{today}_Longs.txt"
-            prev = _previous_dated_file(us_output_dir, today, "_Longs.txt")
-            if safe_write_watchlist(sorted_longs, dated, fmt, baseline_path=prev):
-                logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> {dated}")
-                _futu_sync(config, "longs", sorted_longs, "US")
-        else:
-            logger.warning("[Longs] No tickers found")
+        # --- Write Longs (one file per strategy; Leaders/RS dedup already applied to union) ---
+        # Filename matches Futu group name (PascalCase).
+        futu_groups_cfg = (config.get("futu") or {}).get("groups") or {}
+        for key, name, tickers in longs_dedup:
+            futu_key = f"longs_{key}"
+            file_stem = futu_groups_cfg.get(futu_key) or key  # fallback to key if unmapped
+            if not tickers:
+                logger.warning(f"[Longs/{key}] No tickers found")
+                continue
+            sorted_t = sorted(tickers)
+            suffix = f"_{file_stem}.txt"
+            dated = us_output_dir / f"{today}{suffix}"
+            prev = _previous_dated_file(us_output_dir, today, suffix)
+            if safe_write_watchlist(sorted_t, dated, fmt, baseline_path=prev):
+                logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
+                _futu_sync(config, futu_key, sorted_t, "US")
 
         # --- Write Leaders ---
         if leaders_tickers:

@@ -12,33 +12,48 @@ host = "127.0.0.1"
 port = 11111
 
 [futu.groups]
-longs = "Longs"
+longs_earnings_gap = "EarningsGap"
+longs_high_volume = "HighVolume"
+longs_gap_up = "GapUp"
+longs_new_high_52w = "NewHigh52W"
+longs_top_gainers = "TopGainers"
 shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
 morning_gap = "MorningGap"
 leaders = "Leaders"
 
-# --- Longs: 5 个策略合并去重，输出为 Longs.txt ---
+# --- Longs: 5 个子策略，按 list 顺序内部互斥去重，每个单独输出。
+# 优先级 (高 → 低): EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers
+# 并集仍参与 Longs > Leaders > RS 的跨组去重。
 
 [[longs]]
+key = "earnings_gap"
+name = "Earnings Gap"
+filters = ["cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o3","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
+
+[[longs]]
+key = "high_volume"
 name = "Relative Volume Surge"
 filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_dup","ta_sma200_pa"]
 min_relative_volume = 3
 relative_volume_days = 20
 
 [[longs]]
-name = "Top Gainers"
-signal = "ta_topgainers"
-filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_sma200_pa"]
-
-[[longs]]
+key = "gap_up"
 name = "Gap Up"
 filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_gap_u3","ta_sma200_pa"]
 
 [[longs]]
+key = "new_high_52w"
 name = "52W New High"
 filters = ["cap_smallover","sh_avgvol_o1000","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
+
+[[longs]]
+key = "top_gainers"
+name = "Top Gainers"
+signal = "ta_topgainers"
+filters = ["sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_sma200_pa"]
 
 # --- Leaders: 高 beta + 强势 + 站上均线，5 个 perf 窗口合并去重，输出为 Leaders.txt ---
 # 共同条件: cap >= small, avg vol > 500K, price > $20, beta > 1.5,

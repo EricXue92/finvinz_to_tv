@@ -4,16 +4,17 @@ Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance 
 
 ## Screening Criteria
 
-### Longs (4 strategies, merged & deduplicated)
+### Longs (5 strategies, each written to its own file)
 
-Based on **Oliver Kell**'s momentum/breakout methodology:
+Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs to its own `.txt` file and Futu group; tickers are mutually exclusive across the 5 strategies (priority order shown below — earlier wins).
 
-| Strategy | Key Filters |
-|----------|-------------|
-| Relative Volume Surge | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
-| Top Gainers | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
-| Gap Up | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
-| 52W New High | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
+| Priority | Strategy (file stem) | Key Filters |
+|----|-----------------------|-------------|
+| 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 3 (Finviz), Beta > 1.5, Gap Up 5%+, Above SMA200 |
+| 2 | `HighVolume` | Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
+| 3 | `GapUp` | Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
+| 4 | `NewHigh52W` | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
+| 5 | `TopGainers` | Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
 
 All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
 
@@ -33,7 +34,12 @@ Long-term trend leaders trading above both SMA50 and SMA200. The five strategies
 
 ### Cross-group dedup (Longs / Leaders / RS)
 
-After all three long-side groups run, tickers are deduplicated with priority **Longs > Leaders > RS** so each ticker appears in exactly one group per day. Because every `.txt` file and Futu group is rewritten on each run, this also prevents day-over-day cross-group duplication — a ticker that migrates between groups is automatically removed from its old group.
+Two layers:
+
+1. **Within Longs** — the 5 strategies are mutually exclusive in priority order `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers` (earlier wins).
+2. **Across long-side groups** — the union of all 5 Longs strategies is then deduped against Leaders and RS with priority `Longs(union) > Leaders > RS`.
+
+Result: each ticker appears in exactly one of the 7 long-side files (5 Longs splits + Leaders + RS) per day. Because every `.txt` file and Futu group is rewritten on each run, this also prevents day-over-day cross-group duplication — a ticker that migrates between groups is automatically removed from its old group.
 
 Shorts, HK Shorts, and Morning Gap are independent and do not participate in the dedup.
 
@@ -122,16 +128,20 @@ The intraday volume threshold is the key signal — by 10–30 min after open, t
 ```
 output/
 ├── US/
-│   ├── 2026_04_27_Longs.txt       # US long candidates
-│   ├── 2026_04_27_Leaders.txt     # US trend leaders
-│   ├── 2026_04_27_Shorts.txt      # US short candidates
-│   ├── 2026_04_27_RS.txt          # Relative strength (only on RS-eligible days)
-│   └── 2026_04_27_MorningGap.txt  # Intraday morning-gap snapshot (overwritten each scan)
+│   ├── 2026_04_27_EarningsGap.txt   # Longs strategy 1 (highest priority)
+│   ├── 2026_04_27_HighVolume.txt    # Longs strategy 2 (Relative Volume Surge)
+│   ├── 2026_04_27_GapUp.txt         # Longs strategy 3
+│   ├── 2026_04_27_NewHigh52W.txt    # Longs strategy 4
+│   ├── 2026_04_27_TopGainers.txt    # Longs strategy 5 (lowest priority)
+│   ├── 2026_04_27_Leaders.txt       # US trend leaders
+│   ├── 2026_04_27_Shorts.txt        # US short candidates
+│   ├── 2026_04_27_RS.txt            # Relative strength (only on RS-eligible days)
+│   └── 2026_04_27_MorningGap.txt    # Intraday morning-gap snapshot (overwritten each scan)
 └── HK/
-    └── 2026_04_27_Shorts.txt      # HK short candidates
+    └── 2026_04_27_Shorts.txt        # HK short candidates
 ```
 
-Each run writes a single date-stamped file per group (e.g. `YYYY_MM_DD_Longs.txt`). Files are comma-separated ticker symbols, ready for TradingView import.
+Each run writes a single date-stamped file per group. The 5 Longs strategies are mutually exclusive (priority `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`); their union is then deduped against Leaders and RS (`Longs > Leaders > RS`), so each ticker appears in exactly one of the 7 long-side files. Files are comma-separated ticker symbols, ready for TradingView import.
 
 **Drop-guard safety:** `safe_write_watchlist` compares today's count against the most recent prior dated file — if the count drops by more than 50%, the new file is **not** written and the previous day's file is preserved. This protects against silent rate-limiting or data-source failures. Morning-gap intra-day scans compare against the same day's earlier scan.
 
@@ -141,7 +151,7 @@ After each successful watchlist write, the script can sync tickers to a Futu cus
 
 **Prerequisites:**
 1. Download & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with your Futu account (default port `11111`).
-2. In the Futu PC client, manually create the custom watchlist groups: `Longs`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap` (the API can only modify custom groups, not create them).
+2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap` (the API can only modify custom groups, not create them).
 3. Set `enabled = true` in `[futu]` (already on by default).
 
 **Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
@@ -166,7 +176,7 @@ The morning-gap scanner auto-detects current US ET time and runs the matching sc
 1. Open TradingView
 2. Right panel → Watchlist → Click the list name
 3. Select "Import list..."
-4. Choose the latest dated file, e.g. `output/US/2026_04_27_Longs.txt` (or `Leaders` / `Shorts` / `RS` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
+4. Choose the latest dated file, e.g. `output/US/2026_04_27_HighVolume.txt` (or `EarningsGap` / `GapUp` / `NewHigh52W` / `TopGainers` / `Leaders` / `Shorts` / `RS` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
 
 ## Automation (launchd + pmset)
 
