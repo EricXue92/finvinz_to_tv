@@ -1,6 +1,6 @@
 # Finviz to TradingView
 
-Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance scans (Hong Kong), exporting results as TradingView-importable watchlists.
+Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance scans (Hong Kong), exporting results as TradingView-importable watchlists and auto-syncing to Futu (富途牛牛) custom watchlist groups via OpenAPI.
 
 ## Screening Criteria
 
