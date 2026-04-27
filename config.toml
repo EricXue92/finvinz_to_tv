@@ -31,7 +31,7 @@ morning_gap_pre = "MorningGapPre"
 [[longs]]
 key = "earnings_gap"
 name = "Earnings Gap"
-filters = ["cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o3","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
+filters = ["cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o1.5","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
 
 [[longs]]
 key = "high_volume"
