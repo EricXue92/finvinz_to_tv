@@ -10,9 +10,18 @@ min_dollar_volume = 100_000_000  # Longs 过滤: price * avg volume >= 100M
 enabled = true
 host = "127.0.0.1"
 port = 11111
+# Groups in this list are append-only: scanners only ADD tickers, never DEL.
+# Used for merged/shared groups so multiple scanners can feed one group
+# without clobbering each other. The group accumulates indefinitely —
+# clear it manually in the Futu client when it gets too crowded.
+append_only_groups = ["EarningsGap"]
 
 [futu.groups]
+# EarningsGap is the merged "gap watch" group: EOD earnings-gap scan +
+# pre-market morning-gap + post-open morning-gap all sync into it (append-only).
 longs_earnings_gap = "EarningsGap"
+morning_gap = "EarningsGap"
+morning_gap_pre = "EarningsGap"
 longs_high_volume = "HighVolume"
 longs_gap_up = "GapUp"
 longs_new_high_52w = "NewHigh52W"
@@ -20,9 +29,7 @@ longs_top_gainers = "TopGainers"
 shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
-morning_gap = "MorningGap"
 leaders = "Leaders"
-morning_gap_pre = "MorningGapPre"
 
 # --- Longs: 5 个子策略，按 list 顺序内部互斥去重，每个单独输出。
 # 优先级 (高 → 低): EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers

@@ -47,10 +47,11 @@ Uses `finviz` package (web scraping, no API key needed):
 - Hooks fire after every `safe_write_watchlist` of the dated file in `main.py` — one call per group: each Longs split (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers), Leaders, Shorts, RS, HKShorts, MorningGap, MorningGapPre.
 - `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running.
 - `sync_to_futu()` is **diff-based**: calls `get_user_security(group_name)` for current contents, computes set diff, then issues at most one `DEL` and one `ADD` (under the 10-call/30s API rate limit).
+- **Append-only / merged groups**: Multiple scanner keys may map to the same Futu group name. When the group is listed in `[futu] append_only_groups`, `sync_to_futu(append_only=True)` skips the DEL phase — tickers only accumulate. Used for the merged `EarningsGap` group, which receives `longs_earnings_gap` + `morning_gap` + `morning_gap_pre` (the corresponding `.txt` files stay separate). The group grows monotonically across runs and must be cleared manually in the Futu client when it gets too crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
 
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
-2. In the Futu PC client, manually create the 11 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap`, `MorningGapPre`. **The API cannot create groups — it can only modify existing custom groups.**
+2. In the Futu PC client, manually create the 9 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`. **The API cannot create groups — it can only modify existing custom groups.** The earnings-gap, pre-market and post-open morning-gap scans all sync into the single append-only `EarningsGap` group.
 
 **Config (`[futu]` in `config.toml`):**
 ```toml
@@ -59,8 +60,12 @@ enabled = true
 host = "127.0.0.1"
 port = 11111
 
+append_only_groups = ["EarningsGap"]
+
 [futu.groups]
 longs_earnings_gap = "EarningsGap"
+morning_gap = "EarningsGap"          # merged into EarningsGap (append-only)
+morning_gap_pre = "EarningsGap"      # merged into EarningsGap (append-only)
 longs_high_volume = "HighVolume"
 longs_gap_up = "GapUp"
 longs_new_high_52w = "NewHigh52W"
@@ -68,8 +73,6 @@ longs_top_gainers = "TopGainers"
 shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
-morning_gap = "MorningGap"
-morning_gap_pre = "MorningGapPre"
 leaders = "Leaders"
 ```
 

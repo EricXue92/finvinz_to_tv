@@ -31,12 +31,14 @@ def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
     group_name = (futu_cfg.get("groups") or {}).get(key)
     if not group_name:
         return
+    append_only_groups = set(futu_cfg.get("append_only_groups") or [])
     sync_to_futu(
         tickers,
         group_name,
         market,  # type: ignore[arg-type]
         host=futu_cfg.get("host", "127.0.0.1"),
         port=futu_cfg.get("port", 11111),
+        append_only=group_name in append_only_groups,
     )
 
 HKEX_SECURITIES_URL = (

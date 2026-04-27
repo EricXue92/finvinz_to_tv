@@ -155,10 +155,12 @@ After each successful watchlist write, the script can sync tickers to a Futu cus
 
 **Prerequisites:**
 1. Download & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with your Futu account (default port `11111`).
-2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `MorningGap`, `MorningGapPre` (the API can only modify custom groups, not create them).
+2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts` (the API can only modify custom groups, not create them).
 3. Set `enabled = true` in `[futu]` (already on by default).
 
 **Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
+
+**Merged `EarningsGap` group (append-only):** The EOD `EarningsGap` scan, the pre-market `MorningGapPre` scan, and the post-open `MorningGap` scan all sync into the **same** Futu group, `EarningsGap`. Because three different scanners feed one group, `EarningsGap` is listed in `[futu] append_only_groups` — sync only ADDs tickers, never DELs, so each scanner doesn't clobber the others' contributions. Tickers accumulate across days; clear the group manually in the Futu client when it gets too crowded (Futu caps: 500 per group for non-traders, 2000 for active traders). The three `.txt` files (`EarningsGap.txt`, `MorningGapPre.txt`, `MorningGap.txt`) remain separate and unaffected.
 
 ## Setup
 

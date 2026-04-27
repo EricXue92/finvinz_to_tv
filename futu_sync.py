@@ -53,11 +53,17 @@ def sync_to_futu(
     market: Literal["US", "HK"],
     host: str = "127.0.0.1",
     port: int = 11111,
+    append_only: bool = False,
 ) -> bool:
     """Sync the ticker list to a Futu custom watchlist group.
 
     Computes the diff against the group's current contents and applies only
     the necessary ADD / DEL ops (saves API calls — limit is 10 per 30s).
+
+    When ``append_only`` is True, the DEL phase is skipped: tickers are only
+    added, never removed. Used for shared/merged groups (e.g. multiple
+    scanners feeding into one Futu group) so each scanner doesn't clobber
+    others' contributions. The group accumulates monotonically across runs.
     """
     try:
         from futu import OpenQuoteContext, ModifyUserSecurityOp, RET_OK
@@ -98,7 +104,7 @@ def sync_to_futu(
             current = set()
 
         to_add = sorted(desired - current)
-        to_del = sorted(current - desired)
+        to_del = [] if append_only else sorted(current - desired)
 
         if to_del:
             ret, msg = ctx.modify_user_security(group_name, ModifyUserSecurityOp.DEL, to_del)
@@ -110,9 +116,10 @@ def sync_to_futu(
                 logger.warning(f"  Futu sync ({group_name}): ADD failed — {msg}")
                 return False
 
+        final_size = len(current | desired) if append_only else len(desired)
         logger.info(
             f"  Futu sync ({group_name}): +{len(to_add)} -{len(to_del)} "
-            f"({len(desired)} tickers in group)"
+            f"({final_size} tickers in group{', append-only' if append_only else ''})"
         )
         return True
     except Exception as e:
