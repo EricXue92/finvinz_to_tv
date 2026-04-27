@@ -78,8 +78,8 @@ name = "Leaders YTD +100%"
 filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_ytd100o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
-name = "Leaders 52W +200%"
-filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_52w200o","ta_sma200_pa","ta_sma50_pa"]
+name = "Leaders 52W +150%"
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_perf_52w150o","ta_sma200_pa","ta_sma50_pa"]
 
 # --- Shorts: 基于 Kristjan Kullamägi 博客的做空筛选，单独输出为 Shorts.txt ---
 

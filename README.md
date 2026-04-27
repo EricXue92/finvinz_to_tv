@@ -30,7 +30,7 @@ Long-term trend leaders trading above both SMA50 and SMA200. The five strategies
 | Leaders 13W +50% | 13-week performance >= 50% |
 | Leaders 26W +100% | 26-week performance >= 100% |
 | Leaders YTD +100% | YTD performance >= 100% |
-| Leaders 52W +200% | 52-week performance >= 200% |
+| Leaders 52W +150% | 52-week performance >= 150% |
 
 ### Cross-group dedup (Longs / Leaders / RS)
 
