@@ -35,3 +35,44 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 Uses `finviz` package (web scraping, no API key needed):
 - `Screener(filters=[...], signal=...)` → `.data` returns list of dicts with `"Ticker"` key
 - `get_stock("SPY")` → dict with `"Change"` field as string like `"-1.23%"`
+
+## Futu (富途牛牛) OpenAPI Integration
+
+`futu_sync.py` mirrors each successfully-written watchlist into a Futu custom watchlist group via the `futu-api` SDK. The `.txt` files remain the primary artifact — Futu sync is a soft side-effect that logs a warning on any failure and never raises.
+
+**Architecture:**
+- Hooks fire after every `safe_write_watchlist` of the *latest* file (not the dated archive) in `main.py` — one call per group: Longs, Shorts, RS, HKShorts, MorningGap.
+- `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running.
+- `sync_to_futu()` is **diff-based**: calls `get_user_security(group_name)` for current contents, computes set diff, then issues at most one `DEL` and one `ADD` (under the 10-call/30s API rate limit).
+
+**Prerequisites (must be done by the user, once):**
+1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
+2. In the Futu PC client, manually create the 5 custom watchlist groups: `Longs`, `Shorts`, `RS`, `HKShorts`, `MorningGap`. **The API cannot create groups — it can only modify existing custom groups.**
+
+**Config (`[futu]` in `config.toml`):**
+```toml
+[futu]
+enabled = true
+host = "127.0.0.1"
+port = 11111
+
+[futu.groups]
+longs = "Longs"
+shorts = "Shorts"
+rs = "RS"
+hk_shorts = "HKShorts"
+morning_gap = "MorningGap"
+```
+
+**Ticker format conversion (`_to_futu_code`):**
+- US: `AAPL` → `US.AAPL`
+- HK: `HKEX:0522` / `522` / `0522.HK` → `HK.00522` (5-digit zero-padded)
+
+**Robustness:**
+- TCP probe (`_opend_reachable`, 1.5s timeout) runs before invoking `OpenQuoteContext` — without it, the SDK retries forever on `ECONNREFUSED` instead of raising. **Do not remove this probe.**
+- All exceptions inside `sync_to_futu` are caught; failures log a warning and return `False`.
+
+**Futu API limits to remember:**
+- 10 `modify_user_security` calls per 30 seconds
+- 500 tickers in "all" watchlist for untraded users; 2000 for active traders
+- Cannot modify system groups (e.g. "全部"), only user-created custom groups
