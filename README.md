@@ -13,7 +13,7 @@ Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs 
 | 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5 (Finviz), Beta > 1.5, Gap Up 5%+, Above SMA200 |
 | 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
 | 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
-| 4 | `NewHigh52W` | Small Cap+, Avg Vol > 1M, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
+| 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
 | 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
 
 All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.

@@ -48,7 +48,7 @@ filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_ga
 [[longs]]
 key = "new_high_52w"
 name = "52W New High"
-filters = ["cap_smallover","sh_avgvol_o1000","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
+filters = ["cap_smallover","sh_avgvol_o500","sh_price_o20","ta_beta_o1.5","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
 key = "top_gainers"
