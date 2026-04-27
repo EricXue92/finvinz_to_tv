@@ -122,22 +122,18 @@ The intraday volume threshold is the key signal — by 10–30 min after open, t
 ```
 output/
 ├── US/
-│   ├── Longs.txt              # Latest US long candidates
-│   ├── Leaders.txt            # Latest US trend leaders
-│   ├── Shorts.txt             # Latest US short candidates
-│   ├── RS.txt                 # Latest relative strength (conditional)
-│   ├── MorningGap.txt         # Latest intraday morning-gap snapshot
-│   ├── 2026_04_27_Longs.txt   # Date-stamped archives
-│   ├── 2026_04_27_Leaders.txt
-│   ├── 2026_04_27_Shorts.txt
-│   ├── 2026_04_27_RS.txt
-│   └── 2026_04_27_MorningGap.txt # Only the +30min scan is archived
+│   ├── 2026_04_27_Longs.txt       # US long candidates
+│   ├── 2026_04_27_Leaders.txt     # US trend leaders
+│   ├── 2026_04_27_Shorts.txt      # US short candidates
+│   ├── 2026_04_27_RS.txt          # Relative strength (only on RS-eligible days)
+│   └── 2026_04_27_MorningGap.txt  # Intraday morning-gap snapshot (overwritten each scan)
 └── HK/
-    ├── Shorts.txt             # Latest HK short candidates
-    └── 2026_04_27_Shorts.txt
+    └── 2026_04_27_Shorts.txt      # HK short candidates
 ```
 
-Each run generates both a latest file (e.g. `Shorts.txt`) and a date-stamped copy to preserve history. Files are comma-separated ticker symbols, ready for TradingView import.
+Each run writes a single date-stamped file per group (e.g. `YYYY_MM_DD_Longs.txt`). Files are comma-separated ticker symbols, ready for TradingView import.
+
+**Drop-guard safety:** `safe_write_watchlist` compares today's count against the most recent prior dated file — if the count drops by more than 50%, the new file is **not** written and the previous day's file is preserved. This protects against silent rate-limiting or data-source failures. Morning-gap intra-day scans compare against the same day's earlier scan.
 
 ### Futu (富途牛牛) Auto-Sync
 
@@ -170,7 +166,7 @@ The morning-gap scanner auto-detects current US ET time and runs the matching sc
 1. Open TradingView
 2. Right panel → Watchlist → Click the list name
 3. Select "Import list..."
-4. Choose `output/US/Longs.txt` (or `Leaders` / `Shorts` / `RS` for US, `output/HK/Shorts.txt` for HK)
+4. Choose the latest dated file, e.g. `output/US/2026_04_27_Longs.txt` (or `Leaders` / `Shorts` / `RS` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
 
 ## Automation (launchd + pmset)
 

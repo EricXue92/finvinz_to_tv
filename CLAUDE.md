@@ -23,9 +23,10 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 - **HK Shorts** (`[hk_shorts]`): Hong Kong market short candidates → `output/HK/Shorts.txt`. Same methodology as US Shorts but sources data from HKEX securities list + yfinance. Uses HKD-native cap thresholds. Batch-downloads ~2,400 tickers in groups of 500.
 
 **Key mechanisms:**
-- `safe_write_watchlist()`: Protects against data source issues — if new result count drops >50% vs existing file, the write is skipped and old file preserved.
-- Each run writes both a latest file (e.g. `Shorts.txt`) and a date-stamped archive (e.g. `2026_04_21_Shorts.txt`). The latest file is used for safe_write comparison.
-- **Cross-group dedup (Longs/Leaders/RS)**: After all three long-side groups have been collected, tickers are deduplicated with priority `Longs > Leaders > RS` so each ticker appears in exactly one group per run. The collection-then-write split means Longs/Leaders/RS files are written only after RS has finished. Shorts and HK Shorts are independent and written inline. Note: the first run after this rule was introduced may trigger `safe_write_watchlist`'s 50% drop guard for Leaders/RS, since yesterday's file isn't deduped — delete the affected `.txt` if needed to force a fresh write.
+- Each run writes **only** date-stamped files (e.g. `2026_04_21_Shorts.txt`). There is no un-dated "latest" copy.
+- `safe_write_watchlist(tickers, output_path, baseline_path=...)`: drop-guard for catastrophic data-source failures. Compares today's count against `baseline_path` (or `output_path` itself if not given) — if the new count drops by more than 50%, the write is skipped and the previous file is kept. EOD groups pass `baseline_path=_previous_dated_file(...)` so they compare against yesterday's archive. Morning-gap omits the baseline so it compares within the same day's earlier scan.
+- `_previous_dated_file(directory, today_prefix, suffix)`: returns the lexically-greatest `*<suffix>` file in `directory` excluding today's. Filenames use `YYYY_MM_DD_<group>.txt` so lex order = chronological order.
+- **Cross-group dedup (Longs/Leaders/RS)**: After all three long-side groups have been collected, tickers are deduplicated with priority `Longs > Leaders > RS` so each ticker appears in exactly one group per run. The collection-then-write split means Longs/Leaders/RS files are written only after RS has finished. Shorts and HK Shorts are independent and written inline.
 - 8-second delay between Finviz requests to avoid rate limiting (configurable in `config.toml`).
 
 **Config format:** TOML. Filter strings (e.g. `sh_avgvol_o500`) map directly to Finviz URL parameters. The `signal` field is optional (used for Top Gainers).

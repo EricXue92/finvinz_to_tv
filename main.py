@@ -756,20 +756,35 @@ def _get_et_scan_offset(
     return None
 
 
+def _previous_dated_file(directory: Path, today_prefix: str, suffix: str) -> Path | None:
+    """Find the most recent dated file matching `*{suffix}` in `directory`,
+    excluding today's. Used as the baseline for safe_write_watchlist's drop guard."""
+    today_name = f"{today_prefix}{suffix}"
+    candidates = sorted(
+        p for p in directory.glob(f"*{suffix}") if p.name != today_name
+    )
+    return candidates[-1] if candidates else None
+
+
 def safe_write_watchlist(
-    tickers: list[str], output_path: Path, fmt: str = "comma", drop_threshold: float = 0.5
+    tickers: list[str],
+    output_path: Path,
+    fmt: str = "comma",
+    drop_threshold: float = 0.5,
+    baseline_path: Path | None = None,
 ) -> bool:
-    """Write tickers to file. If the file already exists and new count drops by
-    more than drop_threshold (e.g. 0.5 = 50%), keep the old file and warn.
-    Returns True if the file was written, False if skipped."""
-    if output_path.exists():
-        old_content = output_path.read_text().strip()
+    """Write tickers to file. If `baseline_path` (or `output_path` when not given)
+    exists and new count drops by more than drop_threshold (e.g. 0.5 = 50%),
+    keep the existing file and warn. Returns True if the file was written."""
+    compare = baseline_path if baseline_path is not None else output_path
+    if compare.exists():
+        old_content = compare.read_text().strip()
         old_count = len(old_content.split(",")) if "," in old_content else len(old_content.splitlines())
         if old_count > 0 and len(tickers) < old_count * (1 - drop_threshold):
             logger.warning(
                 f"  SKIPPED writing {output_path.name}: new count ({len(tickers)}) "
-                f"is {(1 - len(tickers) / old_count) * 100:.0f}% less than previous ({old_count}). "
-                f"Possible rate limiting. Previous file kept."
+                f"is {(1 - len(tickers) / old_count) * 100:.0f}% less than baseline "
+                f"{compare.name} ({old_count}). Possible rate limiting. Previous file kept."
             )
             return False
 
@@ -885,9 +900,10 @@ def main() -> int:
 
                 if shorts_tickers:
                     sorted_shorts = sorted(set(shorts_tickers))
-                    if safe_write_watchlist(sorted_shorts, us_output_dir / "Shorts.txt", fmt):
-                        logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> output/US/Shorts.txt")
-                        safe_write_watchlist(sorted_shorts, us_output_dir / f"{today}_Shorts.txt", fmt)
+                    dated = us_output_dir / f"{today}_Shorts.txt"
+                    prev = _previous_dated_file(us_output_dir, today, "_Shorts.txt")
+                    if safe_write_watchlist(sorted_shorts, dated, fmt, baseline_path=prev):
+                        logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
                         _futu_sync(config, "shorts", sorted_shorts, "US")
                 else:
                     logger.warning("[Shorts] No tickers found after all filters")
@@ -936,9 +952,10 @@ def main() -> int:
         # --- Write Longs ---
         if longs_tickers:
             sorted_longs = sorted(longs_tickers)
-            if safe_write_watchlist(sorted_longs, us_output_dir / "Longs.txt", fmt):
-                logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> output/US/Longs.txt")
-                safe_write_watchlist(sorted_longs, us_output_dir / f"{today}_Longs.txt", fmt)
+            dated = us_output_dir / f"{today}_Longs.txt"
+            prev = _previous_dated_file(us_output_dir, today, "_Longs.txt")
+            if safe_write_watchlist(sorted_longs, dated, fmt, baseline_path=prev):
+                logger.info(f"[Longs] Total unique: {len(sorted_longs)} -> {dated}")
                 _futu_sync(config, "longs", sorted_longs, "US")
         else:
             logger.warning("[Longs] No tickers found")
@@ -946,9 +963,10 @@ def main() -> int:
         # --- Write Leaders ---
         if leaders_tickers:
             sorted_leaders = sorted(leaders_tickers)
-            if safe_write_watchlist(sorted_leaders, us_output_dir / "Leaders.txt", fmt):
-                logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> output/US/Leaders.txt")
-                safe_write_watchlist(sorted_leaders, us_output_dir / f"{today}_Leaders.txt", fmt)
+            dated = us_output_dir / f"{today}_Leaders.txt"
+            prev = _previous_dated_file(us_output_dir, today, "_Leaders.txt")
+            if safe_write_watchlist(sorted_leaders, dated, fmt, baseline_path=prev):
+                logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> {dated}")
                 _futu_sync(config, "leaders", sorted_leaders, "US")
         elif config.get("leaders"):
             logger.warning("[Leaders] No tickers found")
@@ -957,9 +975,10 @@ def main() -> int:
         if rs_ran:
             if rs_tickers:
                 sorted_rs = sorted(rs_tickers)
-                if safe_write_watchlist(sorted_rs, us_output_dir / "RS.txt", fmt):
-                    logger.info(f"[RS] Found {len(sorted_rs)} tickers -> output/US/RS.txt")
-                    safe_write_watchlist(sorted_rs, us_output_dir / f"{today}_RS.txt", fmt)
+                dated = us_output_dir / f"{today}_RS.txt"
+                prev = _previous_dated_file(us_output_dir, today, "_RS.txt")
+                if safe_write_watchlist(sorted_rs, dated, fmt, baseline_path=prev):
+                    logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
                     _futu_sync(config, "rs", sorted_rs, "US")
             else:
                 logger.warning("[RS] No tickers found")
@@ -974,12 +993,10 @@ def main() -> int:
 
                 if hk_shorts_tickers:
                     sorted_hk = sorted(hk_shorts_tickers)
-                    if safe_write_watchlist(sorted_hk, hk_output_dir / "Shorts.txt", fmt):
-                        logger.info(
-                            f"[HK Shorts] Final: {len(sorted_hk)} tickers "
-                            f"-> output/HK/Shorts.txt"
-                        )
-                        safe_write_watchlist(sorted_hk, hk_output_dir / f"{today}_Shorts.txt", fmt)
+                    dated = hk_output_dir / f"{today}_Shorts.txt"
+                    prev = _previous_dated_file(hk_output_dir, today, "_Shorts.txt")
+                    if safe_write_watchlist(sorted_hk, dated, fmt, baseline_path=prev):
+                        logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
                         _futu_sync(config, "hk_shorts", sorted_hk, "HK")
                 else:
                     logger.warning("[HK Shorts] No tickers found after all filters")
@@ -1007,18 +1024,14 @@ def main() -> int:
 
         if tickers:
             sorted_tickers = sorted(set(tickers))
-            if safe_write_watchlist(sorted_tickers, us_output_dir / "MorningGap.txt", fmt):
+            # Each scan overwrites today's dated file; drop guard compares to
+            # the same path (i.e. an earlier scan within the same day).
+            dated = us_output_dir / f"{today}_MorningGap.txt"
+            if safe_write_watchlist(sorted_tickers, dated, fmt):
                 logger.info(
-                    f"[Morning Gap] +{offset}min: {len(sorted_tickers)} tickers "
-                    f"-> output/US/MorningGap.txt"
+                    f"[Morning Gap] +{offset}min: {len(sorted_tickers)} tickers -> {dated}"
                 )
                 _futu_sync(config, "morning_gap", sorted_tickers, "US")
-                if offset == morning_cfg.get("archive_offset", 30):
-                    safe_write_watchlist(
-                        sorted_tickers,
-                        us_output_dir / f"{today}_MorningGap.txt",
-                        fmt,
-                    )
         else:
             logger.warning("[Morning Gap] No tickers passed filters")
 

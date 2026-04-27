@@ -107,5 +107,4 @@ filters = ["sh_avgvol_o500","sh_price_o10","ta_beta_o1.5","ta_gap_u5","ta_sma200
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [10, 15, 20, 25, 30]
-archive_offset = 30
 offset_tolerance_minutes = 2
