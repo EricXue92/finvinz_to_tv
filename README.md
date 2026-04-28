@@ -126,6 +126,8 @@ Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `Morn
 
 The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
 
+Each scan that surfaces **new** tickers (not seen in any earlier morning-gap scan today) also pushes an ntfy notification to phone + Mac — see [Push notifications (ntfy)](#push-notifications-ntfy) below.
+
 ## Output
 
 ```
@@ -167,6 +169,22 @@ After each successful watchlist write, the script can sync tickers to a Futu cus
 **Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
 
 **Merged `EarningsGap` group (append-only):** The EOD `EarningsGap` scan, the pre-market `MorningGapPre` scan, and the post-open `MorningGap` scan all sync into the **same** Futu group, `EarningsGap`. Because three different scanners feed one group, `EarningsGap` is listed in `[futu] append_only_groups` — sync only ADDs tickers, never DELs, so each scanner doesn't clobber the others' contributions. Tickers accumulate across days; clear the group manually in the Futu client when it gets too crowded (Futu caps: 500 per group for non-traders, 2000 for active traders). The three `.txt` files (`EarningsGap.txt`, `MorningGapPre.txt`, `MorningGap.txt`) remain separate and unaffected.
+
+### Push notifications (ntfy)
+
+Each successful Morning Gap scan that surfaces **new** tickers pushes a notification to phone + Mac via [ntfy.sh](https://ntfy.sh). "New" = not seen in any earlier morning-gap scan today; the same ticker won't re-ping across the 7 daily scans. Configured via `[notify]` in `config.toml`. Notification failures only log a warning — never block the scan.
+
+**Title:** `Morning Gap ±Nmin · K new` (sign+offset from open, count of new tickers)
+**Body:** Up to `max_tickers_in_body` tickers comma-separated, then `(+N more)` if truncated, then ` · total: M` (full scan count).
+
+**Setup (once):**
+1. Install the ntfy iOS / Android app (free, no account).
+2. Subscribe to your `ntfy_topic` from `config.toml`. The topic name is your private channel — anyone who knows it can subscribe, so the default suffix is a random string.
+3. (Mac, optional) Open `https://ntfy.sh/<your_ntfy_topic>` in Chrome/Safari and click "Subscribe to this topic" → Allow notifications. The browser tab can stay in the background.
+
+**State:** A daily seen-set is kept at `output/state/morning_gap_seen_<YYYY_MM_DD>.txt` (one ticker per line, auto-resets each day via filename). Pre-market and post-open scans share the same file so a ticker that appeared at -30min won't re-ping at +15min.
+
+To disable: set `[notify] enabled = false` in `config.toml`.
 
 ## Setup
 
