@@ -1,6 +1,6 @@
 # Finviz to TradingView
 
-Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance scans (Hong Kong), exporting results as TradingView-importable watchlists and auto-syncing to Futu (富途牛牛) custom watchlist groups via OpenAPI.
+Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance scans (Hong Kong), exporting results as TradingView- and Webull-importable watchlists and auto-syncing to Futu (富途牛牛) custom watchlist groups via OpenAPI.
 
 ## Screening Criteria
 
@@ -141,8 +141,13 @@ output/
 │   ├── 2026_04_27_RS.txt            # Relative strength (only on RS-eligible days)
 │   ├── 2026_04_27_MorningGapPre.txt # Pre-market morning-gap candidates (-20/-10 min)
 │   └── 2026_04_27_MorningGap.txt    # Post-open morning-gap snapshot (+10..+30 min)
-└── HK/
-    └── 2026_04_27_Shorts.txt        # HK short candidates
+├── HK/
+│   └── 2026_04_27_Shorts.txt        # HK short candidates
+└── Webull/                          # Newline-separated mirror, for Webull "Upload as File"
+    ├── US/
+    │   └── 2026_04_27_*.txt         # Same filenames as US/ above
+    └── HK/
+        └── 2026_04_27_Shorts.txt
 ```
 
 Each run writes a single date-stamped file per group. The 5 Longs strategies are mutually exclusive (priority `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`); their union is then deduped against Leaders and RS (`Longs > Leaders > RS`), so each ticker appears in exactly one of the 7 long-side files. Files are comma-separated ticker symbols, ready for TradingView import.
@@ -183,6 +188,13 @@ The morning-gap scanner auto-detects current US ET time and runs the matching sc
 2. Right panel → Watchlist → Click the list name
 3. Select "Import list..."
 4. Choose the latest dated file, e.g. `output/US/2026_04_27_HighVolume.txt` (or `EarningsGap` / `GapUp` / `NewHigh52W` / `TopGainers` / `Leaders` / `Shorts` / `RS` / `MorningGap` / `MorningGapPre` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
+
+## Import to Webull
+
+Webull's "Upload as File" only recognizes one ticker per line — comma-separated lists silently truncate after the first 1-2 entries. The script writes a parallel mirror for this purpose.
+
+1. Open Webull → Watchlist → "Upload as File" (in the More Settings / File menu)
+2. Choose the corresponding file from `output/Webull/US/` or `output/Webull/HK/` (same filename as the TradingView version, just newline-separated)
 
 ## Automation (launchd + pmset)
 

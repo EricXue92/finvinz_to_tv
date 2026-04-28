@@ -788,6 +788,16 @@ def _previous_dated_file(directory: Path, today_prefix: str, suffix: str) -> Pat
     return candidates[-1] if candidates else None
 
 
+def _write_webull(tickers: list[str], dated_path: Path, output_dir: Path) -> None:
+    """Mirror tickers as newline-separated .txt under output/Webull/{market}/.
+    Webull's "Upload as File" only recognizes one ticker per line — comma-
+    separated lists silently truncate after the first 1-2 entries."""
+    market = dated_path.parent.name  # "US" or "HK"
+    webull_dir = output_dir / "Webull" / market
+    webull_dir.mkdir(parents=True, exist_ok=True)
+    (webull_dir / dated_path.name).write_text("\n".join(tickers) + "\n")
+
+
 def safe_write_watchlist(
     tickers: list[str],
     output_path: Path,
@@ -944,6 +954,7 @@ def main() -> int:
                     prev = _previous_dated_file(us_output_dir, today, "_Shorts.txt")
                     if safe_write_watchlist(sorted_shorts, dated, fmt, baseline_path=prev):
                         logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
+                        _write_webull(sorted_shorts, dated, output_dir)
                         _futu_sync(config, "shorts", sorted_shorts, "US")
                 else:
                     logger.warning("[Shorts] No tickers found after all filters")
@@ -1004,6 +1015,7 @@ def main() -> int:
             prev = _previous_dated_file(us_output_dir, today, suffix)
             if safe_write_watchlist(sorted_t, dated, fmt, baseline_path=prev):
                 logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
+                _write_webull(sorted_t, dated, output_dir)
                 _futu_sync(config, futu_key, sorted_t, "US")
 
         # --- Write Leaders ---
@@ -1013,6 +1025,7 @@ def main() -> int:
             prev = _previous_dated_file(us_output_dir, today, "_Leaders.txt")
             if safe_write_watchlist(sorted_leaders, dated, fmt, baseline_path=prev):
                 logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> {dated}")
+                _write_webull(sorted_leaders, dated, output_dir)
                 _futu_sync(config, "leaders", sorted_leaders, "US")
         elif config.get("leaders"):
             logger.warning("[Leaders] No tickers found")
@@ -1025,6 +1038,7 @@ def main() -> int:
                 prev = _previous_dated_file(us_output_dir, today, "_RS.txt")
                 if safe_write_watchlist(sorted_rs, dated, fmt, baseline_path=prev):
                     logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
+                    _write_webull(sorted_rs, dated, output_dir)
                     _futu_sync(config, "rs", sorted_rs, "US")
             else:
                 logger.warning("[RS] No tickers found")
@@ -1043,6 +1057,7 @@ def main() -> int:
                     prev = _previous_dated_file(hk_output_dir, today, "_Shorts.txt")
                     if safe_write_watchlist(sorted_hk, dated, fmt, baseline_path=prev):
                         logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
+                        _write_webull(sorted_hk, dated, output_dir)
                         _futu_sync(config, "hk_shorts", sorted_hk, "HK")
                 else:
                     logger.warning("[HK Shorts] No tickers found after all filters")
@@ -1082,6 +1097,7 @@ def main() -> int:
                 logger.info(
                     f"[Morning Gap] {sign}{offset}min: {len(sorted_tickers)} tickers -> {dated}"
                 )
+                _write_webull(sorted_tickers, dated, output_dir)
                 _futu_sync(config, futu_key, sorted_tickers, "US")
         else:
             logger.warning(f"[Morning Gap] {sign}{offset}min: no tickers passed filters")
