@@ -19,6 +19,7 @@ from finviz.screener import Screener
 import openpyxl
 
 from futu_sync import sync_to_futu
+from notify import notify_morning_gap
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,48 @@ def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
         port=futu_cfg.get("port", 11111),
         append_only=group_name in append_only_groups,
     )
+
+
+def _morning_gap_new_tickers(
+    today: str,
+    tickers: list[str],
+    output_dir: Path,
+) -> list[str]:
+    """Return tickers in `tickers` that have not appeared in any earlier
+    morning-gap scan today. Side effect: appends `tickers` to the per-day
+    state file so subsequent scans see them.
+
+    State lives at `<output_dir>/state/morning_gap_seen_<today>.txt`,
+    one ticker per line. File auto-resets each day (filename includes date).
+
+    On any IO error, returns the input tickers unchanged (treats seen-set
+    as empty) — better to over-notify than silently swallow new tickers.
+    """
+    state_dir = output_dir / "state"
+    state_path = state_dir / f"morning_gap_seen_{today}.txt"
+
+    seen: set[str] = set()
+    try:
+        if state_path.exists():
+            with state_path.open("r", encoding="utf-8") as f:
+                seen = {line.strip() for line in f if line.strip()}
+    except OSError as e:
+        logger.warning(f"[Morning Gap] could not read seen-state {state_path}: {e}")
+
+    current = set(tickers)
+    new = sorted(current - seen)
+
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        union = sorted(seen | current)
+        with state_path.open("w", encoding="utf-8") as f:
+            for t in union:
+                f.write(f"{t}\n")
+    except OSError as e:
+        logger.warning(f"[Morning Gap] could not write seen-state {state_path}: {e}")
+
+    return new
+
 
 HKEX_SECURITIES_URL = (
     "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx"
