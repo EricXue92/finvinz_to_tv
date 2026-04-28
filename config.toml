@@ -134,3 +134,13 @@ avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [-20, -10, 10, 15, 20, 25, 30]
 offset_tolerance_minutes = 2
+
+# --- 推送通知 (ntfy.sh) ---
+# Morning-gap 扫描发现"新"票时推送到 phone + Mac 浏览器。
+# 同一交易日内已出现过的票不会重复推送(state 文件: output/state/morning_gap_seen_<date>.txt)。
+# Topic 名后缀是随机串 = 私人频道,谁知道 topic 名谁就能订阅。
+[notify]
+enabled = true
+ntfy_topic = "xue-finviz-morning-gap-9f3k2"
+ntfy_server = "https://ntfy.sh"
+max_tickers_in_body = 10
