@@ -1142,6 +1142,9 @@ def main() -> int:
                 )
                 _write_webull(sorted_tickers, dated, output_dir)
                 _futu_sync(config, futu_key, sorted_tickers, "US")
+                new = _morning_gap_new_tickers(today, sorted_tickers, output_dir)
+                if new:
+                    notify_morning_gap(new, offset, len(sorted_tickers), config)
         else:
             logger.warning(f"[Morning Gap] {sign}{offset}min: no tickers passed filters")
 
