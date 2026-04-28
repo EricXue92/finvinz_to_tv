@@ -129,7 +129,10 @@ mid_cap_threshold = 2_000_000_000
 
 [morning_gap]
 name = "Morning Gap Up"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_beta_o1.5","ta_gap_u5","ta_sma200_pa"]
+# Beta filter (ta_beta_o1.5) removed: catalyst-driven gaps are orthogonal to
+# market beta, and the threshold was excluding mid/large-cap gappers like
+# biotech and services names. Replaced by yfinance-computed ADR% below.
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_gap_u5","ta_sma200_pa"]
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [-20, -10, 10, 15, 20, 25, 30]
@@ -140,6 +143,12 @@ offset_tolerance_minutes = 2
 # passes ta_gap_u5). Re-check via yfinance pre-market price vs prev_close and
 # drop anything below this threshold. Set to 0 to disable.
 min_pre_market_gap_percent = 5.0
+# ADR% (Average Daily Range) filter, post-Finviz. ADR% = mean((H-L)/C) over
+# the last 20 completed daily bars * 100. Filters for "in-play" stocks with
+# meaningful intraday range — replaces the dropped beta filter for capturing
+# catalyst-driven volatility. Set to 0 to disable.
+min_adr_percent = 3.5
+adr_days = 20
 
 # --- 推送通知 (ntfy.sh) ---
 # Morning-gap 扫描发现"新"票时推送到 phone + Mac 浏览器。

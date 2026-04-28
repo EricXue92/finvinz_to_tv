@@ -113,7 +113,6 @@ Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `Morn
 | Market Cap | Small Cap+ (>= $300M) |
 | Avg Volume | > 500K |
 | Price | > $10 |
-| Beta | > 1.5 |
 | Gap Up | >= 5% |
 | SMA200 | Price above SMA200 |
 
@@ -122,10 +121,13 @@ Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `Morn
 | Filter | Criteria | Pre-market | Post-open |
 |--------|----------|------------|-----------|
 | Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ |
+| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% | ✓ | ✓ |
 | Pre-market Gap Revalidation | (latest pre-market price − prev close) / prev close >= +5% | ✓ | — |
 | Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume | — | ✓ |
 
 The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
+
+**Why ADR% instead of Finviz beta:** The original `ta_beta_o1.5` (beta > 1.5) was excluding mid/large-cap catalyst gappers (biotech, services names with beta 1.0–1.3) that are actually "in-play" on a given morning. Beta measures correlation with the broad market over years of history — orthogonal to whether a stock is currently moving on news. Replaced with ADR% (Average Daily Range), Kullamägi-style: average the daily `(High − Low) / Close` over the last 20 completed sessions. ADR% ≥ 3.5% keeps stocks with real intraday range while letting through low-beta catalyst names. Configurable via `min_adr_percent` and `adr_days`; set `min_adr_percent = 0` to disable.
 
 **Why the pre-market gap revalidation:** Finviz's `Gap` column is `(today's regular-session open − yesterday's close) ÷ yesterday's close`. During pre-market hours (before 9:30 ET) the regular session hasn't opened yet, so Finviz still serves yesterday's gap value. A stock that gapped up ≥5% yesterday but is gapping down today still passes Finviz's `ta_gap_u5` filter. The revalidation step pulls each candidate's latest pre-market 1m bar from yfinance and re-computes the gap against yesterday's close, dropping anything below the threshold (`min_pre_market_gap_percent`, default 5.0). Tickers with no pre-market trades yet are also dropped — they have no signal. Post-open scans don't need this step because Finviz's `Gap` field reflects today's actual open by then.
 

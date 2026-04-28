@@ -483,6 +483,15 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
     if not tickers:
         return offset, []
 
+    # Phase 3b: ADR% filter (replaces dropped Finviz beta filter)
+    min_adr = config.get("min_adr_percent", 0)
+    if min_adr > 0:
+        adr_days = config.get("adr_days", 20)
+        tickers = _filter_adr_percent(tickers, daily_data, min_adr, adr_days, today_et)
+        logger.info(f"  {len(tickers)} after ADR% filter (>= {min_adr}%, {adr_days}d)")
+    if not tickers:
+        return offset, []
+
     # Pre-market: skip intraday cumulative volume filter (no meaningful
     # accumulated session volume yet), but revalidate the gap via yfinance
     # because Finviz's Gap field is yesterday's gap during pre-market hours.
@@ -752,6 +761,51 @@ def _filter_pre_market_gap(
                 )
         except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
             logger.warning(f"  {ticker}: pre-market gap check failed ({e}), dropping")
+
+    return result
+
+
+def _filter_adr_percent(
+    tickers: list[str],
+    daily_data,
+    min_pct: float,
+    days: int,
+    today_date,
+) -> list[str]:
+    """Keep tickers whose ADR% over the last `days` completed daily bars
+    is >= min_pct. ADR% = mean((High - Low) / Close) * 100. Today's
+    partial bar is excluded via _trim_today. Strict: tickers with
+    insufficient data are dropped."""
+    if not tickers:
+        return []
+
+    result = []
+    for ticker in tickers:
+        try:
+            highs = daily_data[ticker]["High"].dropna()
+            lows = daily_data[ticker]["Low"].dropna()
+            closes = daily_data[ticker]["Close"].dropna()
+            highs = _trim_today(highs, True, today_date)
+            lows = _trim_today(lows, True, today_date)
+            closes = _trim_today(closes, True, today_date)
+
+            n = min(len(highs), len(lows), len(closes), days)
+            if n < days:
+                logger.warning(f"  {ticker}: insufficient daily bars for ADR% ({n}<{days}), dropping")
+                continue
+
+            highs = highs.iloc[-days:]
+            lows = lows.iloc[-days:]
+            closes = closes.iloc[-days:]
+            ranges = (highs.values - lows.values) / closes.values
+            adr_pct = float(ranges.mean()) * 100
+
+            if adr_pct >= min_pct:
+                result.append(ticker)
+            else:
+                logger.info(f"  {ticker}: ADR% {adr_pct:.2f}% < {min_pct}%, dropping")
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+            logger.warning(f"  {ticker}: ADR% check failed ({e}), dropping")
 
     return result
 
