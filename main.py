@@ -146,6 +146,17 @@ def _get_closes_volumes(data, ticker: str, single: bool):
     return data[ticker]["Close"].dropna(), data[ticker]["Volume"].dropna()
 
 
+def _get_ohlc(data, ticker: str, single: bool):
+    """Extract high/low/close series for a ticker from downloaded data."""
+    if single:
+        return data["High"].dropna(), data["Low"].dropna(), data["Close"].dropna()
+    return (
+        data[ticker]["High"].dropna(),
+        data[ticker]["Low"].dropna(),
+        data[ticker]["Close"].dropna(),
+    )
+
+
 def _trim_today(series, market_open: bool, today_date):
     """Remove today's incomplete data if market is open."""
     if market_open and len(series) > 0 and series.index[-1].date() == today_date:
@@ -178,6 +189,8 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     phase1 = []
     ticker_closes: dict[str, object] = {}
     ticker_volumes: dict[str, object] = {}
+    ticker_highs: dict[str, object] = {}
+    ticker_lows: dict[str, object] = {}
     for start in range(0, len(yf_tickers), batch_size):
         batch = yf_tickers[start : start + batch_size]
         logger.info(f"  Batch {start // batch_size + 1}/{(len(yf_tickers) - 1) // batch_size + 1} ({len(batch)} tickers)...")
@@ -203,6 +216,9 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
                     phase1.append(ticker)
                     ticker_closes[ticker] = closes
                     ticker_volumes[ticker] = volumes
+                    highs, lows, _ = _get_ohlc(batch_data, ticker, single)
+                    ticker_highs[ticker] = _trim_today(highs, market_open, today)
+                    ticker_lows[ticker] = _trim_today(lows, market_open, today)
             except (KeyError, TypeError):
                 continue
 
@@ -282,6 +298,32 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     if not phase4:
         return len(codes), []
 
+    # Phase 4b: ADR% filter
+    min_adr = config.get("min_adr_percent", 0)
+    adr_days = config.get("adr_days", 20)
+    if min_adr > 0:
+        adr_passed: set[str] = set()
+        for ticker in phase4:
+            try:
+                highs = ticker_highs[ticker]
+                lows = ticker_lows[ticker]
+                closes = ticker_closes[ticker]
+                n = min(len(highs), len(lows), len(closes), adr_days)
+                if n < adr_days:
+                    continue
+                h = highs.iloc[-adr_days:].values
+                l = lows.iloc[-adr_days:].values
+                c = closes.iloc[-adr_days:].values
+                adr_pct = float(((h - l) / c).mean()) * 100
+                if adr_pct >= min_adr:
+                    adr_passed.add(ticker)
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                continue
+        phase4 = adr_passed
+        logger.info(f"  {len(phase4)} after ADR% filter (>= {min_adr}%, {adr_days}d)")
+        if not phase4:
+            return len(codes), []
+
     # Phase 5: Consecutive up days
     min_up_days = config.get("min_consecutive_up_days", 3)
     phase5 = []
@@ -343,6 +385,8 @@ def filter_shorts(
     perf_small_cap: float,
     min_dollar_volume: float,
     min_consecutive_up_days: int,
+    min_adr_percent: float = 0,
+    adr_days: int = 20,
 ) -> tuple[int, list[str]]:
     """Run shorts pipeline: finviz Ownership → single yfinance download →
     performance / dollar-volume / consecutive-up-days filters.
@@ -428,7 +472,15 @@ def filter_shorts(
     else:
         dv_passed = perf_passed
 
-    # 3. Consecutive up days filter (uses same data)
+    # 3. ADR% filter (uses same data)
+    if min_adr_percent > 0 and dv_passed:
+        dv_passed = _filter_adr_percent(
+            dv_passed, data, min_adr_percent, adr_days, today_et,
+            market_open=market_open, single=single,
+        )
+        logger.info(f"  {len(dv_passed)} after ADR% filter (>= {min_adr_percent}%, {adr_days}d)")
+
+    # 4. Consecutive up days filter (uses same data)
     if min_consecutive_up_days > 0 and dv_passed:
         final = _filter_consecutive_up_days_from_data(
             dv_passed, data, min_consecutive_up_days, market_open, today_et, single
@@ -631,48 +683,40 @@ def _filter_consecutive_up_days_from_data(
     return result
 
 
-def filter_dollar_volume_yf(tickers: list[str], min_dollar_volume: float, days: int = 20) -> list[str]:
-    """Filter tickers by dollar volume using yfinance N-day average volume.
-    Dollar volume = latest close price * N-day average volume.
-    Strict: tickers with missing/insufficient data are dropped — safe_write_watchlist
-    guards against catastrophic yfinance failures."""
+def filter_dollar_volume_and_adr_yf(
+    tickers: list[str],
+    min_dollar_volume: float,
+    min_adr_percent: float,
+    adr_days: int = 20,
+    dv_days: int = 20,
+) -> list[str]:
+    """Apply dollar-volume and ADR% filters via a single yfinance download.
+    Either filter is skipped when its threshold is 0. Strict: tickers with
+    insufficient data are dropped — safe_write_watchlist guards against
+    catastrophic yfinance failures."""
     if not tickers:
         return []
 
     data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
-    result = []
-
     now_et = datetime.now(ZoneInfo("America/New_York"))
     market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
+    today_et = now_et.date()
+    single = len(tickers) == 1
 
-    for ticker in tickers:
-        try:
-            if len(tickers) == 1:
-                closes = data["Close"].dropna()
-                volumes = data["Volume"].dropna()
-            else:
-                closes = data[ticker]["Close"].dropna()
-                volumes = data[ticker]["Volume"].dropna()
+    if min_dollar_volume > 0:
+        tickers = _filter_dollar_volume_from_data(
+            tickers, data, min_dollar_volume, market_open, today_et, single, days=dv_days,
+        )
+    if not tickers:
+        return []
 
-            if market_open:
-                if len(closes) > 0 and closes.index[-1].date() == now_et.date():
-                    closes = closes.iloc[:-1]
-                if len(volumes) > 0 and volumes.index[-1].date() == now_et.date():
-                    volumes = volumes.iloc[:-1]
+    if min_adr_percent > 0:
+        tickers = _filter_adr_percent(
+            tickers, data, min_adr_percent, adr_days, today_et,
+            market_open=market_open, single=single,
+        )
 
-            if len(volumes) < days or len(closes) < 1:
-                logger.warning(f"  yfinance: insufficient data for {ticker}, dropping")
-                continue
-
-            price = closes.iloc[-1]
-            avg_vol = volumes.iloc[-days:].mean()
-
-            if price * avg_vol >= min_dollar_volume:
-                result.append(ticker)
-        except (KeyError, TypeError):
-            logger.warning(f"  yfinance: failed to process {ticker}, dropping")
-
-    return result
+    return tickers
 
 
 def _filter_dollar_volume_from_data(
@@ -771,23 +815,33 @@ def _filter_adr_percent(
     min_pct: float,
     days: int,
     today_date,
+    market_open: bool = True,
+    single: bool | None = None,
 ) -> list[str]:
     """Keep tickers whose ADR% over the last `days` completed daily bars
-    is >= min_pct. ADR% = mean((High - Low) / Close) * 100. Today's
-    partial bar is excluded via _trim_today. Strict: tickers with
-    insufficient data are dropped."""
+    is >= min_pct. ADR% = mean((High - Low) / Close) * 100. When
+    `market_open` is True, today's partial bar is excluded via _trim_today;
+    pass False for EOD runs where today's bar is already complete. Strict:
+    tickers with insufficient data are dropped."""
     if not tickers:
         return []
+    if single is None:
+        single = len(tickers) == 1
 
     result = []
     for ticker in tickers:
         try:
-            highs = daily_data[ticker]["High"].dropna()
-            lows = daily_data[ticker]["Low"].dropna()
-            closes = daily_data[ticker]["Close"].dropna()
-            highs = _trim_today(highs, True, today_date)
-            lows = _trim_today(lows, True, today_date)
-            closes = _trim_today(closes, True, today_date)
+            if single:
+                highs = daily_data["High"].dropna()
+                lows = daily_data["Low"].dropna()
+                closes = daily_data["Close"].dropna()
+            else:
+                highs = daily_data[ticker]["High"].dropna()
+                lows = daily_data[ticker]["Low"].dropna()
+                closes = daily_data[ticker]["Close"].dropna()
+            highs = _trim_today(highs, market_open, today_date)
+            lows = _trim_today(lows, market_open, today_date)
+            closes = _trim_today(closes, market_open, today_date)
 
             n = min(len(highs), len(lows), len(closes), days)
             if n < days:
@@ -1018,6 +1072,11 @@ def main() -> int:
 
     # Global dollar volume threshold ($100M) — shared by Longs and RS
     min_dollar_volume = settings.get("min_dollar_volume", 0)
+    # Global ADR% threshold — applied to Longs / Leaders / RS / Shorts / HK Shorts /
+    # Morning Gap. Replaces the dropped Finviz beta filter for capturing
+    # catalyst-driven volatility regardless of multi-year market correlation.
+    min_adr_percent = settings.get("min_adr_percent", 0)
+    adr_days = settings.get("adr_days", 20)
 
     today = date.today().strftime("%Y_%m_%d")
 
@@ -1039,9 +1098,14 @@ def main() -> int:
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
-                if min_dollar_volume > 0 and tickers:
-                    tickers = filter_dollar_volume_yf(tickers, min_dollar_volume)
-                    logger.info(f"  {len(tickers)} after dollar volume filter (20-day avg)")
+                if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
+                    tickers = filter_dollar_volume_and_adr_yf(
+                        tickers, min_dollar_volume, min_adr_percent, adr_days,
+                    )
+                    logger.info(
+                        f"  {len(tickers)} after dollar volume "
+                        f"(>= ${min_dollar_volume:,.0f}) + ADR% (>= {min_adr_percent}%) filter"
+                    )
                 min_rvol = screener_cfg.get("min_relative_volume")
                 if min_rvol and tickers:
                     rvol_days = screener_cfg.get("relative_volume_days", 20)
@@ -1077,9 +1141,14 @@ def main() -> int:
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
-                if min_dollar_volume > 0 and tickers:
-                    tickers = filter_dollar_volume_yf(tickers, min_dollar_volume)
-                    logger.info(f"  {len(tickers)} after dollar volume filter (20-day avg)")
+                if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
+                    tickers = filter_dollar_volume_and_adr_yf(
+                        tickers, min_dollar_volume, min_adr_percent, adr_days,
+                    )
+                    logger.info(
+                        f"  {len(tickers)} after dollar volume "
+                        f"(>= ${min_dollar_volume:,.0f}) + ADR% (>= {min_adr_percent}%) filter"
+                    )
                 leaders_tickers.update(tickers)
             except Exception as e:
                 logger.warning(f"  Failed: {e}")
@@ -1102,6 +1171,8 @@ def main() -> int:
                     perf_small_cap=shorts_cfg.get("perf_small_cap", 300),
                     min_dollar_volume=shorts_cfg.get("min_dollar_volume", 100_000_000),
                     min_consecutive_up_days=shorts_cfg.get("min_consecutive_up_days", 3),
+                    min_adr_percent=shorts_cfg.get("min_adr_percent", min_adr_percent),
+                    adr_days=shorts_cfg.get("adr_days", adr_days),
                 )
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
@@ -1132,9 +1203,14 @@ def main() -> int:
                     time.sleep(delay)
                     found = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
                     logger.info(f"  Found {len(found)} tickers")
-                    if min_dollar_volume > 0 and found:
-                        found = filter_dollar_volume_yf(found, min_dollar_volume)
-                        logger.info(f"  {len(found)} after dollar volume filter (20-day avg)")
+                    if (min_dollar_volume > 0 or min_adr_percent > 0) and found:
+                        found = filter_dollar_volume_and_adr_yf(
+                            found, min_dollar_volume, min_adr_percent, adr_days,
+                        )
+                        logger.info(
+                            f"  {len(found)} after dollar volume "
+                            f"(>= ${min_dollar_volume:,.0f}) + ADR% (>= {min_adr_percent}%) filter"
+                        )
                     rs_tickers.update(found)
                     rs_ran = True
                 else:
@@ -1203,6 +1279,8 @@ def main() -> int:
         # --- HK Shorts ---
         hk_shorts_cfg = config.get("hk_shorts")
         if hk_shorts_cfg:
+            hk_shorts_cfg.setdefault("min_adr_percent", min_adr_percent)
+            hk_shorts_cfg.setdefault("adr_days", adr_days)
             _log_section(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
             try:
                 total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
@@ -1229,6 +1307,8 @@ def main() -> int:
         if not morning_cfg:
             logger.error("[Morning Gap] No [morning_gap] config section found")
             return 1
+        morning_cfg.setdefault("min_adr_percent", min_adr_percent)
+        morning_cfg.setdefault("adr_days", adr_days)
 
         _log_section(f"[Morning Gap] Running: {morning_cfg['name']}")
         try:
