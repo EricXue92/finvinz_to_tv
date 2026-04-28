@@ -864,10 +864,10 @@ def main() -> int:
 
     today = date.today().strftime("%Y_%m_%d")
 
-    us_output_dir = output_dir / "US"
-    us_output_dir.mkdir(exist_ok=True)
-    hk_output_dir = output_dir / "HK"
-    hk_output_dir.mkdir(exist_ok=True)
+    us_output_dir = output_dir / "TV" / "US"
+    us_output_dir.mkdir(parents=True, exist_ok=True)
+    hk_output_dir = output_dir / "TV" / "HK"
+    hk_output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "eod":
         # --- Longs (collect per-strategy — write deferred until after cross-group dedup) ---

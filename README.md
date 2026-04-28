@@ -130,22 +130,23 @@ The intraday volume threshold (post-open only) is the key signal — by 10–30 
 
 ```
 output/
-├── US/
-│   ├── 2026_04_27_EarningsGap.txt   # Longs strategy 1 (highest priority)
-│   ├── 2026_04_27_HighVolume.txt    # Longs strategy 2 (Relative Volume Surge)
-│   ├── 2026_04_27_GapUp.txt         # Longs strategy 3
-│   ├── 2026_04_27_NewHigh52W.txt    # Longs strategy 4
-│   ├── 2026_04_27_TopGainers.txt    # Longs strategy 5 (lowest priority)
-│   ├── 2026_04_27_Leaders.txt       # US trend leaders
-│   ├── 2026_04_27_Shorts.txt        # US short candidates
-│   ├── 2026_04_27_RS.txt            # Relative strength (only on RS-eligible days)
-│   ├── 2026_04_27_MorningGapPre.txt # Pre-market morning-gap candidates (-20/-10 min)
-│   └── 2026_04_27_MorningGap.txt    # Post-open morning-gap snapshot (+10..+30 min)
-├── HK/
-│   └── 2026_04_27_Shorts.txt        # HK short candidates
+├── TV/                              # Comma-separated, for TradingView "Import list..."
+│   ├── US/
+│   │   ├── 2026_04_27_EarningsGap.txt   # Longs strategy 1 (highest priority)
+│   │   ├── 2026_04_27_HighVolume.txt    # Longs strategy 2 (Relative Volume Surge)
+│   │   ├── 2026_04_27_GapUp.txt         # Longs strategy 3
+│   │   ├── 2026_04_27_NewHigh52W.txt    # Longs strategy 4
+│   │   ├── 2026_04_27_TopGainers.txt    # Longs strategy 5 (lowest priority)
+│   │   ├── 2026_04_27_Leaders.txt       # US trend leaders
+│   │   ├── 2026_04_27_Shorts.txt        # US short candidates
+│   │   ├── 2026_04_27_RS.txt            # Relative strength (only on RS-eligible days)
+│   │   ├── 2026_04_27_MorningGapPre.txt # Pre-market morning-gap candidates (-20/-10 min)
+│   │   └── 2026_04_27_MorningGap.txt    # Post-open morning-gap snapshot (+10..+30 min)
+│   └── HK/
+│       └── 2026_04_27_Shorts.txt        # HK short candidates
 └── Webull/                          # Newline-separated mirror, for Webull "Upload as File"
     ├── US/
-    │   └── 2026_04_27_*.txt         # Same filenames as US/ above
+    │   └── 2026_04_27_*.txt         # Same filenames as TV/US/ above
     └── HK/
         └── 2026_04_27_Shorts.txt
 ```
@@ -187,7 +188,7 @@ The morning-gap scanner auto-detects current US ET time and runs the matching sc
 1. Open TradingView
 2. Right panel → Watchlist → Click the list name
 3. Select "Import list..."
-4. Choose the latest dated file, e.g. `output/US/2026_04_27_HighVolume.txt` (or `EarningsGap` / `GapUp` / `NewHigh52W` / `TopGainers` / `Leaders` / `Shorts` / `RS` / `MorningGap` / `MorningGapPre` for US, `output/HK/2026_04_27_Shorts.txt` for HK)
+4. Choose the latest dated file, e.g. `output/TV/US/2026_04_27_HighVolume.txt` (or `EarningsGap` / `GapUp` / `NewHigh52W` / `TopGainers` / `Leaders` / `Shorts` / `RS` / `MorningGap` / `MorningGapPre` for US, `output/TV/HK/2026_04_27_Shorts.txt` for HK)
 
 ## Import to Webull
 
