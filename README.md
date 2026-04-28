@@ -122,9 +122,12 @@ Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `Morn
 | Filter | Criteria | Pre-market | Post-open |
 |--------|----------|------------|-----------|
 | Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ |
+| Pre-market Gap Revalidation | (latest pre-market price − prev close) / prev close >= +5% | ✓ | — |
 | Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume | — | ✓ |
 
 The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
+
+**Why the pre-market gap revalidation:** Finviz's `Gap` column is `(today's regular-session open − yesterday's close) ÷ yesterday's close`. During pre-market hours (before 9:30 ET) the regular session hasn't opened yet, so Finviz still serves yesterday's gap value. A stock that gapped up ≥5% yesterday but is gapping down today still passes Finviz's `ta_gap_u5` filter. The revalidation step pulls each candidate's latest pre-market 1m bar from yfinance and re-computes the gap against yesterday's close, dropping anything below the threshold (`min_pre_market_gap_percent`, default 5.0). Tickers with no pre-market trades yet are also dropped — they have no signal. Post-open scans don't need this step because Finviz's `Gap` field reflects today's actual open by then.
 
 Each scan that surfaces **new** tickers (not seen in any earlier morning-gap scan today) also pushes an ntfy notification to phone + Mac — see [Push notifications (ntfy)](#push-notifications-ntfy) below.
 

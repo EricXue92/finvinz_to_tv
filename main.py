@@ -484,8 +484,15 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
         return offset, []
 
     # Pre-market: skip intraday cumulative volume filter (no meaningful
-    # accumulated session volume yet).
+    # accumulated session volume yet), but revalidate the gap via yfinance
+    # because Finviz's Gap field is yesterday's gap during pre-market hours.
     if offset < 0:
+        min_pm_gap = config.get("min_pre_market_gap_percent", 5.0)
+        if min_pm_gap > 0 and tickers:
+            tickers = _filter_pre_market_gap(tickers, daily_data, min_pm_gap, today_et)
+            logger.info(
+                f"  {len(tickers)} after pre-market gap revalidation (>= +{min_pm_gap}%)"
+            )
         return offset, tickers
 
     # Phase 4: Compute 20-day avg daily volume per ticker
@@ -692,6 +699,59 @@ def _filter_dollar_volume_from_data(
                 result.append(ticker)
         except (KeyError, TypeError):
             logger.warning(f"  yfinance: failed to process {ticker}, dropping")
+
+    return result
+
+
+def _filter_pre_market_gap(
+    tickers: list[str],
+    daily_data,
+    min_gap_pct: float,
+    today_date,
+) -> list[str]:
+    """Revalidate pre-market gap via yfinance. Pulls 1m bars with prepost=True,
+    compares the latest pre-market close to yesterday's daily close, and keeps
+    only tickers whose actual pre-market gap >= min_gap_pct. Strict: tickers
+    with no pre-market trades or no prev-close data are dropped. If the
+    yfinance fetch fails entirely, the filter is skipped (returns input)."""
+    if not tickers:
+        return []
+
+    pm_data = _yf_download_with_retry(
+        tickers, period="1d", interval="1m", prepost=True,
+        progress=False, group_by="ticker", threads=False,
+    )
+    if pm_data is None or pm_data.empty:
+        logger.warning("  pre-market yfinance download failed, skipping gap revalidation")
+        return tickers
+
+    # Both daily_data and pm_data come from yf.download(..., group_by="ticker"),
+    # which always yields MultiIndex columns (ticker, field) regardless of count.
+    result = []
+    for ticker in tickers:
+        try:
+            closes_daily = daily_data[ticker]["Close"].dropna()
+            closes_daily = _trim_today(closes_daily, True, today_date)
+            if len(closes_daily) < 1:
+                logger.warning(f"  {ticker}: no prev-close data, dropping")
+                continue
+            prev_close = float(closes_daily.iloc[-1])
+
+            pm_closes = pm_data[ticker]["Close"].dropna()
+            if len(pm_closes) < 1:
+                logger.info(f"  {ticker}: no pre-market trades yet, dropping")
+                continue
+            pm_price = float(pm_closes.iloc[-1])
+
+            gap_pct = (pm_price - prev_close) / prev_close * 100
+            if gap_pct >= min_gap_pct:
+                result.append(ticker)
+            else:
+                logger.info(
+                    f"  {ticker}: pre-market gap {gap_pct:+.2f}% < +{min_gap_pct}%, dropping"
+                )
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
+            logger.warning(f"  {ticker}: pre-market gap check failed ({e}), dropping")
 
     return result
 
