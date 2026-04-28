@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 def _log_section(title: str) -> None:
     """Visual separator + section header for log readability."""
+    logger.info("")
     logger.info("─" * 60)
     logger.info(title)
 
