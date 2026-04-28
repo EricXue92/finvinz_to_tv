@@ -23,6 +23,12 @@ from futu_sync import sync_to_futu
 logger = logging.getLogger(__name__)
 
 
+def _log_section(title: str) -> None:
+    """Visual separator + section header for log readability."""
+    logger.info("─" * 60)
+    logger.info(title)
+
+
 def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
     """Sync to Futu if [futu] is enabled in config — silent no-op otherwise."""
     futu_cfg = config.get("futu") or {}
@@ -861,7 +867,7 @@ def main() -> int:
         for i, screener_cfg in enumerate(longs_cfgs):
             name = screener_cfg["name"]
             key = screener_cfg["key"]
-            logger.info(f"[Longs/{key}] Running: {name}")
+            _log_section(f"[Longs/{key}] Running: {name}")
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
@@ -899,7 +905,7 @@ def main() -> int:
         leaders_tickers: set[str] = set()
         for i, screener_cfg in enumerate(config.get("leaders", [])):
             name = screener_cfg["name"]
-            logger.info(f"[Leaders] Running: {name}")
+            _log_section(f"[Leaders] Running: {name}")
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
@@ -918,7 +924,7 @@ def main() -> int:
         # --- Shorts (independent — write directly) ---
         shorts_cfg = config.get("shorts")
         if shorts_cfg:
-            logger.info(f"[Shorts] Running: {shorts_cfg['name']}")
+            _log_section(f"[Shorts] Running: {shorts_cfg['name']}")
             try:
                 total, shorts_tickers = filter_shorts(
                     shorts_cfg["filters"],
@@ -950,7 +956,7 @@ def main() -> int:
         rs_ran = False
         rs_cfg = config.get("rs")
         if rs_cfg:
-            logger.info("[RS] Checking market condition...")
+            _log_section("[RS] Checking market condition...")
             try:
                 if check_market_down():
                     logger.info("[RS] Condition met, running screener...")
@@ -1025,7 +1031,7 @@ def main() -> int:
         # --- HK Shorts ---
         hk_shorts_cfg = config.get("hk_shorts")
         if hk_shorts_cfg:
-            logger.info(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
+            _log_section(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
             try:
                 total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
                 logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
@@ -1051,7 +1057,7 @@ def main() -> int:
             logger.error("[Morning Gap] No [morning_gap] config section found")
             return 1
 
-        logger.info(f"[Morning Gap] Running: {morning_cfg['name']}")
+        _log_section(f"[Morning Gap] Running: {morning_cfg['name']}")
         try:
             offset, tickers = run_morning_gap(morning_cfg)
         except Exception as e:
