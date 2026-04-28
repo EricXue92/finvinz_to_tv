@@ -66,10 +66,7 @@ def notify_morning_gap(
 
     try:
         with urlopen(req, timeout=_TIMEOUT_SEC) as resp:
-            if resp.status >= 400:
-                logger.warning(f"[Notify] ntfy POST returned {resp.status}")
-            else:
-                logger.info(f"[Notify] pushed: {title}")
+            logger.info(f"[Notify] pushed: {title} (HTTP {resp.status})")
     except (URLError, TimeoutError, OSError) as e:
         logger.warning(f"[Notify] ntfy POST failed: {e}")
     except Exception as e:
