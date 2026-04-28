@@ -12,11 +12,11 @@ Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs 
 
 | Priority | Strategy (file stem) | Key Filters |
 |----|-----------------------|-------------|
-| 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5 (Finviz), Beta > 1.5, Gap Up 5%+, Above SMA200 |
-| 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
-| 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Gap Up 3%+, Above SMA200 |
-| 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, New 52W High, Above SMA50 & SMA200 |
-| 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA200, Signal: Top Gainers |
+| 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5 (Finviz), Gap Up 5%+, Above SMA200 |
+| 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
+| 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Gap Up 3%+, Above SMA200 |
+| 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
+| 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA200, Signal: Top Gainers |
 
 All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
 
@@ -24,7 +24,7 @@ All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day av
 
 Long-term trend leaders trading above both SMA50 and SMA200. The five strategies share the same base filters but differ in the performance-window threshold:
 
-**Shared base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Above SMA50, Above SMA200, Dollar Volume >= $100M (20-day avg, via yfinance).
+**Shared base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200, Dollar Volume >= $100M (20-day avg, via yfinance).
 
 | Strategy | Performance Threshold |
 |----------|-----------------------|
@@ -75,7 +75,7 @@ Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY a
 
 | Strategy | Key Filters |
 |----------|-------------|
-| Relative Strength | Small Cap+, Avg Vol > 500K, Price > $20, Beta > 1.5, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
+| Relative Strength | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance) |
 
 ### HK Shorts (1 strategy, multi-phase filtering)
 
@@ -121,13 +121,13 @@ Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `Morn
 | Filter | Criteria | Pre-market | Post-open |
 |--------|----------|------------|-----------|
 | Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ |
-| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% | ✓ | ✓ |
+| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 4.0% | ✓ | ✓ |
 | Pre-market Gap Revalidation | (latest pre-market price − prev close) / prev close >= +5% | ✓ | — |
 | Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume | — | ✓ |
 
 The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
 
-**Why ADR% instead of Finviz beta:** The original `ta_beta_o1.5` (beta > 1.5) was excluding mid/large-cap catalyst gappers (biotech, services names with beta 1.0–1.3) that are actually "in-play" on a given morning. Beta measures correlation with the broad market over years of history — orthogonal to whether a stock is currently moving on news. Replaced with ADR% (Average Daily Range), Kullamägi-style: average the daily `(High − Low) / Close` over the last 20 completed sessions. ADR% ≥ 3.5% keeps stocks with real intraday range while letting through low-beta catalyst names. Configurable via `min_adr_percent` and `adr_days`; set `min_adr_percent = 0` to disable.
+**Why ADR% instead of Finviz beta:** The original `ta_beta_o1.5` (beta > 1.5) was excluding mid/large-cap catalyst gappers (biotech, services names with beta 1.0–1.3) that are actually "in-play" on a given morning. Beta measures correlation with the broad market over years of history — orthogonal to whether a stock is currently moving on news. **The beta filter has now been removed from every Finviz group (Longs, Leaders, RS, Morning Gap)**, not just here. Morning Gap additionally adds ADR% (Average Daily Range), Kullamägi-style: average the daily `(High − Low) / Close` over the last 20 completed sessions. ADR% ≥ 4.0% keeps stocks with real intraday range while letting through low-beta catalyst names. Configurable via `min_adr_percent` and `adr_days`; set `min_adr_percent = 0` to disable.
 
 **Why the pre-market gap revalidation:** Finviz's `Gap` column is `(today's regular-session open − yesterday's close) ÷ yesterday's close`. During pre-market hours (before 9:30 ET) the regular session hasn't opened yet, so Finviz still serves yesterday's gap value. A stock that gapped up ≥5% yesterday but is gapping down today still passes Finviz's `ta_gap_u5` filter. The revalidation step pulls each candidate's latest pre-market 1m bar from yfinance and re-computes the gap against yesterday's close, dropping anything below the threshold (`min_pre_market_gap_percent`, default 5.0). Tickers with no pre-market trades yet are also dropped — they have no signal. Post-open scans don't need this step because Finviz's `Gap` field reflects today's actual open by then.
 
