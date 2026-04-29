@@ -12,11 +12,11 @@ Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs 
 
 | Priority | Strategy (file stem) | Key Filters |
 |----|-----------------------|-------------|
-| 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5 (Finviz), Gap Up 5%+, Above SMA200 |
-| 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
-| 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Gap Up 3%+, Above SMA200 |
+| 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5 (Finviz), Gap Up 5%+, Above SMA50 & SMA200 |
+| 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Rel Vol > 3x 20-day avg (via yfinance) |
+| 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Gap Up 3%+, Above SMA50 & SMA200 |
 | 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
-| 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA200, Signal: Top Gainers |
+| 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers |
 
 All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance) and **ADR% >= 3.5%** (mean of `(High − Low) / Close` over the last 20 completed daily bars × 100, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
 
@@ -54,6 +54,7 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Filter | Criteria |
 |--------|----------|
 | SMA20 | Price 20%+ above 20-day moving average |
+| SMA50 | Price above 50-day moving average |
 | Avg Volume | > 1M shares (Finviz 3-month avg, pre-filter) |
 | Market Cap | > $300M (small cap and above) |
 
@@ -119,6 +120,7 @@ Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `Morn
 | Avg Volume | > 500K | > 500K |
 | Price | > $10 | > $10 |
 | Gap Up | — (Finviz `Gap` is yesterday's gap before 9:30 ET; see note below) | >= 5% (Finviz `ta_gap_u5`) |
+| SMA50 | Price above SMA50 | Price above SMA50 |
 | SMA200 | Price above SMA200 | Price above SMA200 |
 | Signal | Top Gainers (Finviz `ta_topgainers`) | — |
 

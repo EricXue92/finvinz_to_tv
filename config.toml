@@ -45,19 +45,19 @@ leaders = "Leaders"
 [[longs]]
 key = "earnings_gap"
 name = "Earnings Gap"
-filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o1.5","ta_gap_u5","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o1.5","ta_gap_u5","ta_sma50_pa","ta_sma200_pa"]
 
 [[longs]]
 key = "high_volume"
 name = "Relative Volume Surge"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma50_pa","ta_sma200_pa"]
 min_relative_volume = 3
 relative_volume_days = 20
 
 [[longs]]
 key = "gap_up"
 name = "Gap Up"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_gap_u3","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_gap_u3","ta_sma50_pa","ta_sma200_pa"]
 
 [[longs]]
 key = "new_high_52w"
@@ -68,7 +68,7 @@ filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_
 key = "top_gainers"
 name = "Top Gainers"
 signal = "ta_topgainers"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_sma50_pa","ta_sma200_pa"]
 
 # --- Leaders: 强势 + 站上均线，5 个 perf 窗口合并去重，输出为 Leaders.txt ---
 # 共同条件: cap >= small, avg vol > 500K, price > $20,
@@ -100,7 +100,7 @@ filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_
 
 [shorts]
 name = "Short Candidates"
-filters = ["ind_stocksonly", "ta_sma20_pa20", "sh_avgvol_o1000", "cap_smallover"]
+filters = ["ind_stocksonly", "ta_sma20_pa20", "ta_sma50_pa", "sh_avgvol_o1000", "cap_smallover"]
 min_dollar_volume = 100_000_000
 min_consecutive_up_days = 3
 # Performance thresholds by cap size (month perf %)
@@ -137,7 +137,7 @@ mid_cap_threshold = 2_000_000_000
 
 [morning_gap]
 name = "Morning Gap Up"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_gap_u5","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_gap_u5","ta_sma50_pa","ta_sma200_pa"]
 # Pre-market candidate discovery. Finviz's `ta_gap_u5` is computed off today's
 # regular-session open vs prior close — before 9:30 ET that's stale (yesterday's
 # gap winners). `ta_topgainers` reflects today's percentage change including
@@ -145,7 +145,7 @@ filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_
 # (yfinance pre-market price vs prev close >= min_pre_market_gap_percent)
 # enforce the actual gap threshold downstream. Used only when offset < 0;
 # post-open scans keep `filters`/`signal` above.
-pre_market_filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_sma200_pa"]
+pre_market_filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_sma50_pa","ta_sma200_pa"]
 pre_market_signal = "ta_topgainers"
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
