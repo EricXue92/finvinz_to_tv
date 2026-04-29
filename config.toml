@@ -138,15 +138,23 @@ mid_cap_threshold = 2_000_000_000
 [morning_gap]
 name = "Morning Gap Up"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_gap_u5","ta_sma200_pa"]
+# Pre-market candidate discovery. Finviz's `ta_gap_u5` is computed off today's
+# regular-session open vs prior close — before 9:30 ET that's stale (yesterday's
+# gap winners). `ta_topgainers` reflects today's percentage change including
+# pre-market activity. We drop `ta_gap_u5` here and let `_filter_pre_market_gap`
+# (yfinance pre-market price vs prev close >= min_pre_market_gap_percent)
+# enforce the actual gap threshold downstream. Used only when offset < 0;
+# post-open scans keep `filters`/`signal` above.
+pre_market_filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_sma200_pa"]
+pre_market_signal = "ta_topgainers"
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [-20, -10, 10, 15, 20, 25, 30]
 offset_tolerance_minutes = 2
-# Pre-market gap revalidation. Finviz's `Gap` field uses today's regular-session
-# open vs yesterday's close, so during pre-market it serves yesterday's stale
-# gap value (a stock that gapped up yesterday but is gapping down today still
-# passes ta_gap_u5). Re-check via yfinance pre-market price vs prev_close and
-# drop anything below this threshold. Set to 0 to disable.
+# Pre-market gap threshold (yfinance pre-market last vs prev close). With
+# pre_market_signal=ta_topgainers the candidate set already reflects today's
+# movement, so this filters down from "any gainer" to "true gap-ups". Set
+# to 0 to disable.
 min_pre_market_gap_percent = 5.0
 # ADR% filter is inherited from [settings] (min_adr_percent / adr_days).
 # Override here if a different threshold is desired for morning-gap only.

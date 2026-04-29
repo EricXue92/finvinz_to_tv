@@ -47,6 +47,163 @@ def _to_futu_code(ticker: str, market: Literal["US", "HK"]) -> str | None:
     return None
 
 
+def pre_market_gap_futu(
+    tickers: list[str],
+    min_gap_pct: float,
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> list[str] | None:
+    """Filter US tickers by pre-market gap % via Futu OpenAPI snapshot.
+    Reads ``pre_change_rate`` (already in percent units) from
+    ``get_market_snapshot`` — real-time on US Lv1 BBO accounts. Tickers with
+    no pre-market trades (``pre_volume == 0``) are dropped.
+
+    Returns the surviving subset (in input ticker format), or ``None`` on
+    any failure so the caller can fall back to another data source.
+    """
+    if not tickers:
+        return []
+    try:
+        from futu import OpenQuoteContext, RET_OK
+    except ImportError:
+        logger.warning("  Futu pre-market: futu-api not installed")
+        return None
+
+    if not _opend_reachable(host, port):
+        logger.warning(
+            f"  Futu pre-market: OpenD not reachable at {host}:{port}"
+        )
+        return None
+
+    code_to_ticker: dict[str, str] = {}
+    for t in tickers:
+        c = _to_futu_code(t, "US")
+        if c:
+            code_to_ticker[c] = t
+    if not code_to_ticker:
+        return []
+
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        ret, data = ctx.get_market_snapshot(list(code_to_ticker.keys()))
+        if ret != RET_OK:
+            logger.warning(f"  Futu pre-market: get_market_snapshot failed — {data}")
+            return None
+
+        result: list[str] = []
+        for _, row in data.iterrows():
+            code = row.get("code")
+            ticker = code_to_ticker.get(code)
+            if ticker is None:
+                continue
+            try:
+                pre_vol = float(row.get("pre_volume", 0) or 0)
+            except (TypeError, ValueError):
+                pre_vol = 0
+            if pre_vol <= 0:
+                logger.info(f"  {ticker}: no pre-market trades yet, dropping")
+                continue
+            try:
+                gap = float(row.get("pre_change_rate"))
+            except (TypeError, ValueError):
+                logger.info(f"  {ticker}: pre_change_rate unavailable, dropping")
+                continue
+            if gap >= min_gap_pct:
+                result.append(ticker)
+            else:
+                logger.info(
+                    f"  {ticker}: pre-market gap {gap:+.2f}% < +{min_gap_pct}%, dropping"
+                )
+        return result
+    except Exception as e:
+        logger.warning(f"  Futu pre-market: unexpected error — {e}")
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+
+
+def intraday_cumulative_volume_futu(
+    tickers: list[str],
+    avg_daily_volumes: dict[str, float],
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> list[str] | None:
+    """Filter US tickers whose today's RTH cumulative volume >= their 20-day
+    average daily volume. Reads ``volume`` from ``get_market_snapshot`` —
+    that field is today's regular-session cumulative (separate from
+    ``pre_volume`` / ``after_volume``), so calling it at e.g. 09:50 ET
+    returns the first ~20 minutes of RTH volume.
+
+    Returns the surviving subset (input ticker format), or ``None`` on any
+    failure so the caller can fall back. Tickers with zero or missing
+    avg_daily_volume entries are dropped.
+    """
+    if not tickers:
+        return []
+    try:
+        from futu import OpenQuoteContext, RET_OK
+    except ImportError:
+        logger.warning("  Futu intraday volume: futu-api not installed")
+        return None
+
+    if not _opend_reachable(host, port):
+        logger.warning(
+            f"  Futu intraday volume: OpenD not reachable at {host}:{port}"
+        )
+        return None
+
+    code_to_ticker: dict[str, str] = {}
+    for t in tickers:
+        c = _to_futu_code(t, "US")
+        if c:
+            code_to_ticker[c] = t
+    if not code_to_ticker:
+        return []
+
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        ret, data = ctx.get_market_snapshot(list(code_to_ticker.keys()))
+        if ret != RET_OK:
+            logger.warning(f"  Futu intraday volume: get_market_snapshot failed — {data}")
+            return None
+
+        result: list[str] = []
+        for _, row in data.iterrows():
+            code = row.get("code")
+            ticker = code_to_ticker.get(code)
+            if ticker is None:
+                continue
+            avg = avg_daily_volumes.get(ticker)
+            if avg is None or avg <= 0:
+                continue
+            try:
+                vol = float(row.get("volume", 0) or 0)
+            except (TypeError, ValueError):
+                vol = 0
+            if vol >= avg:
+                result.append(ticker)
+            else:
+                logger.info(
+                    f"  {ticker}: cumulative {vol:,.0f} < 20d avg {avg:,.0f}, dropping"
+                )
+        return result
+    except Exception as e:
+        logger.warning(f"  Futu intraday volume: unexpected error — {e}")
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+
+
 def sync_to_futu(
     tickers: list[str],
     group_name: str,

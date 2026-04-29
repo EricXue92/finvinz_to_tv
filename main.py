@@ -18,7 +18,11 @@ from finviz.helper_functions.error_handling import NoResults
 from finviz.screener import Screener
 import openpyxl
 
-from futu_sync import sync_to_futu
+from futu_sync import (
+    intraday_cumulative_volume_futu,
+    pre_market_gap_futu,
+    sync_to_futu,
+)
 from notify import notify_morning_gap
 
 logger = logging.getLogger(__name__)
@@ -496,7 +500,9 @@ def filter_shorts(
     return total, final
 
 
-def run_morning_gap(config: dict) -> tuple[int, list[str]]:
+def run_morning_gap(
+    config: dict, futu_cfg: dict | None = None
+) -> tuple[int, list[str]]:
     """Run the morning-gap scan. Negative offset = pre-market (skips
     intraday cumulative-volume filter); positive offset = post-open.
     Returns (offset, tickers), or (None, []) if outside scan window."""
@@ -510,8 +516,20 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
     sign = "+" if offset >= 0 else ""
     logger.info(f"[Morning Gap] Running for offset {sign}{offset}min")
 
-    # Phase 1: Finviz screener
-    tickers = run_screener(config["filters"], config.get("signal"))
+    # Phase 1: Finviz screener. Pre-market uses a separate filter/signal
+    # because Finviz's `ta_gap_u5` field is yesterday's gap during pre-market,
+    # so it returns a stale candidate set. `ta_topgainers` reflects current
+    # change and surfaces today's pre-market movers; the +N% gate is enforced
+    # downstream by `_filter_pre_market_gap` against yfinance pre-market prices.
+    if offset < 0 and config.get("pre_market_filters"):
+        pm_filters = config["pre_market_filters"]
+        pm_signal = config.get("pre_market_signal")
+        logger.info(
+            f"  Pre-market screener: signal={pm_signal or '-'} filters={pm_filters}"
+        )
+        tickers = run_screener(pm_filters, pm_signal)
+    else:
+        tickers = run_screener(config["filters"], config.get("signal"))
     logger.info(f"  Found {len(tickers)} tickers from Finviz screener")
     if not tickers:
         return offset, []
@@ -549,15 +567,35 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
         return offset, []
 
     # Pre-market: skip intraday cumulative volume filter (no meaningful
-    # accumulated session volume yet), but revalidate the gap via yfinance
-    # because Finviz's Gap field is yesterday's gap during pre-market hours.
+    # accumulated session volume yet) and revalidate the gap. Prefer Futu
+    # OpenAPI (real-time, single snapshot call) when [futu] is enabled;
+    # fall back to yfinance 1m prepost bars when OpenD is unreachable or the
+    # snapshot call errors. Either gate is needed because Finviz's Gap field
+    # is yesterday's gap during pre-market hours.
     if offset < 0:
         min_pm_gap = config.get("min_pre_market_gap_percent", 5.0)
         if min_pm_gap > 0 and tickers:
-            tickers = _filter_pre_market_gap(tickers, daily_data, min_pm_gap, today_et)
-            logger.info(
-                f"  {len(tickers)} after pre-market gap revalidation (>= +{min_pm_gap}%)"
-            )
+            futu_result = None
+            if futu_cfg and futu_cfg.get("enabled"):
+                futu_result = pre_market_gap_futu(
+                    tickers, min_pm_gap,
+                    host=futu_cfg.get("host", "127.0.0.1"),
+                    port=futu_cfg.get("port", 11111),
+                )
+            if futu_result is not None:
+                tickers = futu_result
+                logger.info(
+                    f"  {len(tickers)} after pre-market gap revalidation "
+                    f"(Futu, >= +{min_pm_gap}%)"
+                )
+            else:
+                tickers = _filter_pre_market_gap(
+                    tickers, daily_data, min_pm_gap, today_et
+                )
+                logger.info(
+                    f"  {len(tickers)} after pre-market gap revalidation "
+                    f"(yfinance, >= +{min_pm_gap}%)"
+                )
         return offset, tickers
 
     # Phase 4: Compute 20-day avg daily volume per ticker
@@ -582,19 +620,38 @@ def run_morning_gap(config: dict) -> tuple[int, list[str]]:
     if not tickers:
         return offset, []
 
-    # Phase 5: Pull intraday 1m data and apply cumulative volume filter
-    intraday_data = _yf_download_with_retry(
-        tickers, period="1d", interval="1m", progress=False,
-        group_by="ticker", threads=False,
-    )
-    if intraday_data is None or intraday_data.empty:
-        logger.warning("  Intraday yfinance download failed, exiting")
-        return offset, []
-
-    final = _filter_intraday_cumulative_volume(
-        tickers, intraday_data, avg_daily_volumes, offset
-    )
-    logger.info(f"  {len(final)} after intraday cumulative volume filter (offset={offset}m)")
+    # Phase 5: Cumulative volume filter — prefer Futu snapshot's RTH `volume`
+    # field (one call, real-time, no per-ticker yfinance flakiness — the
+    # yfinance 1m path was dropping 4/4 candidates with "failed to process"
+    # errors in past runs). Fall back to yfinance 1m bars when OpenD is
+    # unreachable or the snapshot call errors.
+    final = None
+    if futu_cfg and futu_cfg.get("enabled"):
+        final = intraday_cumulative_volume_futu(
+            tickers, avg_daily_volumes,
+            host=futu_cfg.get("host", "127.0.0.1"),
+            port=futu_cfg.get("port", 11111),
+        )
+    if final is not None:
+        logger.info(
+            f"  {len(final)} after intraday cumulative volume filter "
+            f"(Futu, offset={offset}m)"
+        )
+    else:
+        intraday_data = _yf_download_with_retry(
+            tickers, period="1d", interval="1m", progress=False,
+            group_by="ticker", threads=False,
+        )
+        if intraday_data is None or intraday_data.empty:
+            logger.warning("  Intraday yfinance download failed, exiting")
+            return offset, []
+        final = _filter_intraday_cumulative_volume(
+            tickers, intraday_data, avg_daily_volumes, offset
+        )
+        logger.info(
+            f"  {len(final)} after intraday cumulative volume filter "
+            f"(yfinance, offset={offset}m)"
+        )
 
     return offset, final
 
@@ -1266,7 +1323,9 @@ def main() -> int:
 
         _log_section(f"[Morning Gap] Running: {morning_cfg['name']}")
         try:
-            offset, tickers = run_morning_gap(morning_cfg)
+            offset, tickers = run_morning_gap(
+                morning_cfg, futu_cfg=config.get("futu") or {}
+            )
         except Exception as e:
             logger.warning(f"[Morning Gap] Failed: {e}")
             return 1

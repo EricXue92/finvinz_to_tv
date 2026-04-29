@@ -108,30 +108,33 @@ HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
 
 Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `MorningGapPre.txt` as an early candidate list — Finviz filters → dollar volume → ADR% → pre-market gap revalidation, but no intraday volume confirmation yet (the regular session hasn't opened). **Post-open (+10 / +15 / +20 / +25 / +30 min)** writes to `MorningGap.txt` — Finviz filters → dollar volume → ADR% → intraday cumulative-volume filter, which captures stocks that have already traded their full daily average volume in the first 30 minutes (a signal of catalyst-driven institutional buying — earnings, FDA, M&A, sector news).
 
-**Phase 1 — Finviz filters (both pre-market and post-open):**
+**Phase 1 — Finviz filters (different sets for pre-market vs post-open):**
 
-| Filter | Criteria |
-|--------|----------|
-| Market Cap | Small Cap+ (>= $300M) |
-| Avg Volume | > 500K |
-| Price | > $10 |
-| Gap Up | >= 5% |
-| SMA200 | Price above SMA200 |
+| Filter | Pre-market candidate set | Post-open candidate set |
+|--------|--------------------------|-------------------------|
+| Market Cap | Small Cap+ (>= $300M) | Small Cap+ (>= $300M) |
+| Avg Volume | > 500K | > 500K |
+| Price | > $10 | > $10 |
+| Gap Up | — (Finviz `Gap` is yesterday's gap before 9:30 ET; see note below) | >= 5% (Finviz `ta_gap_u5`) |
+| SMA200 | Price above SMA200 | Price above SMA200 |
+| Signal | Top Gainers (Finviz `ta_topgainers`) | — |
 
-**Phase 2 — Post-processing (via yfinance):**
+**Phase 2 — Post-processing:**
 
-| Filter | Criteria | Pre-market | Post-open |
-|--------|----------|------------|-----------|
-| Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ |
-| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% | ✓ | ✓ |
-| Pre-market Gap Revalidation | (latest pre-market price − prev close) / prev close >= +5% | ✓ | — |
-| Intraday Cumulative Volume | Volume from 9:30 ET to 9:30+offset ET >= 20-day average daily volume | — | ✓ |
+| Filter | Criteria | Pre-market | Post-open | Data source |
+|--------|----------|------------|-----------|-------------|
+| Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ | yfinance daily |
+| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% | ✓ | ✓ | yfinance daily |
+| Pre-market Gap Revalidation | (latest pre-market price − prev close) / prev close >= +5% | ✓ | — | **Futu** snapshot (`pre_change_rate`) → yfinance 1m prepost fallback |
+| Intraday Cumulative Volume | Today's RTH cumulative volume since 9:30 ET >= 20-day average daily volume | — | ✓ | **Futu** snapshot (`volume`) → yfinance 1m fallback |
 
 The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
 
 **Why ADR% instead of Finviz beta:** The earlier `ta_beta_o1.5` (beta > 1.5) was excluding mid/large-cap catalyst names (biotech, services with beta 1.0–1.3) that are actually "in-play" on a given session. Beta measures correlation with the broad market over years of history — orthogonal to whether a stock is currently moving on news. **The beta filter has been removed from every group and replaced by an ADR% threshold applied across Longs, Leaders, RS, Shorts, HK Shorts, and Morning Gap.** ADR% (Kullamägi-style) is the average of daily `(High − Low) / Close` over the last 20 completed sessions × 100; the global default is 3.5% and is configured once in `[settings]` (`min_adr_percent`, `adr_days`). Set `min_adr_percent = 0` in `[settings]` to disable globally. Shorts, HK Shorts, and Morning Gap also accept a per-section override of the same key if that group needs a different threshold.
 
-**Why the pre-market gap revalidation:** Finviz's `Gap` column is `(today's regular-session open − yesterday's close) ÷ yesterday's close`. During pre-market hours (before 9:30 ET) the regular session hasn't opened yet, so Finviz still serves yesterday's gap value. A stock that gapped up ≥5% yesterday but is gapping down today still passes Finviz's `ta_gap_u5` filter. The revalidation step pulls each candidate's latest pre-market 1m bar from yfinance and re-computes the gap against yesterday's close, dropping anything below the threshold (`min_pre_market_gap_percent`, default 5.0). Tickers with no pre-market trades yet are also dropped — they have no signal. Post-open scans don't need this step because Finviz's `Gap` field reflects today's actual open by then.
+**Why the pre-market candidate set is different:** Finviz's `Gap` column is `(today's regular-session open − yesterday's close) ÷ yesterday's close`. Before 9:30 ET the regular session hasn't opened, so Finviz still serves yesterday's gap value — a stock that gapped up ≥5% yesterday but is gapping down today still passes `ta_gap_u5`. To get a candidate set that reflects *today's* movement, the pre-market scan drops `ta_gap_u5` and adds `signal = ta_topgainers` (Finviz Top Gainers, updated in real time). The revalidation step then pulls each candidate's pre-market price from Futu OpenAPI (`get_market_snapshot.pre_change_rate`, real-time on US Lv1 BBO accounts) and re-computes the gap against yesterday's close, dropping anything below `min_pre_market_gap_percent` (default 5.0). yfinance's `prepost=True` 1m bars are the fallback when Futu OpenD is unreachable. Tickers with no pre-market trades yet (`pre_volume == 0`) are also dropped — they have no signal. Post-open scans keep the original `ta_gap_u5` filter because Finviz's `Gap` field reflects today's actual open by then.
+
+**Why Futu OpenAPI for live data:** Both the pre-market gap revalidation and the post-open cumulative-volume filter are single-call snapshot lookups against a list of <30 candidates — Futu returns real-time pre/post fields and today's RTH cumulative `volume` in one network round-trip. yfinance's per-ticker 1m bar fetches are slower, hit rate limits, and frequently returned no data for valid pre-market gappers in past runs (logged as `yfinance 1m: failed to process <ticker>, dropping`). Futu requires US Lv1 BBO real-time quote permission on the OpenD account; without it the snapshot's pre/post fields return delayed/empty values and the filter would silently drop everything. The yfinance fallback runs whenever `[futu] enabled = false` or the OpenD TCP probe fails.
 
 Each scan that surfaces **new** tickers (not seen in any earlier morning-gap scan today) also pushes an ntfy notification to phone + Mac — see [Push notifications (ntfy)](#push-notifications-ntfy) below.
 
