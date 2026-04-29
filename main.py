@@ -19,6 +19,7 @@ from finviz.screener import Screener
 import openpyxl
 
 from futu_sync import (
+    get_market_caps_futu,
     intraday_cumulative_volume_futu,
     pre_market_gap_futu,
     sync_to_futu,
@@ -172,7 +173,9 @@ def _trim_today(series, market_open: bool, today_date):
     return series
 
 
-def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
+def filter_hk_shorts(
+    config: dict, futu_cfg: dict | None = None
+) -> tuple[int, list[str]]:
     """Run HK shorts pipeline: fetch HKEX universe, download data via yfinance,
     apply SMA20/volume/cap/dollar-volume/performance/up-days filters.
     Returns (universe_size, filtered_tickers_in_tv_format)."""
@@ -237,18 +240,38 @@ def filter_hk_shorts(config: dict) -> tuple[int, list[str]]:
     if not phase1:
         return len(codes), []
 
-    # Phase 2: Market cap (with retries)
+    # Phase 2: Market cap. Prefer Futu snapshot (one batch call for all
+    # phase1 tickers, real-time `total_market_val` in HKD) over a per-ticker
+    # yfinance loop with 0.5s sleep between calls. Fall back to yfinance
+    # when OpenD is unreachable or the snapshot call errors.
     min_market_cap = config.get("min_market_cap", 2_000_000_000)
-    phase2 = []
     market_caps: dict[str, float] = {}
-    for ticker in phase1:
-        cap = _get_market_cap(ticker)
-        if cap and cap >= min_market_cap:
-            phase2.append(ticker)
-            market_caps[ticker] = cap
-        time.sleep(0.5)
-
-    logger.info(f"  {len(phase2)} after market cap filter (>= {min_market_cap:,.0f} HKD)")
+    futu_caps = None
+    if futu_cfg and futu_cfg.get("enabled"):
+        futu_caps = get_market_caps_futu(
+            phase1, market="HK",
+            host=futu_cfg.get("host", "127.0.0.1"),
+            port=futu_cfg.get("port", 11111),
+        )
+    if futu_caps is not None:
+        market_caps = futu_caps
+        phase2 = [t for t in phase1 if market_caps.get(t, 0) >= min_market_cap]
+        logger.info(
+            f"  {len(phase2)} after market cap filter "
+            f"(Futu, >= {min_market_cap:,.0f} HKD)"
+        )
+    else:
+        phase2 = []
+        for ticker in phase1:
+            cap = _get_market_cap(ticker)
+            if cap and cap >= min_market_cap:
+                phase2.append(ticker)
+                market_caps[ticker] = cap
+            time.sleep(0.5)
+        logger.info(
+            f"  {len(phase2)} after market cap filter "
+            f"(yfinance, >= {min_market_cap:,.0f} HKD)"
+        )
     if not phase2:
         return len(codes), []
 
@@ -1298,7 +1321,9 @@ def main() -> int:
             hk_shorts_cfg.setdefault("adr_days", adr_days)
             _log_section(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
             try:
-                total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
+                total, hk_shorts_tickers = filter_hk_shorts(
+                    hk_shorts_cfg, futu_cfg=config.get("futu") or {}
+                )
                 logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
 
                 sorted_hk = sorted(hk_shorts_tickers)

@@ -127,6 +127,77 @@ def pre_market_gap_futu(
                 pass
 
 
+def get_market_caps_futu(
+    tickers: list[str],
+    market: Literal["US", "HK"],
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> dict[str, float] | None:
+    """Bulk market-cap lookup via Futu snapshot. Returns
+    ``{input_ticker: total_market_val}`` in native currency (USD for US,
+    HKD for HK). Tickers with no/zero ``total_market_val`` are omitted
+    from the result rather than mapped to 0. Returns ``None`` on any
+    failure so the caller can fall back to a per-ticker source.
+
+    Batches at 400 codes/call (Futu snapshot API limit).
+    """
+    if not tickers:
+        return {}
+    try:
+        from futu import OpenQuoteContext, RET_OK
+    except ImportError:
+        logger.warning("  Futu market cap: futu-api not installed")
+        return None
+
+    if not _opend_reachable(host, port):
+        logger.warning(f"  Futu market cap: OpenD not reachable at {host}:{port}")
+        return None
+
+    code_to_ticker: dict[str, str] = {}
+    for t in tickers:
+        c = _to_futu_code(t, market)
+        if c:
+            code_to_ticker[c] = t
+    if not code_to_ticker:
+        return {}
+
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        result: dict[str, float] = {}
+        codes = list(code_to_ticker.keys())
+        BATCH = 400
+        for i in range(0, len(codes), BATCH):
+            batch = codes[i:i + BATCH]
+            ret, data = ctx.get_market_snapshot(batch)
+            if ret != RET_OK:
+                logger.warning(
+                    f"  Futu market cap: get_market_snapshot failed — {data}"
+                )
+                return None
+            for _, row in data.iterrows():
+                code = row.get("code")
+                ticker = code_to_ticker.get(code)
+                if ticker is None:
+                    continue
+                try:
+                    cap = float(row.get("total_market_val", 0) or 0)
+                except (TypeError, ValueError):
+                    cap = 0
+                if cap > 0:
+                    result[ticker] = cap
+        return result
+    except Exception as e:
+        logger.warning(f"  Futu market cap: unexpected error — {e}")
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+
+
 def intraday_cumulative_volume_futu(
     tickers: list[str],
     avg_daily_volumes: dict[str, float],

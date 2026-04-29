@@ -92,15 +92,15 @@ Hong Kong market short candidates using the same methodology as US Shorts, sourc
 
 **Phase 2 — Post-processing:**
 
-| Filter | Criteria |
-|--------|----------|
-| Market Cap | >= HKD 300M |
-| Dollar Volume | Price × 20-day avg volume >= HKD 100M |
-| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% |
-| Performance (Large Cap ≥ HKD 10B) | Up 50%+ over 2, 3, or 4 weeks |
-| Performance (Mid Cap HKD 2B–10B) | Up 200%+ over 2, 3, or 4 weeks |
-| Performance (Small Cap HKD 300M–2B) | Up 300%+ over 2, 3, or 4 weeks |
-| Consecutive Up Days | 3+ consecutive green days |
+| Filter | Criteria | Data source |
+|--------|----------|-------------|
+| Market Cap | >= HKD 300M | **Futu** snapshot (`total_market_val`, one batch call) → yfinance `fast_info.market_cap` per-ticker fallback |
+| Dollar Volume | Price × 20-day avg volume >= HKD 100M | yfinance daily |
+| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% | yfinance daily |
+| Performance (Large Cap ≥ HKD 10B) | Up 50%+ over 2, 3, or 4 weeks | yfinance daily |
+| Performance (Mid Cap HKD 2B–10B) | Up 200%+ over 2, 3, or 4 weeks | yfinance daily |
+| Performance (Small Cap HKD 300M–2B) | Up 300%+ over 2, 3, or 4 weeks | yfinance daily |
+| Consecutive Up Days | 3+ consecutive green days | yfinance daily |
 
 HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
 
