@@ -57,18 +57,21 @@ Based on **Kristjan Kullamägi**'s short-selling criteria:
 | Avg Volume | > 1M shares (Finviz 3-month avg, pre-filter) |
 | Market Cap | > $300M (small cap and above) |
 
-**Phase 2 — Post-processing (via yfinance):**
+**Phase 2 — Post-processing:**
 
-| Filter | Criteria |
-|--------|----------|
-| Dollar Volume | Price × 20-day avg volume >= $100M |
-| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% |
-| Performance (Large Cap ≥ $10B) | Up 50%+ over 2, 3, or 4 weeks |
-| Performance (Mid Cap $2B–$10B) | Up 200%+ over 2, 3, or 4 weeks |
-| Performance (Small Cap $300M–$2B) | Up 300%+ over 2, 3, or 4 weeks |
-| Consecutive Up Days | 3+ consecutive green days (excludes today's incomplete data if market is still open) |
+| Filter | Criteria | Data source |
+|--------|----------|-------------|
+| Market Cap (for perf bucketing) | Per-ticker live USD value used to pick the perf threshold | **Futu** snapshot (`total_market_val`, one batch call) → Finviz Ownership cap per-ticker fallback |
+| Dollar Volume | Price × 20-day avg volume >= $100M | yfinance daily |
+| ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 3.5% | yfinance daily |
+| Performance (Large Cap ≥ $10B) | Up 50%+ over 2, 3, or 4 weeks | yfinance daily |
+| Performance (Mid Cap $2B–$10B) | Up 200%+ over 2, 3, or 4 weeks | yfinance daily |
+| Performance (Small Cap $300M–$2B) | Up 300%+ over 2, 3, or 4 weeks | yfinance daily |
+| Consecutive Up Days | 3+ consecutive green days (excludes today's incomplete data if market is still open) | yfinance daily |
 
 Performance is checked over 2-week (10 trading days), 3-week (15 trading days), and 4-week (22 trading days) windows via yfinance. A ticker passes the perf step if it meets the cap-conditional threshold in any window. The Phase 2 filters then run in this order on a single shared yfinance download: **performance → dollar volume → ADR% → consecutive up days**.
+
+Market cap for the perf bucketing is sourced from Futu's real-time snapshot (preferred) rather than Finviz's coarse `"6.96M"` / `"1.23B"` strings — the Finviz formatting truncates to 3 sig figs, which can mis-bucket tickers that sit near the `$2B` / `$10B` boundaries. Finviz Ownership is still parsed first and is used per-ticker for any name Futu doesn't return, and as a full fallback when `[futu] enabled = false` or OpenD is unreachable.
 
 ### RS - Relative Strength (conditional)
 
