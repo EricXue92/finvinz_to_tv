@@ -92,6 +92,7 @@ Hong Kong market short candidates using the same methodology as US Shorts, sourc
 |--------|----------|
 | Universe | HKEX Main Board equities (~2,400 stocks) |
 | SMA20 | Price 20%+ above 20-day moving average |
+| SMA50 | Price above 50-day moving average |
 | Avg Volume | > 1M shares/day (20-day average) |
 
 **Phase 2 — Post-processing:**

@@ -193,7 +193,9 @@ def filter_hk_shorts(
 
     min_avg_volume = config.get("min_avg_volume", 1_000_000)
 
-    # Phase 1: Download in batches, apply SMA20 +20% and volume filter
+    # Phase 1: Download in batches, apply SMA20 +20%, SMA50, and volume filter.
+    # Period bumped to 3mo so SMA50 has >= 50 trading days; downstream filters
+    # only use up to 22 days so the wider window is harmless.
     # Store per-ticker data to avoid re-downloading later
     logger.info("[HK Shorts] Downloading price data and filtering (this may take several minutes)...")
     batch_size = 500
@@ -206,7 +208,7 @@ def filter_hk_shorts(
         batch = yf_tickers[start : start + batch_size]
         logger.info(f"  Batch {start // batch_size + 1}/{(len(yf_tickers) - 1) // batch_size + 1} ({len(batch)} tickers)...")
         batch_data = _yf_download_with_retry(
-            batch, period="2mo", progress=False, group_by="ticker", threads=True,
+            batch, period="3mo", progress=False, group_by="ticker", threads=True,
         )
         if batch_data is None or batch_data.empty:
             logger.warning(f"  Batch failed after retries, skipping")
@@ -219,11 +221,17 @@ def filter_hk_shorts(
                 closes = _trim_today(closes, market_open, today)
                 volumes = _trim_today(volumes, market_open, today)
 
-                if len(closes) < 20 or len(volumes) < 20:
+                if len(closes) < 50 or len(volumes) < 20:
                     continue
 
+                last = closes.iloc[-1]
                 sma20 = closes.iloc[-20:].mean()
-                if closes.iloc[-1] > sma20 * 1.2 and volumes.iloc[-20:].mean() >= min_avg_volume:
+                sma50 = closes.iloc[-50:].mean()
+                if (
+                    last > sma20 * 1.2
+                    and last > sma50
+                    and volumes.iloc[-20:].mean() >= min_avg_volume
+                ):
                     phase1.append(ticker)
                     ticker_closes[ticker] = closes
                     ticker_volumes[ticker] = volumes
@@ -236,7 +244,7 @@ def filter_hk_shorts(
         if start + batch_size < len(yf_tickers):
             time.sleep(5)
 
-    logger.info(f"  {len(phase1)} after SMA20 +20% and volume filter")
+    logger.info(f"  {len(phase1)} after SMA20 +20%, SMA50, and volume filter")
     if not phase1:
         return len(codes), []
 
