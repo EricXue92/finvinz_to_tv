@@ -32,7 +32,11 @@ def _log_section(title: str) -> None:
 
 
 def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
-    """Sync to Futu if [futu] is enabled in config — silent no-op otherwise."""
+    """Sync to Futu if [futu] is enabled in config — silent no-op otherwise.
+    Empty `tickers` is also a no-op: today's screen produced nothing, so we
+    leave the existing Futu group alone instead of clearing it."""
+    if not tickers:
+        return
     futu_cfg = config.get("futu") or {}
     if not futu_cfg.get("enabled", False):
         return
@@ -692,8 +696,7 @@ def filter_dollar_volume_and_adr_yf(
 ) -> list[str]:
     """Apply dollar-volume and ADR% filters via a single yfinance download.
     Either filter is skipped when its threshold is 0. Strict: tickers with
-    insufficient data are dropped — safe_write_watchlist guards against
-    catastrophic yfinance failures."""
+    insufficient data are dropped."""
     if not tickers:
         return []
 
@@ -989,16 +992,6 @@ def _get_et_scan_offset(
     return None
 
 
-def _previous_dated_file(directory: Path, today_prefix: str, suffix: str) -> Path | None:
-    """Find the most recent dated file matching `*{suffix}` in `directory`,
-    excluding today's. Used as the baseline for safe_write_watchlist's drop guard."""
-    today_name = f"{today_prefix}{suffix}"
-    candidates = sorted(
-        p for p in directory.glob(f"*{suffix}") if p.name != today_name
-    )
-    return candidates[-1] if candidates else None
-
-
 def _write_webull(tickers: list[str], dated_path: Path, output_dir: Path) -> None:
     """Mirror tickers as newline-separated .txt under output/Webull/{market}/.
     Webull's "Upload as File" only recognizes one ticker per line — comma-
@@ -1009,34 +1002,15 @@ def _write_webull(tickers: list[str], dated_path: Path, output_dir: Path) -> Non
     (webull_dir / dated_path.name).write_text("\n".join(tickers) + "\n")
 
 
-def safe_write_watchlist(
-    tickers: list[str],
-    output_path: Path,
-    fmt: str = "comma",
-    drop_threshold: float = 0.5,
-    baseline_path: Path | None = None,
-) -> bool:
-    """Write tickers to file. If `baseline_path` (or `output_path` when not given)
-    exists and new count drops by more than drop_threshold (e.g. 0.5 = 50%),
-    keep the existing file and warn. Returns True if the file was written."""
-    compare = baseline_path if baseline_path is not None else output_path
-    if compare.exists():
-        old_content = compare.read_text().strip()
-        old_count = len(old_content.split(",")) if "," in old_content else len(old_content.splitlines())
-        if old_count > 0 and len(tickers) < old_count * (1 - drop_threshold):
-            logger.warning(
-                f"  SKIPPED writing {output_path.name}: new count ({len(tickers)}) "
-                f"is {(1 - len(tickers) / old_count) * 100:.0f}% less than baseline "
-                f"{compare.name} ({old_count}). Possible rate limiting. Previous file kept."
-            )
-            return False
-
+def write_watchlist(tickers: list[str], output_path: Path, fmt: str = "comma") -> None:
+    """Write tickers to file. Always writes — empty list produces an empty
+    dated file for the day, so every run leaves an artifact regardless of
+    screener results."""
     if fmt == "comma":
         content = ",".join(tickers)
     else:
         content = "\n".join(tickers)
-    output_path.write_text(content + "\n")
-    return True
+    output_path.write_text(content + "\n" if content else "")
 
 
 def main() -> int:
@@ -1176,16 +1150,12 @@ def main() -> int:
                 )
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
-                if shorts_tickers:
-                    sorted_shorts = sorted(set(shorts_tickers))
-                    dated = us_output_dir / f"{today}_Shorts.txt"
-                    prev = _previous_dated_file(us_output_dir, today, "_Shorts.txt")
-                    if safe_write_watchlist(sorted_shorts, dated, fmt, baseline_path=prev):
-                        logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
-                        _write_webull(sorted_shorts, dated, output_dir)
-                        _futu_sync(config, "shorts", sorted_shorts, "US")
-                else:
-                    logger.warning("[Shorts] No tickers found after all filters")
+                sorted_shorts = sorted(set(shorts_tickers))
+                dated = us_output_dir / f"{today}_Shorts.txt"
+                write_watchlist(sorted_shorts, dated, fmt)
+                logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
+                _write_webull(sorted_shorts, dated, output_dir)
+                _futu_sync(config, "shorts", sorted_shorts, "US")
             except Exception as e:
                 logger.warning(f"[Shorts] Failed: {e}")
 
@@ -1239,42 +1209,30 @@ def main() -> int:
         for key, name, tickers in longs_dedup:
             futu_key = f"longs_{key}"
             file_stem = futu_groups_cfg.get(futu_key) or key  # fallback to key if unmapped
-            if not tickers:
-                logger.warning(f"[Longs/{key}] No tickers found")
-                continue
             sorted_t = sorted(tickers)
-            suffix = f"_{file_stem}.txt"
-            dated = us_output_dir / f"{today}{suffix}"
-            prev = _previous_dated_file(us_output_dir, today, suffix)
-            if safe_write_watchlist(sorted_t, dated, fmt, baseline_path=prev):
-                logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
-                _write_webull(sorted_t, dated, output_dir)
-                _futu_sync(config, futu_key, sorted_t, "US")
+            dated = us_output_dir / f"{today}_{file_stem}.txt"
+            write_watchlist(sorted_t, dated, fmt)
+            logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
+            _write_webull(sorted_t, dated, output_dir)
+            _futu_sync(config, futu_key, sorted_t, "US")
 
         # --- Write Leaders ---
-        if leaders_tickers:
+        if config.get("leaders"):
             sorted_leaders = sorted(leaders_tickers)
             dated = us_output_dir / f"{today}_Leaders.txt"
-            prev = _previous_dated_file(us_output_dir, today, "_Leaders.txt")
-            if safe_write_watchlist(sorted_leaders, dated, fmt, baseline_path=prev):
-                logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> {dated}")
-                _write_webull(sorted_leaders, dated, output_dir)
-                _futu_sync(config, "leaders", sorted_leaders, "US")
-        elif config.get("leaders"):
-            logger.warning("[Leaders] No tickers found")
+            write_watchlist(sorted_leaders, dated, fmt)
+            logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> {dated}")
+            _write_webull(sorted_leaders, dated, output_dir)
+            _futu_sync(config, "leaders", sorted_leaders, "US")
 
         # --- Write RS (only if it actually ran) ---
         if rs_ran:
-            if rs_tickers:
-                sorted_rs = sorted(rs_tickers)
-                dated = us_output_dir / f"{today}_RS.txt"
-                prev = _previous_dated_file(us_output_dir, today, "_RS.txt")
-                if safe_write_watchlist(sorted_rs, dated, fmt, baseline_path=prev):
-                    logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
-                    _write_webull(sorted_rs, dated, output_dir)
-                    _futu_sync(config, "rs", sorted_rs, "US")
-            else:
-                logger.warning("[RS] No tickers found")
+            sorted_rs = sorted(rs_tickers)
+            dated = us_output_dir / f"{today}_RS.txt"
+            write_watchlist(sorted_rs, dated, fmt)
+            logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
+            _write_webull(sorted_rs, dated, output_dir)
+            _futu_sync(config, "rs", sorted_rs, "US")
 
         # --- HK Shorts ---
         hk_shorts_cfg = config.get("hk_shorts")
@@ -1286,16 +1244,12 @@ def main() -> int:
                 total, hk_shorts_tickers = filter_hk_shorts(hk_shorts_cfg)
                 logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
 
-                if hk_shorts_tickers:
-                    sorted_hk = sorted(hk_shorts_tickers)
-                    dated = hk_output_dir / f"{today}_Shorts.txt"
-                    prev = _previous_dated_file(hk_output_dir, today, "_Shorts.txt")
-                    if safe_write_watchlist(sorted_hk, dated, fmt, baseline_path=prev):
-                        logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
-                        _write_webull(sorted_hk, dated, output_dir)
-                        _futu_sync(config, "hk_shorts", sorted_hk, "HK")
-                else:
-                    logger.warning("[HK Shorts] No tickers found after all filters")
+                sorted_hk = sorted(hk_shorts_tickers)
+                dated = hk_output_dir / f"{today}_Shorts.txt"
+                write_watchlist(sorted_hk, dated, fmt)
+                logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
+                _write_webull(sorted_hk, dated, output_dir)
+                _futu_sync(config, "hk_shorts", sorted_hk, "HK")
             except Exception as e:
                 logger.warning(f"[HK Shorts] Failed: {e}")
 
@@ -1327,20 +1281,17 @@ def main() -> int:
         futu_key = "morning_gap_pre" if is_pre else "morning_gap"
         sign = "" if is_pre else "+"
 
-        if tickers:
-            sorted_tickers = sorted(set(tickers))
-            dated = us_output_dir / f"{today}_{stem}.txt"
-            if safe_write_watchlist(sorted_tickers, dated, fmt):
-                logger.info(
-                    f"[Morning Gap] {sign}{offset}min: {len(sorted_tickers)} tickers -> {dated}"
-                )
-                _write_webull(sorted_tickers, dated, output_dir)
-                _futu_sync(config, futu_key, sorted_tickers, "US")
-                new = _morning_gap_new_tickers(today, sorted_tickers, output_dir)
-                if new:
-                    notify_morning_gap(new, offset, len(sorted_tickers), config)
-        else:
-            logger.warning(f"[Morning Gap] {sign}{offset}min: no tickers passed filters")
+        sorted_tickers = sorted(set(tickers))
+        dated = us_output_dir / f"{today}_{stem}.txt"
+        write_watchlist(sorted_tickers, dated, fmt)
+        logger.info(
+            f"[Morning Gap] {sign}{offset}min: {len(sorted_tickers)} tickers -> {dated}"
+        )
+        _write_webull(sorted_tickers, dated, output_dir)
+        _futu_sync(config, futu_key, sorted_tickers, "US")
+        new = _morning_gap_new_tickers(today, sorted_tickers, output_dir)
+        if new:
+            notify_morning_gap(new, offset, len(sorted_tickers), config)
 
         logger.info("Done.")
         return 0

@@ -8,7 +8,7 @@ min_dollar_volume = 100_000_000  # Longs 过滤: price * avg volume >= 100M
 # `adr_days` completed daily bars * 100。过滤"无波动"的票，捕捉 catalyst-
 # driven volatility。设 0 即可关闭。原 Finviz beta>1.5 过滤已废弃 (beta 反映
 # 多年市场相关性，与"现在是不是 in-play"正交)，由 ADR% 替代。
-min_adr_percent = 4.0
+min_adr_percent = 3.5
 adr_days = 20
 
 # --- Futu (富途牛牛) 自动同步 ---
@@ -73,7 +73,7 @@ filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_
 # --- Leaders: 强势 + 站上均线，5 个 perf 窗口合并去重，输出为 Leaders.txt ---
 # 共同条件: cap >= small, avg vol > 500K, price > $20,
 #           价格在 SMA50 / SMA200 之上;
-# 全局 min_dollar_volume ($100M, 20-day avg) 和 min_adr_percent (>= 4%, 20d)
+# 全局 min_dollar_volume ($100M, 20-day avg) 和 min_adr_percent (>= 3.5%, 20d)
 # 也会自动套用。
 
 [[leaders]]
