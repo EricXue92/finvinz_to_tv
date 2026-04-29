@@ -418,6 +418,7 @@ def filter_shorts(
     min_consecutive_up_days: int,
     min_adr_percent: float = 0,
     adr_days: int = 20,
+    futu_cfg: dict | None = None,
 ) -> tuple[int, list[str]]:
     """Run shorts pipeline: finviz Ownership → single yfinance download →
     performance / dollar-volume / consecutive-up-days filters.
@@ -441,6 +442,25 @@ def filter_shorts(
 
     if not tickers:
         return total, []
+
+    # Prefer Futu snapshot's total_market_val (real-time, USD) over Finviz's
+    # coarse "6.96M" / "1.23B" string. Fall back to the Finviz cap per-ticker
+    # for any names Futu doesn't return.
+    if futu_cfg and futu_cfg.get("enabled"):
+        futu_caps = get_market_caps_futu(
+            tickers, market="US",
+            host=futu_cfg.get("host", "127.0.0.1"),
+            port=futu_cfg.get("port", 11111),
+        )
+        if futu_caps is not None:
+            covered = sum(1 for t in tickers if t in futu_caps)
+            for t in tickers:
+                if t in futu_caps:
+                    market_caps[t] = futu_caps[t]
+            logger.info(
+                f"  market caps: {covered}/{len(tickers)} from Futu "
+                f"(rest from Finviz)"
+            )
 
     # Single yfinance download — shared by all three filters
     data = _yf_download_with_retry(
@@ -1227,6 +1247,7 @@ def main() -> int:
                     min_consecutive_up_days=shorts_cfg.get("min_consecutive_up_days", 3),
                     min_adr_percent=shorts_cfg.get("min_adr_percent", min_adr_percent),
                     adr_days=shorts_cfg.get("adr_days", adr_days),
+                    futu_cfg=config.get("futu") or {},
                 )
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
