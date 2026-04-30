@@ -1139,6 +1139,14 @@ def main() -> int:
     )
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
+    now_hkt = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    mode_label = {"eod": "End-of-Day", "morning-gap": "Morning-Gap"}.get(args.mode, args.mode)
+    banner = f"  RUN {now_hkt.strftime('%Y-%m-%d %A %H:%M %Z')}  |  mode={mode_label}  "
+    bar = "═" * (len(banner) + 2)
+    logger.info(bar)
+    logger.info(banner)
+    logger.info(bar)
+
     project_root = Path(__file__).parent
     config_path = project_root / "config.toml"
     if not config_path.exists():

@@ -217,6 +217,14 @@ uv run main.py --mode morning-gap
 
 The morning-gap scanner auto-detects current US ET time and runs the matching scan (-20/-10 pre-market, +10/+15/+20/+25/+30 post-open, ±2 min tolerance). Outside any window it logs and exits cleanly.
 
+Every run prints a 3-line banner at the top of stdout / `launchd.log` showing the run date, weekday, HKT time, and mode — useful when grepping back through accumulated launchd logs to find a specific day's run:
+
+```
+════════════════════════════════════════════════════════════════
+  RUN 2026-04-30 Thursday 11:04 HKT  |  mode=End-of-Day
+════════════════════════════════════════════════════════════════
+```
+
 ## Import to TradingView
 
 1. Open TradingView
