@@ -3,6 +3,7 @@
 
 import argparse
 import logging
+import os
 import sys
 import time
 import tomllib
@@ -11,6 +12,8 @@ import io
 from pathlib import Path
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+
+os.environ.setdefault("DISABLE_TQDM", "1")
 
 import yfinance as yf
 from finviz import get_stock
@@ -31,9 +34,11 @@ logger = logging.getLogger(__name__)
 
 def _log_section(title: str) -> None:
     """Visual separator + section header for log readability."""
+    bar = "─" * 80
     logger.info("")
-    logger.info("─" * 60)
+    logger.info(bar)
     logger.info(title)
+    logger.info(bar)
 
 
 def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
