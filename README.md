@@ -34,16 +34,17 @@ Long-term trend leaders trading above both SMA50 and SMA200. The five strategies
 | Leaders YTD +100% | YTD performance >= 100% |
 | Leaders 52W +150% | 52-week performance >= 150% |
 
-### Cross-group dedup (Longs / Leaders / RS)
+### Dedup layers
 
-Two layers:
+**Within-day, within Longs** — the 5 strategies are mutually exclusive in priority order `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers` (earlier wins).
 
-1. **Within Longs** — the 5 strategies are mutually exclusive in priority order `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers` (earlier wins).
-2. **Across long-side groups** — the union of all 5 Longs strategies is then deduped against Leaders and RS with priority `Longs(union) > Leaders > RS`.
+**Within-day, across long-side groups** — the union of all 5 Longs strategies is deduped against Leaders and RS with priority `Longs(union) > Leaders > RS`. Each ticker appears in at most one of the 7 long-side groups per day.
 
-Result: each ticker appears in exactly one of the 7 long-side files (5 Longs splits + Leaders + RS) per day. Because every `.txt` file and Futu group is rewritten on each run, this also prevents day-over-day cross-group duplication — a ticker that migrates between groups is automatically removed from its old group.
+**Cross-day master ("seen") dedup** — applied to **every** EOD group (Longs splits, Leaders, RS, Shorts, HK Shorts) after the within-day dedup. A per-market master file at `output/state/eod_seen_{US,HK}.txt` lists every ticker the EOD pipeline has ever written. Each day each group's output is filtered: only tickers **not in the master** are written to the date-stamped `.txt`, mirrored to Webull, and pushed to Futu (append-only). The new tickers are then added to the master. **Net effect: every EOD ticker enters exactly one group on its first sighting and never re-appears in any EOD output afterward.** The master grows monotonically — reset by deleting the file when you want a fresh universe.
 
-Shorts, HK Shorts, and Morning Gap are independent and do not participate in the dedup.
+The Futu groups for all EOD scanners are configured as append-only, so the cumulative ticker set lives in Futu while the daily `.txt` records "today's NEW additions" only.
+
+Morning Gap is excluded from this cross-day master flow — it has its own per-day seen file (`output/state/morning_gap_seen_<date>.txt`) that auto-resets daily.
 
 ### US Shorts (1 strategy, multi-phase filtering)
 
@@ -182,9 +183,9 @@ After each successful watchlist write, the script can sync tickers to a Futu cus
 2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts` (the API can only modify custom groups, not create them).
 3. Set `enabled = true` in `[futu]` (already on by default).
 
-**Sync strategy:** Diff-based — fetches current group contents, then ADDs new tickers and DELs missing ones, minimizing API calls (Futu rate limit: 10 calls per 30s).
+**Sync strategy:** Diff-based for any group **not** listed in `[futu] append_only_groups`; fetches current group contents, then ADDs new tickers and DELs missing ones (Futu rate limit: 10 calls per 30s).
 
-**Merged `EarningsGap` group (append-only):** The EOD `EarningsGap` scan, the pre-market `MorningGapPre` scan, and the post-open `MorningGap` scan all sync into the **same** Futu group, `EarningsGap`. Because three different scanners feed one group, `EarningsGap` is listed in `[futu] append_only_groups` — sync only ADDs tickers, never DELs, so each scanner doesn't clobber the others' contributions. Tickers accumulate across days; clear the group manually in the Futu client when it gets too crowded (Futu caps: 500 per group for non-traders, 2000 for active traders). The three `.txt` files (`EarningsGap.txt`, `MorningGapPre.txt`, `MorningGap.txt`) remain separate and unaffected.
+**Append-only mode (all EOD groups):** Every EOD Futu group — `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts` — is listed in `[futu] append_only_groups`, so sync only ADDs and never DELs. This pairs with the cross-day master `seen` dedup so each ticker enters its group on first sighting and stays there. Tickers accumulate monotonically; clear groups manually in the Futu client when they get too crowded (Futu caps: 500 per group for non-traders, 2000 for active traders). The merged `EarningsGap` group additionally receives `morning_gap_pre` and `morning_gap`; the three corresponding `.txt` files (`EarningsGap.txt`, `MorningGapPre.txt`, `MorningGap.txt`) remain separate and unaffected.
 
 ### Push notifications (ntfy)
 

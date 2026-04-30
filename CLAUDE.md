@@ -27,6 +27,7 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 - Every dated write is mirrored to `output/Webull/{US,HK}/<same-filename>.txt` as **one ticker per line** (newline-separated, no exchange prefix change). Webull's "Upload as File" silently truncates comma-separated lists after the first 1-2 entries — the newline mirror is what you upload there. The TradingView `.txt` in `output/TV/{US,HK}/` stays comma-separated. `_write_webull(tickers, dated_path, output_dir)` runs after each `write_watchlist` call.
 - `write_watchlist(tickers, output_path, fmt)`: unconditional writer. Always writes the dated file, even when `tickers` is empty (produces a 0-byte file for the day). No drop-guard / baseline comparison — every run leaves an artifact and Futu syncs to whatever was just written.
 - **Cross-group dedup (Longs/Leaders/RS)**: Two layers. (1) Within Longs, the 5 strategies are deduped by config-list order — earlier wins. (2) After all three long-side groups have been collected, the Longs union is deduped against Leaders and RS with priority `Longs(union) > Leaders > RS` so each ticker appears in exactly one of the 7 long-side files (5 Longs splits + Leaders + RS) per run. The collection-then-write split means all Longs splits, Leaders, and RS files are written only after RS has finished. Shorts and HK Shorts are independent and written inline.
+- **Cross-day master dedup (`output/state/eod_seen_{US,HK}.txt`)**: Applied to every EOD group (5 Longs splits, Leaders, RS, Shorts, HK Shorts) **after** the within-day priority dedup. The master file is a per-market append-only set of every ticker ever written by the EOD pipeline. Each group's daily output = its within-day survivors **minus** the master; surviving "new" tickers are then added to the master. Net effect: a given ticker enters exactly one EOD group on its first sighting and never re-appears in any EOD `.txt` / Webull / Futu push afterward. Implemented in `_dedup_seen` (modeled on `_morning_gap_new_tickers`). Reset by deleting the file — manual only. **MorningGap is excluded** from this flow (it has its own per-day seen file at `output/state/morning_gap_seen_<date>.txt`). To pair with this dedup, every EOD Futu group is now in `[futu] append_only_groups` so the Futu side accumulates monotonically too — the daily date-stamped `.txt` records "today's NEW additions", while the Futu group records the all-time union.
 - 8-second delay between Finviz requests to avoid rate limiting (configurable in `config.toml`).
 
 **Config format:** TOML. Filter strings (e.g. `sh_avgvol_o500`) map directly to Finviz URL parameters. The `signal` field is optional (used for Top Gainers).
@@ -47,7 +48,7 @@ Uses `finviz` package (web scraping, no API key needed):
 - Hooks fire after every `write_watchlist` of the dated file in `main.py` — one call per group: each Longs split (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers), Leaders, Shorts, RS, HKShorts, MorningGap, MorningGapPre. Empty result = empty .txt **but Futu sync is skipped** so the existing Futu group is preserved (handled by `_futu_sync` early-return on empty `tickers`).
 - `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running.
 - `sync_to_futu()` is **diff-based**: calls `get_user_security(group_name)` for current contents, computes set diff, then issues at most one `DEL` and one `ADD` (under the 10-call/30s API rate limit).
-- **Append-only / merged groups**: Multiple scanner keys may map to the same Futu group name. When the group is listed in `[futu] append_only_groups`, `sync_to_futu(append_only=True)` skips the DEL phase — tickers only accumulate. Used for the merged `EarningsGap` group, which receives `longs_earnings_gap` + `morning_gap` + `morning_gap_pre` (the corresponding `.txt` files stay separate). The group grows monotonically across runs and must be cleared manually in the Futu client when it gets too crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
+- **Append-only / merged groups**: When a group is listed in `[futu] append_only_groups`, `sync_to_futu(append_only=True)` skips the DEL phase — tickers only accumulate. **All EOD groups** (`EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`) are append-only to pair with the cross-day master dedup. The merged `EarningsGap` group additionally receives `morning_gap` + `morning_gap_pre`. Groups grow monotonically across runs and must be cleared manually in the Futu client when they get too crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
 
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
@@ -60,7 +61,10 @@ enabled = true
 host = "127.0.0.1"
 port = 11111
 
-append_only_groups = ["EarningsGap"]
+append_only_groups = [
+    "EarningsGap", "HighVolume", "GapUp", "NewHigh52W", "TopGainers",
+    "Leaders", "Shorts", "RS", "HKShorts",
+]
 
 [futu.groups]
 longs_earnings_gap = "EarningsGap"

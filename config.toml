@@ -18,10 +18,22 @@ enabled = true
 host = "127.0.0.1"
 port = 11111
 # Groups in this list are append-only: scanners only ADD tickers, never DEL.
-# Used for merged/shared groups so multiple scanners can feed one group
-# without clobbering each other. The group accumulates indefinitely —
-# clear it manually in the Futu client when it gets too crowded.
-append_only_groups = ["EarningsGap"]
+# All EOD groups are append-only so they pair with the cross-day master
+# 'seen' file (state/eod_seen_{US,HK}.txt) — each ticker enters exactly one
+# group on its first sighting, and the Futu group accumulates monotonically.
+# Clear groups manually in the Futu client when they get too crowded
+# (Futu cap: 500 per group for non-traders, 2000 for active traders).
+append_only_groups = [
+    "EarningsGap",
+    "HighVolume",
+    "GapUp",
+    "NewHigh52W",
+    "TopGainers",
+    "Leaders",
+    "Shorts",
+    "RS",
+    "HKShorts",
+]
 
 [futu.groups]
 # EarningsGap is the merged "gap watch" group: EOD earnings-gap scan +

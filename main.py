@@ -105,6 +105,56 @@ def _morning_gap_new_tickers(
     return new
 
 
+def _eod_seen_path(output_dir: Path, market: str) -> Path:
+    """Path to the per-market cross-day master 'seen' file.
+    Append-only across runs; reset by deleting the file manually."""
+    return output_dir / "state" / f"eod_seen_{market}.txt"
+
+
+def _load_seen(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip()}
+    except OSError as e:
+        logger.warning(f"[EOD seen] could not read {path}: {e}")
+        return set()
+
+
+def _persist_seen(path: Path, seen: set[str]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            for t in sorted(seen):
+                f.write(f"{t}\n")
+    except OSError as e:
+        logger.warning(f"[EOD seen] could not write {path}: {e}")
+
+
+def _dedup_seen(
+    label: str,
+    sorted_tickers: list[str],
+    seen: set[str],
+    seen_path: Path,
+) -> list[str]:
+    """Filter out tickers already in `seen`, persist the union, return the
+    new (unseen) subset. Mutates `seen` in place. Logs how many were dropped.
+    Sorted-input → sorted-output."""
+    if not sorted_tickers:
+        return []
+    new = [t for t in sorted_tickers if t not in seen]
+    skipped = len(sorted_tickers) - len(new)
+    if skipped:
+        logger.info(
+            f"{label} cross-day dedup: {skipped} already in master, kept {len(new)} new"
+        )
+    if new:
+        seen.update(new)
+        _persist_seen(seen_path, seen)
+    return new
+
+
 HKEX_SECURITIES_URL = (
     "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx"
 )
@@ -1181,6 +1231,20 @@ def main() -> int:
     hk_output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "eod":
+        # --- Cross-day master 'seen' files (per market) ---
+        # Each EOD group's daily output is filtered against this master so a
+        # ticker only ever appears once across all days/groups. Master grows
+        # monotonically; reset by deleting state/eod_seen_{US,HK}.txt manually.
+        # MorningGap is intentionally excluded (has its own per-day seen flow).
+        us_seen_path = _eod_seen_path(output_dir, "US")
+        hk_seen_path = _eod_seen_path(output_dir, "HK")
+        us_seen = _load_seen(us_seen_path)
+        hk_seen = _load_seen(hk_seen_path)
+        logger.info(
+            f"[EOD seen] US: {len(us_seen)} | HK: {len(hk_seen)} loaded "
+            f"(reset by deleting {us_seen_path.parent}/eod_seen_*.txt)"
+        )
+
         # --- Longs (collect per-strategy — write deferred until after cross-group dedup) ---
         # Config list order = priority order (earlier wins). After collection,
         # tickers are assigned exclusively to the highest-priority strategy.
@@ -1273,6 +1337,7 @@ def main() -> int:
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
                 sorted_shorts = sorted(set(shorts_tickers))
+                sorted_shorts = _dedup_seen("[Shorts]", sorted_shorts, us_seen, us_seen_path)
                 dated = us_output_dir / f"{today}_Shorts.txt"
                 write_watchlist(sorted_shorts, dated, fmt)
                 logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
@@ -1332,6 +1397,7 @@ def main() -> int:
             futu_key = f"longs_{key}"
             file_stem = futu_groups_cfg.get(futu_key) or key  # fallback to key if unmapped
             sorted_t = sorted(tickers)
+            sorted_t = _dedup_seen(f"[Longs/{key}]", sorted_t, us_seen, us_seen_path)
             dated = us_output_dir / f"{today}_{file_stem}.txt"
             write_watchlist(sorted_t, dated, fmt)
             logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
@@ -1341,6 +1407,7 @@ def main() -> int:
         # --- Write Leaders ---
         if config.get("leaders"):
             sorted_leaders = sorted(leaders_tickers)
+            sorted_leaders = _dedup_seen("[Leaders]", sorted_leaders, us_seen, us_seen_path)
             dated = us_output_dir / f"{today}_Leaders.txt"
             write_watchlist(sorted_leaders, dated, fmt)
             logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> {dated}")
@@ -1350,6 +1417,7 @@ def main() -> int:
         # --- Write RS (only if it actually ran) ---
         if rs_ran:
             sorted_rs = sorted(rs_tickers)
+            sorted_rs = _dedup_seen("[RS]", sorted_rs, us_seen, us_seen_path)
             dated = us_output_dir / f"{today}_RS.txt"
             write_watchlist(sorted_rs, dated, fmt)
             logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
@@ -1369,6 +1437,7 @@ def main() -> int:
                 logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
 
                 sorted_hk = sorted(hk_shorts_tickers)
+                sorted_hk = _dedup_seen("[HK Shorts]", sorted_hk, hk_seen, hk_seen_path)
                 dated = hk_output_dir / f"{today}_Shorts.txt"
                 write_watchlist(sorted_hk, dated, fmt)
                 logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
