@@ -47,6 +47,9 @@ def _to_futu_code(ticker: str, market: Literal["US", "HK"]) -> str | None:
     return None
 
 
+# Retained one release as a fallback after morning-gap discovery moved to
+# `discover_morning_gap_candidates`. Safe to remove once Futu-discovery has
+# proven stable in production (re-evaluate after 2026-06-01).
 def pre_market_gap_futu(
     tickers: list[str],
     min_gap_pct: float,

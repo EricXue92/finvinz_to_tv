@@ -96,3 +96,7 @@ leaders = "Leaders"
 - 10 `modify_user_security` calls per 30 seconds
 - 500 tickers in "all" watchlist for untraded users; 2000 for active traders
 - Cannot modify system groups (e.g. "全部"), only user-created custom groups
+
+**Snapshot DataFrame quirks (SDK-version-specific, validated against the installed `futu-api`):**
+- `get_market_snapshot` has no `change_rate` column. Derive the regular-session percent change from `(last_price - prev_close_price) / prev_close_price * 100`. Pre/after-hours rates ARE present as `pre_change_rate` / `after_change_rate`.
+- `suspension` is a **string** column (only value seen: `"N/A"`), not a bool — `(df["suspension"] == False)` matches 0 rows. Use `delisting` (which IS bool) plus the exchange whitelist for the active/listed gate.

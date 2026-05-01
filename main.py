@@ -930,6 +930,9 @@ def _filter_dollar_volume_from_data(
     return result
 
 
+# Retained one release as a fallback after morning-gap discovery moved to
+# the Futu snapshot path. Safe to remove once Futu-discovery has proven
+# stable in production (re-evaluate after 2026-06-01).
 def _filter_pre_market_gap(
     tickers: list[str],
     daily_data,
