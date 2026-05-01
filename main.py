@@ -1030,6 +1030,54 @@ def _filter_adr_percent(
     return result
 
 
+def _filter_sma_trend(
+    tickers: list[str],
+    daily_data,
+    today_date,
+    sma_short: int = 50,
+    sma_long: int = 200,
+    market_open: bool = True,
+    single: bool | None = None,
+) -> list[str]:
+    """Keep tickers whose latest completed daily close is above both
+    SMA50 and SMA200. Replaces Finviz `ta_sma50_pa`/`ta_sma200_pa` for the
+    Futu-discovery path. Strict: tickers with insufficient history
+    (< sma_long bars after trimming today's partial bar) are dropped."""
+    if not tickers:
+        return []
+    if single is None:
+        single = len(tickers) == 1
+
+    result = []
+    for ticker in tickers:
+        try:
+            if single:
+                closes = daily_data["Close"].dropna()
+            else:
+                closes = daily_data[ticker]["Close"].dropna()
+            closes = _trim_today(closes, market_open, today_date)
+            if len(closes) < sma_long:
+                logger.warning(
+                    f"  {ticker}: insufficient daily bars for SMA{sma_long} "
+                    f"({len(closes)}<{sma_long}), dropping"
+                )
+                continue
+            last = float(closes.iloc[-1])
+            sma_s = float(closes.iloc[-sma_short:].mean())
+            sma_l = float(closes.iloc[-sma_long:].mean())
+            if last >= sma_s and last >= sma_l:
+                result.append(ticker)
+            else:
+                logger.info(
+                    f"  {ticker}: close {last:.2f} below SMA{sma_short}={sma_s:.2f} "
+                    f"or SMA{sma_long}={sma_l:.2f}, dropping"
+                )
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(f"  {ticker}: SMA trend check failed ({e}), dropping")
+
+    return result
+
+
 def _filter_intraday_cumulative_volume(
     tickers: list[str],
     intraday_data,
