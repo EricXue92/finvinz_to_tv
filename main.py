@@ -22,6 +22,7 @@ from finviz.screener import Screener
 import openpyxl
 
 from futu_sync import (
+    discover_morning_gap_candidates,
     get_market_caps_futu,
     intraday_cumulative_volume_futu,
     pre_market_gap_futu,
@@ -622,27 +623,42 @@ def run_morning_gap(
     sign = "+" if offset >= 0 else ""
     logger.info(f"[Morning Gap] Running for offset {sign}{offset}min")
 
-    # Phase 1: Finviz screener. Pre-market uses a separate filter/signal
-    # because Finviz's `ta_gap_u5` field is yesterday's gap during pre-market,
-    # so it returns a stale candidate set. `ta_topgainers` reflects current
-    # change and surfaces today's pre-market movers; the +N% gate is enforced
-    # downstream by `_filter_pre_market_gap` against yfinance pre-market prices.
-    if offset < 0 and config.get("pre_market_filters"):
-        pm_filters = config["pre_market_filters"]
-        pm_signal = config.get("pre_market_signal")
-        logger.info(
-            f"  Pre-market screener: signal={pm_signal or '-'} filters={pm_filters}"
+    # Phase 1: Futu snapshot-based discovery. Replaces Finviz screener +
+    # ta_topgainers signal — that signal does not actually surface today's
+    # pre-market gappers (it ranks by recent regular-session perf), so big
+    # earnings gappers like TWLO 2026-05-01 +19.5% pre-market never entered
+    # the candidate set. We now scan NASDAQ/NYSE/AMEX directly via Futu's
+    # bulk snapshot and filter by pre_change_rate / change_rate at the source.
+    futu_host = (futu_cfg or {}).get("host", "127.0.0.1")
+    futu_port = (futu_cfg or {}).get("port", 11111)
+    discovery = discover_morning_gap_candidates(
+        min_gap_pct=config.get("min_gap_percent", 5.0),
+        min_market_cap=config.get("min_market_cap", 300_000_000),
+        min_price=config.get("min_price", 10.0),
+        pre_market=(offset < 0),
+        exchanges=config.get(
+            "exchanges", ["US_NASDAQ", "US_NYSE", "US_AMEX"]
+        ),
+        host=futu_host,
+        port=futu_port,
+    )
+    if discovery is None:
+        logger.warning(
+            "[Morning Gap] Futu discovery failed (OpenD unreachable or API error), "
+            "skipping run"
         )
-        tickers = run_screener(pm_filters, pm_signal)
-    else:
-        tickers = run_screener(config["filters"], config.get("signal"))
-    logger.info(f"  Found {len(tickers)} tickers from Finviz screener")
+        return offset, []
+    tickers = discovery
+    logger.info(f"  Found {len(tickers)} tickers from Futu snapshot discovery")
     if not tickers:
         return offset, []
 
     # Phase 2: 20-day daily data — used by both dollar volume and avg volume
+    # 1y window is required for SMA200 (needs >=200 trading days). Used by
+    # _filter_sma_trend below; older-window filters (dollar volume, ADR%,
+    # avg volume) only need the trailing 20-30 bars and ignore the rest.
     daily_data = _yf_download_with_retry(
-        tickers, period="2mo", interval="1d", progress=False,
+        tickers, period="1y", interval="1d", progress=False,
         group_by="ticker", threads=False,
     )
     if daily_data is None or daily_data.empty:
@@ -672,36 +688,28 @@ def run_morning_gap(
     if not tickers:
         return offset, []
 
-    # Pre-market: skip intraday cumulative volume filter (no meaningful
-    # accumulated session volume yet) and revalidate the gap. Prefer Futu
-    # OpenAPI (real-time, single snapshot call) when [futu] is enabled;
-    # fall back to yfinance 1m prepost bars when OpenD is unreachable or the
-    # snapshot call errors. Either gate is needed because Finviz's Gap field
-    # is yesterday's gap during pre-market hours.
+    # Phase 3c: SMA50/SMA200 trend gate (replaces Finviz ta_sma50_pa / ta_sma200_pa).
+    tickers = _filter_sma_trend(tickers, daily_data, today_et)
+    logger.info(f"  {len(tickers)} after SMA50/SMA200 trend filter")
+    if not tickers:
+        return offset, []
+
+    # Phase 3d: 20-day average volume gate (replaces Finviz sh_avgvol_o500).
+    min_avg_vol = config.get("min_avg_volume", 500_000)
+    avg_days = config.get("avg_volume_days", 20)
+    tickers = _filter_avg_volume(
+        tickers, daily_data, min_avg_vol, avg_days, today_et
+    )
+    logger.info(
+        f"  {len(tickers)} after 20d avg volume filter (>= {min_avg_vol:,.0f})"
+    )
+    if not tickers:
+        return offset, []
+
+    # Pre-market path: discovery already enforced pre_change_rate >= min_gap_pct
+    # from the same Futu snapshot, so no re-validation is needed. Skip the
+    # cumulative volume gate (no accumulated session volume yet pre-open).
     if offset < 0:
-        min_pm_gap = config.get("min_pre_market_gap_percent", 5.0)
-        if min_pm_gap > 0 and tickers:
-            futu_result = None
-            if futu_cfg and futu_cfg.get("enabled"):
-                futu_result = pre_market_gap_futu(
-                    tickers, min_pm_gap,
-                    host=futu_cfg.get("host", "127.0.0.1"),
-                    port=futu_cfg.get("port", 11111),
-                )
-            if futu_result is not None:
-                tickers = futu_result
-                logger.info(
-                    f"  {len(tickers)} after pre-market gap revalidation "
-                    f"(Futu, >= +{min_pm_gap}%)"
-                )
-            else:
-                tickers = _filter_pre_market_gap(
-                    tickers, daily_data, min_pm_gap, today_et
-                )
-                logger.info(
-                    f"  {len(tickers)} after pre-market gap revalidation "
-                    f"(yfinance, >= +{min_pm_gap}%)"
-                )
         return offset, tickers
 
     # Phase 4: Compute 20-day avg daily volume per ticker
