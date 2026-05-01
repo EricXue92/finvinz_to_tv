@@ -4,7 +4,7 @@ Automated stock screener that runs custom Finviz scans (US) and HKEX + yfinance 
 
 ## Screening Criteria
 
-> **Stocks-only universe:** All Finviz-based scans (Longs / Leaders / Shorts / RS / Morning Gap) include the `ind_stocksonly` filter to exclude ETFs, ETNs, and other non-stock instruments. HK Shorts is sourced from HKEX's equity list directly and is already stock-only by construction.
+> **Stocks-only universe:** All Finviz-based scans (Longs / Leaders / Shorts / RS) include the `ind_stocksonly` filter to exclude ETFs, ETNs, and other non-stock instruments. HK Shorts (sourced from HKEX's equity list) and Morning Gap (sourced from Futu `get_stock_basicinfo` with `stock_type=STOCK`) are stock-only by construction.
 
 ### Longs (5 strategies, each written to its own file)
 
@@ -112,36 +112,38 @@ HK tickers are output in `HKEX:XXXX` format for TradingView (e.g. `HKEX:0700`).
 
 ### Morning Gap (pre-market + intraday, 7 scans)
 
-Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `MorningGapPre.txt` as an early candidate list — Finviz filters → dollar volume → ADR% → pre-market gap revalidation, but no intraday volume confirmation yet (the regular session hasn't opened). **Post-open (+10 / +15 / +20 / +25 / +30 min)** writes to `MorningGap.txt` — Finviz filters → dollar volume → ADR% → intraday cumulative-volume filter, which captures stocks that have already traded their full daily average volume in the first 30 minutes (a signal of catalyst-driven institutional buying — earnings, FDA, M&A, sector news).
+Two-phase scanner. **Pre-market (-20 / -10 min before US open)** writes to `MorningGapPre.txt` as an early candidate list. **Post-open (+10 / +15 / +20 / +25 / +30 min)** writes to `MorningGap.txt` and adds an intraday cumulative-volume gate that captures stocks already trading their full daily average volume in the first 30 minutes — a signal of catalyst-driven institutional buying (earnings, FDA, M&A, sector news).
 
-**Phase 1 — Finviz filters (different sets for pre-market vs post-open):**
+**Phase 1 — Futu snapshot discovery (replaces Finviz):**
 
-| Filter | Pre-market candidate set | Post-open candidate set |
-|--------|--------------------------|-------------------------|
-| Market Cap | Small Cap+ (>= $300M) | Small Cap+ (>= $300M) |
-| Avg Volume | > 500K | > 500K |
-| Price | > $10 | > $10 |
-| Gap Up | — (Finviz `Gap` is yesterday's gap before 9:30 ET; see note below) | >= 5% (Finviz `ta_gap_u5`) |
-| SMA50 | Price above SMA50 | Price above SMA50 |
-| SMA200 | Price above SMA200 | Price above SMA200 |
-| Signal | Top Gainers (Finviz `ta_topgainers`) | — |
+Earlier versions screened the candidate set via Finviz's `ta_topgainers` signal, but that ranks by recent regular-session performance, so a stock gapping +19.5% pre-market on earnings (e.g. TWLO 2026-05-01) never entered the candidate set. Discovery now scans NASDAQ / NYSE / AMEX directly via `get_stock_basicinfo` + bulk `get_market_snapshot` (batches of 400) and applies the gap threshold against live snapshot data, so today's actual gappers always surface.
 
-**Phase 2 — Post-processing:**
+| Filter | Pre-market | Post-open | Snapshot field |
+|--------|------------|-----------|----------------|
+| Universe | US NASDAQ / NYSE / AMEX, not delisted, `stock_type = STOCK` | same | `get_stock_basicinfo` |
+| Market Cap | >= $300M | same | `total_market_val` |
+| Price | >= $10 | same | `last_price` |
+| Gap | `pre_change_rate` >= 5% (and `pre_volume > 0`) | `(last_price − prev_close_price) / prev_close_price * 100` >= 5% | `pre_change_rate` / derived |
+
+The post-open path derives the gap manually because the installed `futu-api` SDK's `get_market_snapshot` DataFrame has no `change_rate` column. The basicinfo `suspension` column is a string (`"N/A"`) in this SDK and matches 0 rows when compared to `False`, so the active-listing gate uses `delisting` (a real bool) plus the exchange whitelist.
+
+**Phase 2 — yfinance post-processing (1y daily download for SMA200):**
 
 | Filter | Criteria | Pre-market | Post-open | Data source |
 |--------|----------|------------|-----------|-------------|
 | Dollar Volume | Price × 20-day avg volume >= $100M | ✓ | ✓ | yfinance daily |
 | ADR% | mean((High − Low) / Close) over last 20 daily bars × 100 >= 4.0% | ✓ | ✓ | yfinance daily |
-| Pre-market Gap Revalidation | (latest pre-market price − prev close) / prev close >= +5% | ✓ | — | **Futu** snapshot (`pre_change_rate`) → yfinance 1m prepost fallback |
-| Intraday Cumulative Volume | Today's RTH cumulative volume since 9:30 ET >= 20-day average daily volume | — | ✓ | **Futu** snapshot (`volume`) → yfinance 1m fallback |
+| SMA50 / SMA200 trend | Latest close above both SMA50 and SMA200 | ✓ | ✓ | yfinance daily |
+| 20-day Avg Volume | >= 500K shares/day | ✓ | ✓ | yfinance daily |
+| Intraday Cumulative Volume | Today's RTH cumulative volume since 9:30 ET >= 20-day avg daily volume | — | ✓ | **Futu** snapshot (`volume`) → yfinance 1m fallback |
 
 The intraday volume threshold (post-open only) is the key signal — by 10–30 min after open, the stock has already done a full day's worth of trading. Per Kullamägi: "the best ones have traded their average daily volume in the first 15–30 minutes after the open."
 
+The pre-market path needs no separate gap revalidation: discovery already enforced `pre_change_rate >= min_gap_percent` from the same Futu snapshot, so survivors of Phase 2 ship directly to `MorningGapPre.txt`.
+
 **Why ADR% instead of Finviz beta:** The earlier `ta_beta_o1.5` (beta > 1.5) was excluding mid/large-cap catalyst names (biotech, services with beta 1.0–1.3) that are actually "in-play" on a given session. Beta measures correlation with the broad market over years of history — orthogonal to whether a stock is currently moving on news. **The beta filter has been removed from every group and replaced by an ADR% threshold applied across Longs, Leaders, RS, Shorts, HK Shorts, and Morning Gap.** ADR% (Kullamägi-style) is the average of daily `(High − Low) / Close` over the last 20 completed sessions × 100; the global default is 4.0% and is configured once in `[settings]` (`min_adr_percent`, `adr_days`). Set `min_adr_percent = 0` in `[settings]` to disable globally. Shorts, HK Shorts, and Morning Gap also accept a per-section override of the same key if that group needs a different threshold.
 
-**Why the pre-market candidate set is different:** Finviz's `Gap` column is `(today's regular-session open − yesterday's close) ÷ yesterday's close`. Before 9:30 ET the regular session hasn't opened, so Finviz still serves yesterday's gap value — a stock that gapped up ≥5% yesterday but is gapping down today still passes `ta_gap_u5`. To get a candidate set that reflects *today's* movement, the pre-market scan drops `ta_gap_u5` and adds `signal = ta_topgainers` (Finviz Top Gainers, updated in real time). The revalidation step then pulls each candidate's pre-market price from Futu OpenAPI (`get_market_snapshot.pre_change_rate`, real-time on US Lv1 BBO accounts) and re-computes the gap against yesterday's close, dropping anything below `min_pre_market_gap_percent` (default 5.0). yfinance's `prepost=True` 1m bars are the fallback when Futu OpenD is unreachable. Tickers with no pre-market trades yet (`pre_volume == 0`) are also dropped — they have no signal. Post-open scans keep the original `ta_gap_u5` filter because Finviz's `Gap` field reflects today's actual open by then.
-
-**Why Futu OpenAPI for live data:** Both the pre-market gap revalidation and the post-open cumulative-volume filter are single-call snapshot lookups against a list of <30 candidates — Futu returns real-time pre/post fields and today's RTH cumulative `volume` in one network round-trip. yfinance's per-ticker 1m bar fetches are slower, hit rate limits, and frequently returned no data for valid pre-market gappers in past runs (logged as `yfinance 1m: failed to process <ticker>, dropping`). Futu requires US Lv1 BBO real-time quote permission on the OpenD account; without it the snapshot's pre/post fields return delayed/empty values and the filter would silently drop everything. The yfinance fallback runs whenever `[futu] enabled = false` or the OpenD TCP probe fails.
+**Why Futu OpenAPI is required:** Both Phase 1 discovery and the post-open cumulative-volume filter rely on Futu's real-time snapshot. With `[futu] enabled = false` or OpenD unreachable, `--mode morning-gap` writes empty `.txt` files, skips the Futu sync, and logs a single warning per run — there is no Finviz fallback. Futu requires US Lv1 BBO real-time quote permission on the OpenD account; without it the snapshot's pre/post fields return delayed/empty values and discovery would silently drop everything.
 
 Each scan that surfaces **new** tickers (not seen in any earlier morning-gap scan today) also pushes an ntfy notification to phone + Mac — see [Push notifications (ntfy)](#push-notifications-ntfy) below.
 
