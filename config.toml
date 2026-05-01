@@ -149,25 +149,21 @@ mid_cap_threshold = 2_000_000_000
 
 [morning_gap]
 name = "Morning Gap Up"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_gap_u5","ta_sma50_pa","ta_sma200_pa"]
-# Pre-market candidate discovery. Finviz's `ta_gap_u5` is computed off today's
-# regular-session open vs prior close — before 9:30 ET that's stale (yesterday's
-# gap winners). `ta_topgainers` reflects today's percentage change including
-# pre-market activity. We drop `ta_gap_u5` here and let `_filter_pre_market_gap`
-# (yfinance pre-market price vs prev close >= min_pre_market_gap_percent)
-# enforce the actual gap threshold downstream. Used only when offset < 0;
-# post-open scans keep `filters`/`signal` above.
-pre_market_filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_sma50_pa","ta_sma200_pa"]
-pre_market_signal = "ta_topgainers"
+# Discovery via Futu snapshot over a curated US universe (replaces the
+# Finviz `ta_topgainers` signal — empirically that surfaced last week's
+# regular-session gainers, not today's pre-market gappers, so earnings
+# gaps like TWLO 2026-05-01 +19.5% never entered the candidate set).
+# Pre-market scans use `pre_change_rate`; post-open scans use change_rate
+# derived from (last_price - prev_close_price) / prev_close_price.
+exchanges = ["US_NASDAQ", "US_NYSE", "US_AMEX"]
+min_gap_percent = 5.0           # gap threshold for both pre & post discovery
+min_market_cap = 300_000_000    # USD; mirrors Finviz cap_smallover
+min_price = 10.0                # USD; mirrors Finviz sh_price_o10
+min_avg_volume = 500_000        # 20d shares/day; mirrors Finviz sh_avgvol_o500
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [-20, -10, 10, 15, 20, 25, 30]
 offset_tolerance_minutes = 2
-# Pre-market gap threshold (yfinance pre-market last vs prev close). With
-# pre_market_signal=ta_topgainers the candidate set already reflects today's
-# movement, so this filters down from "any gainer" to "true gap-ups". Set
-# to 0 to disable.
-min_pre_market_gap_percent = 5.0
 # ADR% filter is inherited from [settings] (min_adr_percent / adr_days).
 # Override here if a different threshold is desired for morning-gap only.
 
