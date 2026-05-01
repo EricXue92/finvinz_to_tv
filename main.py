@@ -1078,6 +1078,51 @@ def _filter_sma_trend(
     return result
 
 
+def _filter_avg_volume(
+    tickers: list[str],
+    daily_data,
+    min_avg_vol: float,
+    days: int,
+    today_date,
+    market_open: bool = True,
+    single: bool | None = None,
+) -> list[str]:
+    """Keep tickers whose N-day average daily volume is >= min_avg_vol.
+    Replaces Finviz `sh_avgvol_o500` for the Futu-discovery path. Strict:
+    tickers with fewer than `days` completed bars are dropped."""
+    if not tickers:
+        return []
+    if single is None:
+        single = len(tickers) == 1
+
+    result = []
+    for ticker in tickers:
+        try:
+            if single:
+                volumes = daily_data["Volume"].dropna()
+            else:
+                volumes = daily_data[ticker]["Volume"].dropna()
+            volumes = _trim_today(volumes, market_open, today_date)
+            if len(volumes) < days:
+                logger.warning(
+                    f"  {ticker}: insufficient daily bars for avg vol "
+                    f"({len(volumes)}<{days}), dropping"
+                )
+                continue
+            avg = float(volumes.iloc[-days:].mean())
+            if avg >= min_avg_vol:
+                result.append(ticker)
+            else:
+                logger.info(
+                    f"  {ticker}: 20d avg vol {avg:,.0f} < {min_avg_vol:,.0f}, "
+                    f"dropping"
+                )
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(f"  {ticker}: avg vol check failed ({e}), dropping")
+
+    return result
+
+
 def _filter_intraday_cumulative_volume(
     tickers: list[str],
     intraday_data,
