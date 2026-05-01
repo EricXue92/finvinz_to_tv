@@ -653,10 +653,10 @@ def run_morning_gap(
     if not tickers:
         return offset, []
 
-    # Phase 2: 20-day daily data — used by both dollar volume and avg volume
-    # 1y window is required for SMA200 (needs >=200 trading days). Used by
-    # _filter_sma_trend below; older-window filters (dollar volume, ADR%,
-    # avg volume) only need the trailing 20-30 bars and ignore the rest.
+    # Phase 2: 1y daily data — used by dollar-volume / ADR% / SMA / avg-vol
+    # filters. The 1y window is required for SMA200 (needs >=200 trading days);
+    # the shorter-window filters (dollar volume, ADR%, avg volume) only need
+    # the trailing 20-30 bars and ignore the rest.
     daily_data = _yf_download_with_retry(
         tickers, period="1y", interval="1d", progress=False,
         group_by="ticker", threads=False,
