@@ -359,3 +359,128 @@ def sync_to_futu(
                 ctx.close()
             except Exception:
                 pass
+
+
+def discover_morning_gap_candidates(
+    min_gap_pct: float,
+    min_market_cap: float,
+    min_price: float,
+    pre_market: bool,
+    exchanges: list[str],
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> list[str] | None:
+    """Discover US morning-gap candidates via Futu snapshot.
+
+    Pipeline:
+      1. ``get_stock_basicinfo(market=US, stock_type=STOCK)``.
+      2. Filter rows to ``exchange_type in exchanges`` and not delisted.
+      3. ``get_market_snapshot`` in batches of 400.
+      4. Keep tickers with ``total_market_val >= min_market_cap``,
+         ``last_price >= min_price``, and gap above ``min_gap_pct`` —
+         pre-market uses ``pre_change_rate`` (and ``pre_volume > 0``);
+         post-open uses ``(last_price - prev_close_price) / prev_close_price * 100``
+         (the snapshot DataFrame has no plain ``change_rate`` column in this SDK
+         version, so we derive it).
+
+    Returns plain US tickers (e.g. ``"TWLO"``, not ``"US.TWLO"``).
+    Returns ``None`` on any failure so callers can decide whether to fall
+    back. Logs a single warning per failure mode.
+    """
+    try:
+        from futu import OpenQuoteContext, RET_OK, Market, SecurityType
+    except ImportError:
+        logger.warning("  Futu discovery: futu-api not installed")
+        return None
+
+    if not _opend_reachable(host, port):
+        logger.warning(f"  Futu discovery: OpenD not reachable at {host}:{port}")
+        return None
+
+    exchanges_set = set(exchanges)
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        ret, basic = ctx.get_stock_basicinfo(
+            market=Market.US, stock_type=SecurityType.STOCK
+        )
+        if ret != RET_OK:
+            logger.warning(f"  Futu discovery: get_stock_basicinfo failed — {basic}")
+            return None
+        if basic is None or len(basic) == 0:
+            logger.warning("  Futu discovery: empty basicinfo result")
+            return None
+
+        # Note: `suspension` is a string column ("N/A") in this SDK, not a bool —
+        # comparing to False matches 0 rows. We rely on `delisting` (bool) plus
+        # the exchange whitelist; that yields ~7k US common-stock tickers.
+        mask = (
+            basic["exchange_type"].isin(exchanges_set)
+            & (basic["delisting"] == False)  # noqa: E712
+        )
+        codes = basic.loc[mask, "code"].tolist()
+        logger.info(
+            f"  Futu discovery: basicinfo={len(basic)} "
+            f"after exchange/delisting filter={len(codes)}"
+        )
+        if not codes:
+            return []
+
+        survivors: list[str] = []
+        BATCH = 400
+        for i in range(0, len(codes), BATCH):
+            batch = codes[i:i + BATCH]
+            ret, snap = ctx.get_market_snapshot(batch)
+            if ret != RET_OK:
+                logger.warning(
+                    f"  Futu discovery: snapshot batch {i}-{i + len(batch)} "
+                    f"failed — {snap}"
+                )
+                return None
+            for _, row in snap.iterrows():
+                code = row.get("code")
+                if not code or not code.startswith("US."):
+                    continue
+                try:
+                    cap = float(row.get("total_market_val", 0) or 0)
+                    price = float(row.get("last_price", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if cap < min_market_cap or price < min_price:
+                    continue
+                if pre_market:
+                    try:
+                        pre_vol = float(row.get("pre_volume", 0) or 0)
+                        gap = float(row.get("pre_change_rate"))
+                    except (TypeError, ValueError):
+                        continue
+                    if pre_vol <= 0 or gap < min_gap_pct:
+                        continue
+                else:
+                    try:
+                        prev_close = float(row.get("prev_close_price", 0) or 0)
+                        if prev_close <= 0:
+                            continue
+                        gap = (price - prev_close) / prev_close * 100.0
+                    except (TypeError, ValueError):
+                        continue
+                    if gap < min_gap_pct:
+                        continue
+                survivors.append(code[len("US."):])
+
+        logger.info(
+            f"  Futu discovery: {len(survivors)} candidates "
+            f"({'pre-market' if pre_market else 'post-open'}, "
+            f"gap>={min_gap_pct}%, cap>=${min_market_cap:,.0f}, "
+            f"price>=${min_price:.2f})"
+        )
+        return survivors
+    except Exception as e:
+        logger.warning(f"  Futu discovery: unexpected error — {e}")
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
