@@ -53,6 +53,10 @@ Uses `finviz` package (web scraping, no API key needed):
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
 2. In the Futu PC client, manually create the 9 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`. **The API cannot create groups — it can only modify existing custom groups.** The earnings-gap, pre-market and post-open morning-gap scans all sync into the single append-only `EarningsGap` group.
+3. The morning-gap scan now **requires** OpenD running — discovery is
+   Futu-snapshot based (it no longer depends on Finviz). With OpenD down,
+   `--mode morning-gap` writes empty `.txt` files and skips the Futu sync,
+   logging a single warning per run.
 
 **Config (`[futu]` in `config.toml`):**
 ```toml
