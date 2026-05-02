@@ -4,20 +4,115 @@ Multi-source momentum and short screeners (US via Finviz, HK via HKEX + yfinance
 
 ## Screeners
 
-| Group | Source | Notes |
-|---|---|---|
-| **Longs** (5 splits) | Finviz | `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers` (priority order, mutually exclusive). Oliver Kell methodology. |
-| **Leaders** (5 strategies, merged) | Finviz | Above SMA50/SMA200, perf windows 4w/13w/26w/YTD/52w. |
-| **Shorts** | Finviz Ownership + yfinance | Kullamägi parabolic blow-off: SMA20+20%, cap-conditional 2/3/4-week perf, 3+ consecutive up days. |
-| **RS** (conditional) | Finviz | Only runs when SPY *and* QQQ are down >1.5%. Oliver Kell's relative-strength approach. |
-| **IPO** (sidecar) | — | Auto-collected: long-side candidates dropped by yfinance for insufficient daily history (typical for stocks IPO'd within ~20 trading days). |
-| **HK Shorts** | HKEX + yfinance | Same methodology as US Shorts, HKD-native cap thresholds. |
-| **Morning Gap** (pre + post) | Futu snapshot + yfinance | 7 daily scans: -20/-10 pre-market, +10/+15/+20/+25/+30 post-open. Requires Futu OpenD running. |
+All Finviz-based scans use `ind_stocksonly` to exclude ETFs/ETNs. HK Shorts (HKEX equity list) and Morning Gap (Futu `stock_type=STOCK`) are stock-only by construction.
 
-**Global gates** (all long-side, configurable in `[settings]`):
-- Dollar Volume ≥ $100M (20-day avg, yfinance)
-- ADR% ≥ 4.0% (mean of `(High − Low) / Close` over 20 bars × 100, yfinance) — replaces the legacy Finviz `beta > 1.5`
-- IBD RS Percentile ≥ 90 (from [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), refreshed weekday ~01:30 UTC)
+### Global gates (long-side: Longs / Leaders)
+
+Applied after the Finviz screen, before any expensive yfinance work. Configurable in `[settings]`.
+
+| Gate | Threshold | Source |
+|---|---|---|
+| **IBD RS Percentile** | ≥ 90 (top 10% momentum names; missing tickers KEPT to avoid pruning recent IPOs) | [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY, refreshed weekday ~01:30 UTC |
+| **Dollar Volume** | Price × 20-day avg volume ≥ $100M | yfinance daily |
+| **ADR%** | mean(`(High − Low) / Close`) × 100 over 20 completed bars ≥ 4.0% | yfinance daily |
+
+ADR% replaces the legacy Finviz `beta > 1.5` filter — beta measures multi-year correlation with the broad market and was excluding mid/large-cap catalyst names that were actually in-play. ADR% (Kullamägi-style) directly measures whether a stock is currently moving.
+
+### Longs (5 strategies, mutually exclusive)
+
+Oliver Kell momentum/breakout setups. Priority order — earlier wins, each ticker appears in at most one Longs file per day.
+
+| Priority | Strategy | Finviz filters |
+|---|---|---|
+| 1 | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5, Gap Up 5%+, Above SMA50 & SMA200 |
+| 2 | `HighVolume` | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200 + yfinance Rel Vol ≥ 3× 20-day avg |
+| 3 | `GapUp` | Small Cap+, Avg Vol > 500K, Price > $20, Gap Up 3%+, Above SMA50 & SMA200 |
+| 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
+| 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers |
+
+All 5 also pass the global RS / Dollar Volume / ADR% gates above.
+
+### Leaders (5 strategies, merged)
+
+Long-term trend leaders above SMA50 + SMA200. All five share the same base filters and differ only in performance window.
+
+**Base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200, plus the global gates.
+
+| Strategy | Performance threshold |
+|---|---|
+| Leaders 4W +30% | 4-week perf ≥ 30% |
+| Leaders 13W +50% | 13-week perf ≥ 50% |
+| Leaders 26W +100% | 26-week perf ≥ 100% |
+| Leaders YTD +100% | YTD perf ≥ 100% |
+| Leaders 52W +150% | 52-week perf ≥ 150% |
+
+### US Shorts
+
+Kullamägi parabolic blow-off setups. Two-phase: Finviz Ownership pre-filter, then yfinance post-processing on a single shared download.
+
+**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month avg), Cap > $300M.
+
+**Phase 2 — yfinance + Futu cap snapshot, in order: performance → dollar volume → ADR% → consecutive up days.**
+
+| Filter | Threshold | Source |
+|---|---|---|
+| Market cap (perf bucketing) | Live USD value | Futu snapshot `total_market_val` → Finviz Ownership fallback |
+| Dollar Volume | ≥ $100M (20-day avg) | yfinance |
+| ADR% | ≥ 4.0% (20-day) | yfinance |
+| Performance — Large Cap (≥ $10B) | Up 50%+ over 2, 3, or 4 weeks | yfinance |
+| Performance — Mid Cap ($2B–$10B) | Up 200%+ over 2, 3, or 4 weeks | yfinance |
+| Performance — Small Cap ($300M–$2B) | Up 300%+ over 2, 3, or 4 weeks | yfinance |
+| Consecutive Up Days | ≥ 3 green days (excludes today's incomplete bar if market is open) | yfinance |
+
+Cap is sourced from Futu (truncation-free) rather than Finviz's coarse `"6.96M"`/`"1.23B"` strings, which can mis-bucket near the $2B / $10B boundaries.
+
+### RS — Relative Strength (conditional)
+
+Oliver Kell's relative-strength approach. **Runs only when SPY *and* QQQ are both down > 1.5%** on the day — surfaces stocks holding up in a weak market.
+
+Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%. (Not gated by IBD RS — relative strength on a weak day already overlaps with the IBD definition.)
+
+### IPO (auto-collected sidecar)
+
+Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get dropped by yfinance for **insufficient daily history** — typical for stocks IPO'd within the last ~20 trading days. They cleared price/volume on Finviz and are worth watching while they age in.
+
+- Output: `output/TV/US/<date>_IPO.txt` + Webull mirror + Futu group `IPO`
+- Has its own cross-day master `output/state/eod_seen_IPO.txt`. Once a ticker has enough yfinance bars to pass DV/ADR/RVol, it lands in its proper long-side group on the first qualifying day.
+- Triggered by yfinance "insufficient data" / "insufficient volume data" / "insufficient daily bars for ADR%" / "failed to process" warnings. Real ADR%/dollar-volume rejections (data was sufficient, just below threshold) are NOT collected.
+
+### HK Shorts
+
+Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds.
+
+**Phase 1 — HKEX universe + yfinance:** SMA20 +20%, Above SMA50, Avg Vol > 1M shares/day (20-day avg).
+
+**Phase 2 — same flow as US Shorts** with HKD thresholds: cap ≥ HKD 300M, dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days. Cap from Futu snapshot → yfinance `fast_info.market_cap` fallback. Output uses `HKEX:XXXX` format (e.g. `HKEX:0700`).
+
+### Morning Gap (pre-market + intraday, 7 daily scans)
+
+Two-phase intraday gap scanner. **Pre-market (-20/-10 min)** writes `MorningGapPre.txt`. **Post-open (+10/+15/+20/+25/+30 min)** writes `MorningGap.txt` and adds an intraday cumulative-volume gate that surfaces stocks already trading their full daily average volume in the first 30 min — a Kullamägi signal of catalyst-driven institutional buying.
+
+**Phase 1 — Futu snapshot discovery (replaces Finviz `ta_topgainers`, which ranked by regular-session perf and missed pre-market gappers):**
+
+| Filter | Threshold | Source |
+|---|---|---|
+| Universe | NASDAQ / NYSE / AMEX, listed, `stock_type = STOCK` | Futu `get_stock_basicinfo` |
+| Market Cap | ≥ $300M | `total_market_val` |
+| Price | ≥ $10 | `last_price` |
+| Gap (pre) | `pre_change_rate` ≥ 5% (and `pre_volume > 0`) | `pre_change_rate` |
+| Gap (post) | `(last_price − prev_close) / prev_close × 100` ≥ 5% | derived from snapshot |
+
+**Phase 2 — yfinance post-processing + Futu intraday volume:**
+
+| Filter | Threshold | Pre | Post |
+|---|---|---|---|
+| Dollar Volume | ≥ $100M (20-day avg) | ✓ | ✓ |
+| ADR% | ≥ 4.0% (20-day) | ✓ | ✓ |
+| SMA50 / SMA200 | Latest close above both | ✓ | ✓ |
+| 20-day Avg Volume | ≥ 500K shares/day | ✓ | ✓ |
+| Intraday Cumulative Volume | RTH cumulative since 9:30 ET ≥ 20-day avg daily volume | — | ✓ |
+
+Requires FutuOpenD running with US Lv1 BBO real-time quote permission. Without it, both Phase 1 discovery and the post-open volume filter return empty — there's no Finviz fallback. Each scan that surfaces *new* tickers (not seen in any earlier scan today) pushes an ntfy notification.
 
 ## Dedup
 
