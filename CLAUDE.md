@@ -32,7 +32,18 @@ Single-file Python tool (`main.py`) that scrapes Finviz stock screeners (US) and
 
 **Config format:** TOML. Filter strings (e.g. `sh_avgvol_o500`) map directly to Finviz URL parameters. The `signal` field is optional (used for Top Gainers).
 
-**Scheduling:** Runs Tue-Sat 8:30 AM HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`). Mac wakes at 8:29 AM via `pmset repeat`. Covers US Mon-Fri market close in both EDT and EST. Later time (vs earlier 6:00 AM) lets yfinance/Finviz EOD data settle before the run.
+**Scheduling:** Runs Tue-Sat 10:00 AM HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`). Mac wakes at 9:59 AM via `pmset repeat wakepoweron TWRFS 9:59:00` (sudo). The 10:00 slot covers US Mon-Fri market close in both EDT and EST AND lands after the daily Fred6725/rs-log RS Rating commit (worst-observed lag: ~01:31 UTC = 09:31 HKT) so the IBD RS table is fresh when Longs/Leaders read it.
+
+## IBD Relative Strength Rating
+
+`rs_rating.py` pulls the daily IBD-style RS percentile table (0-99) from `Fred6725/rs-log/output/rs_stocks.csv` (the published artifact of the [Fred6725/relative-strength](https://github.com/Fred6725/relative-strength) GitHub Action) and exposes a filter applied to Longs (every split) and Leaders **right after `run_screener`** — placed before yfinance dollar-volume so a 90+ gate cuts ~80-90% of tickers before any expensive batch download.
+
+- **Algorithm**: `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY's same-formula score, then percentile-ranked across ~6100 NYSE/NASDAQ stocks (ETFs and test issues excluded). All 0-99 percentiles are pre-computed in the CSV — we don't recompute anything.
+- **Caching**: First call per day downloads to `output/state/rs_rating_<date>.csv`; subsequent calls (e.g. ad-hoc re-runs) read the cache.
+- **Failure mode**: If the fetch fails (network, GitHub outage, schema change) the loaded table is `None` and every `filter_by_rs` call becomes a one-line warning + passthrough. The pipeline still produces output; it just skips the RS gate for the day. **Do not turn this into a hard failure** — the .txt files are the primary artifact.
+- **Missing tickers**: Tickers not in the CSV (recent IPOs lacking 12mo history, foreign listings) are KEPT, not dropped — silently dropping them would surprise the user and over-prune new momentum names.
+- **Config**: `[settings] min_rs_percentile = 90`. Set to 0 to disable entirely (skips the fetch too).
+- **Scope**: US only. Shorts (parabolic blow-offs are by definition high-RS) and HK Shorts are NOT filtered. The conditional `[rs]` group is also unfiltered — its purpose is to find relative-strength names on a weak market day, which already overlaps the IBD definition.
 
 ## Finviz Library
 

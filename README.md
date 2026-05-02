@@ -18,13 +18,13 @@ Based on **Oliver Kell**'s momentum/breakout methodology. Each strategy outputs 
 | 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
 | 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers |
 
-All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance) and **ADR% >= 4.0%** (mean of `(High − Low) / Close` over the last 20 completed daily bars × 100, via yfinance). The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
+All longs strategies also require **Dollar Volume >= $100M** (Price × 20-day avg volume, via yfinance) and **ADR% >= 4.0%** (mean of `(High − Low) / Close` over the last 20 completed daily bars × 100, via yfinance). They additionally pass through an **IBD Relative Strength gate (Percentile >= 90)** — see [IBD Relative Strength Rating Gate](#ibd-relative-strength-rating-gate) below. The "Avg Vol" filters above are Finviz pre-filters using Finviz's 3-month average to reduce result count before post-processing.
 
 ### Leaders (5 strategies, merged & deduplicated)
 
 Long-term trend leaders trading above both SMA50 and SMA200. The five strategies share the same base filters but differ in the performance-window threshold:
 
-**Shared base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200, Dollar Volume >= $100M (20-day avg, via yfinance), ADR% >= 4.0% (20-day, via yfinance).
+**Shared base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200, Dollar Volume >= $100M (20-day avg, via yfinance), ADR% >= 4.0% (20-day, via yfinance), IBD RS Percentile >= 90 (see [IBD Relative Strength Rating Gate](#ibd-relative-strength-rating-gate)).
 
 | Strategy | Performance Threshold |
 |----------|-----------------------|
@@ -33,6 +33,22 @@ Long-term trend leaders trading above both SMA50 and SMA200. The five strategies
 | Leaders 26W +100% | 26-week performance >= 100% |
 | Leaders YTD +100% | YTD performance >= 100% |
 | Leaders 52W +150% | 52-week performance >= 150% |
+
+### IBD Relative Strength Rating Gate
+
+Long-side strategies (every Longs split + Leaders) pass through a daily IBD-style RS percentile gate before any expensive yfinance work. Only tickers with **Percentile >= 90** (top 10% momentum names by the IBD weighted-quarter formula) survive; anything below is dropped, and tickers missing from the table — typically recent IPOs without 12 months of history — are KEPT to avoid silently pruning new momentum names.
+
+| | |
+|---|---|
+| Source | `Fred6725/rs-log/output/rs_stocks.csv` (the published artifact of the [Fred6725/relative-strength](https://github.com/Fred6725/relative-strength) GitHub Action) |
+| Algorithm | `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY's same-formula score, then percentile-ranked across ~6100 NYSE/NASDAQ stocks |
+| Refresh cadence | Weekday ~01:30 UTC (~09:30 HKT) — the EOD pipeline now runs at 10:00 AM HKT specifically to land after this commit |
+| Local cache | `output/state/rs_rating_<date>.csv` (one fetch per run; same-day re-runs are offline) |
+| Failure mode | If the fetch fails (network, GitHub outage, schema change), every filter call becomes a one-line warning + passthrough — the pipeline still produces output, it just skips the RS gate for the day |
+| Scope | Longs (all 5 splits) + Leaders only. Shorts (parabolic blow-offs are by definition high-RS), HK Shorts, the conditional `[rs]` group, and Morning Gap are NOT filtered |
+| Config | `[settings] min_rs_percentile = 90` — set to `0` to disable entirely |
+
+The gate is applied **right after `run_screener`**, before yfinance dollar-volume / ADR / relative-volume — so a 90+ cut typically eliminates 80–90% of Finviz hits before any batch download, materially shortening the run.
 
 ### Dedup layers
 
@@ -250,19 +266,19 @@ Webull's "Upload as File" only recognizes one ticker per line — comma-separate
 
 The script runs daily after US market close via macOS launchd, with `pmset` to wake the Mac from sleep.
 
-**Schedule:** Tue–Sat 8:30 AM HKT = Mon–Fri after US market close. 8:30 AM HKT is safe for both EDT (4.5h after close) and EST (3.5h after close), and allows yfinance/Finviz EOD data to fully settle before the run — earlier times (e.g. 6 AM) can produce noisier results due to stale or partial data.
+**Schedule:** Tue–Sat 10:00 AM HKT = Mon–Fri after US market close. 10:00 AM HKT is safe for both EDT (6h after close) and EST (5h after close), lets yfinance/Finviz EOD data fully settle, **and lands after the daily Fred6725/rs-log RS Rating commit (worst-observed lag: ~01:30 UTC = ~09:30 HKT)** so the IBD RS table is fresh when the Longs/Leaders gate reads it. Earlier slots (e.g. 8:30 AM) used to produce noisier results and would also race the upstream RS publish.
 
 ### How it works
 
-1. **`pmset repeat`** wakes the Mac at 8:29 AM HKT (Tue–Sat)
-2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 8:30 AM
+1. **`pmset repeat`** wakes the Mac at 9:59 AM HKT (Tue–Sat)
+2. **launchd** (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`) runs the script at 10:00 AM
 3. After execution, the Mac automatically returns to sleep
 
 ### Setup
 
 ```bash
-# Schedule Mac to wake at 8:29 AM Tue-Sat
-sudo pmset repeat wakeorpoweron TWRFS 08:29:00
+# Schedule Mac to wake at 9:59 AM Tue-Sat
+sudo pmset repeat wakeorpoweron TWRFS 09:59:00
 
 # Verify wake schedule
 pmset -g sched

@@ -29,6 +29,7 @@ from futu_sync import (
     sync_to_futu,
 )
 from notify import notify_morning_gap
+from rs_rating import fetch_rs_table, filter_by_rs
 
 logger = logging.getLogger(__name__)
 
@@ -1373,6 +1374,10 @@ def main() -> int:
     # catalyst-driven volatility regardless of multi-year market correlation.
     min_adr_percent = settings.get("min_adr_percent", 0)
     adr_days = settings.get("adr_days", 20)
+    # IBD-style RS Rating gate. Applied to Longs (every split) and Leaders
+    # before yfinance dollar-volume to cut downstream work by ~10x. Set 0
+    # to disable. Source: Fred6725/rs-log (refreshed weekday ~01:30 UTC).
+    min_rs_percentile = settings.get("min_rs_percentile", 0)
 
     today = date.today().strftime("%Y_%m_%d")
 
@@ -1396,6 +1401,13 @@ def main() -> int:
             f"(reset by deleting {us_seen_path.parent}/eod_seen_*.txt)"
         )
 
+        # --- IBD RS Rating table (US only; applied to Longs + Leaders) ---
+        # Fetched once per run, cached to state/rs_rating_<date>.csv. None on
+        # any failure; downstream filter calls degrade to no-ops with warnings.
+        rs_table = (
+            fetch_rs_table(output_dir, today) if min_rs_percentile > 0 else None
+        )
+
         # --- Longs (collect per-strategy — write deferred until after cross-group dedup) ---
         # Config list order = priority order (earlier wins). After collection,
         # tickers are assigned exclusively to the highest-priority strategy.
@@ -1408,6 +1420,10 @@ def main() -> int:
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
+                if min_rs_percentile > 0 and tickers:
+                    tickers = filter_by_rs(
+                        tickers, rs_table, min_rs_percentile, f"  [Longs/{key}]"
+                    )
                 if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
                     tickers = filter_dollar_volume_and_adr_yf(
                         tickers, min_dollar_volume, min_adr_percent, adr_days,
@@ -1451,6 +1467,10 @@ def main() -> int:
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
+                if min_rs_percentile > 0 and tickers:
+                    tickers = filter_by_rs(
+                        tickers, rs_table, min_rs_percentile, f"  [Leaders/{name}]"
+                    )
                 if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
                     tickers = filter_dollar_volume_and_adr_yf(
                         tickers, min_dollar_volume, min_adr_percent, adr_days,
