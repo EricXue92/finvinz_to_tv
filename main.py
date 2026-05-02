@@ -229,6 +229,45 @@ def _trim_today(series, market_open: bool, today_date):
     return series
 
 
+def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int) -> None:
+    """Patch tickers that came back sparse from a batch yf.download by re-downloading
+    each one individually and writing the result back into the batch DataFrame.
+    yfinance batch responses occasionally drop legitimate tickers (all-NaN columns)
+    due to transient Yahoo errors; the single-ticker retry usually recovers them.
+    No-op for single-ticker batches (column shape is different)."""
+    if len(tickers) <= 1:
+        return
+
+    sparse = []
+    for t in tickers:
+        try:
+            vol = data[t]["Volume"].dropna()
+        except (KeyError, TypeError):
+            sparse.append(t)
+            continue
+        if len(vol) < min_rows:
+            sparse.append(t)
+
+    if not sparse:
+        return
+
+    logger.info(f"  yfinance: retrying {len(sparse)} sparse ticker(s) individually: {','.join(sparse)}")
+    for t in sparse:
+        try:
+            single_df = yf.download(t, period=period, progress=False, threads=False)
+            if single_df is None or single_df.empty:
+                continue
+            try:
+                flat = single_df.xs(t, axis=1, level=1)
+            except KeyError:
+                flat = single_df
+            for field in ("Open", "High", "Low", "Close", "Volume"):
+                if field in flat.columns:
+                    data[(t, field)] = flat[field].reindex(data.index)
+        except Exception as e:
+            logger.warning(f"  yfinance: single retry failed for {t}: {e}")
+
+
 def filter_hk_shorts(
     config: dict, futu_cfg: dict | None = None
 ) -> tuple[int, list[str]]:
@@ -872,6 +911,7 @@ def filter_dollar_volume_and_adr_yf(
         return []
 
     data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
+    _retry_sparse_in_batch(data, tickers, period="2mo", min_rows=max(adr_days, dv_days))
     now_et = datetime.now(ZoneInfo("America/New_York"))
     market_open = 9 <= now_et.hour < 16 and now_et.weekday() < 5
     today_et = now_et.date()
@@ -1195,6 +1235,7 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
         return []
 
     data = yf.download(tickers, period="2mo", progress=False, group_by="ticker", threads=False)
+    _retry_sparse_in_batch(data, tickers, period="2mo", min_rows=days + 1)
     result = []
 
     now_et = datetime.now(ZoneInfo("America/New_York"))
