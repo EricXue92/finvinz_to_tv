@@ -1,6 +1,6 @@
 # Daily Stock Screener Pipeline
 
-Multi-source momentum and short screeners (US via Finviz, HK via HKEX + yfinance, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI.
+Multi-source momentum and short screeners (US via Finviz, HK via HKEX + yfinance, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI, based on Oliver Kell and Kristjan Kullamägi.
 
 ## Screeners
 
