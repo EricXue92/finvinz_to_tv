@@ -1488,7 +1488,6 @@ def main() -> int:
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
                 sorted_shorts = sorted(set(shorts_tickers))
-                sorted_shorts = _dedup_seen("[Shorts]", sorted_shorts, us_seen, us_seen_path)
                 dated = us_output_dir / f"{today}_Shorts.txt"
                 write_watchlist(sorted_shorts, dated, fmt)
                 logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
@@ -1588,7 +1587,6 @@ def main() -> int:
                 logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
 
                 sorted_hk = sorted(hk_shorts_tickers)
-                sorted_hk = _dedup_seen("[HK Shorts]", sorted_hk, hk_seen, hk_seen_path)
                 dated = hk_output_dir / f"{today}_Shorts.txt"
                 write_watchlist(sorted_hk, dated, fmt)
                 logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
