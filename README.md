@@ -6,15 +6,17 @@ Multi-source momentum and short screeners (US via Finviz, HK via HKEX + yfinance
 
 All Finviz-based scans use `ind_stocksonly` to exclude ETFs/ETNs. HK Shorts (HKEX equity list) and Morning Gap (Futu `stock_type=STOCK`) are stock-only by construction.
 
-### Global gates (long-side: Longs / Leaders)
+### Global gates (long-side)
 
 Applied after the Finviz screen, before any expensive yfinance work. Configurable in `[settings]`.
 
-| Gate | Threshold | Source |
-|---|---|---|
-| **IBD RS Percentile** | ≥ 90 (top 10% momentum names; missing tickers KEPT to avoid pruning recent IPOs) | [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY, refreshed weekday ~01:30 UTC |
-| **Dollar Volume** | Price × 20-day avg volume ≥ $100M | yfinance daily |
-| **ADR%** | mean(`(High − Low) / Close`) × 100 over 20 completed bars ≥ 4.0% | yfinance daily |
+| Gate | Scope | Threshold | Source |
+|---|---|---|---|
+| **IBD RS Percentile** | Leaders only | ≥ 90 (top 10% momentum names; missing tickers KEPT to avoid pruning recent IPOs) | [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY, refreshed weekday ~01:30 UTC |
+| **Dollar Volume** | Longs + Leaders | Price × 20-day avg volume ≥ $100M | yfinance daily |
+| **ADR%** | Longs + Leaders | mean(`(High − Low) / Close`) × 100 over 20 completed bars ≥ 4.0% | yfinance daily |
+
+**Why RS is Leaders-only:** the Longs strategies are catalyst-driven (gap-ups, earnings reactions, volume surges) where the trigger itself qualifies the name. A 90+ RS gate would prune fresh breakouts that haven't built a 12-month track record yet.
 
 ADR% replaces the legacy Finviz `beta > 1.5` filter — beta measures multi-year correlation with the broad market and was excluding mid/large-cap catalyst names that were actually in-play. ADR% (Kullamägi-style) directly measures whether a stock is currently moving.
 
@@ -30,7 +32,7 @@ Oliver Kell momentum/breakout setups. Priority order — earlier wins, each tick
 | 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
 | 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers |
 
-All 5 also pass the global RS / Dollar Volume / ADR% gates above.
+All 5 also pass the global Dollar Volume / ADR% gates above (RS is Leaders-only).
 
 ### Leaders (5 strategies, merged)
 
