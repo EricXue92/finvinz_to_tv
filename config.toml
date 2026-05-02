@@ -38,6 +38,7 @@ append_only_groups = [
     "Shorts",
     "RS",
     "HKShorts",
+    "IPO",
 ]
 
 [futu.groups]
@@ -54,6 +55,9 @@ shorts = "Shorts"
 rs = "RS"
 hk_shorts = "HKShorts"
 leaders = "Leaders"
+# IPO collects long-side candidates dropped by yfinance (insufficient daily
+# history). Separate cross-day master (state/eod_seen_IPO.txt), append-only.
+ipo = "IPO"
 
 # --- Longs: 5 个子策略，按 list 顺序内部互斥去重，每个单独输出。
 # 优先级 (高 → 低): EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers

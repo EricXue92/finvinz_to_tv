@@ -910,10 +910,13 @@ def filter_dollar_volume_and_adr_yf(
     min_adr_percent: float,
     adr_days: int = 20,
     dv_days: int = 20,
+    ipo_drops: set[str] | None = None,
 ) -> list[str]:
     """Apply dollar-volume and ADR% filters via a single yfinance download.
     Either filter is skipped when its threshold is 0. Strict: tickers with
-    insufficient data are dropped."""
+    insufficient data are dropped. If `ipo_drops` is provided, tickers
+    dropped due to missing/insufficient yfinance history are recorded there
+    (likely IPOs)."""
     if not tickers:
         return []
 
@@ -926,7 +929,8 @@ def filter_dollar_volume_and_adr_yf(
 
     if min_dollar_volume > 0:
         tickers = _filter_dollar_volume_from_data(
-            tickers, data, min_dollar_volume, market_open, today_et, single, days=dv_days,
+            tickers, data, min_dollar_volume, market_open, today_et, single,
+            days=dv_days, ipo_drops=ipo_drops,
         )
     if not tickers:
         return []
@@ -934,7 +938,7 @@ def filter_dollar_volume_and_adr_yf(
     if min_adr_percent > 0:
         tickers = _filter_adr_percent(
             tickers, data, min_adr_percent, adr_days, today_et,
-            market_open=market_open, single=single,
+            market_open=market_open, single=single, ipo_drops=ipo_drops,
         )
 
     return tickers
@@ -948,10 +952,13 @@ def _filter_dollar_volume_from_data(
     today_date,
     single: bool,
     days: int = 20,
+    ipo_drops: set[str] | None = None,
 ) -> list[str]:
     """Filter tickers by dollar volume using a pre-downloaded yfinance DataFrame.
     Dollar volume = latest close price * N-day average volume.
-    Strict: tickers with insufficient data are dropped."""
+    Strict: tickers with insufficient data are dropped. When `ipo_drops` is
+    given, tickers dropped for missing/insufficient yfinance history are
+    recorded there."""
     if not tickers:
         return []
 
@@ -964,6 +971,8 @@ def _filter_dollar_volume_from_data(
 
             if len(volumes) < days or len(closes) < 1:
                 logger.warning(f"  yfinance: insufficient data for {ticker}, dropping")
+                if ipo_drops is not None:
+                    ipo_drops.add(ticker)
                 continue
 
             price = closes.iloc[-1]
@@ -973,6 +982,8 @@ def _filter_dollar_volume_from_data(
                 result.append(ticker)
         except (KeyError, TypeError):
             logger.warning(f"  yfinance: failed to process {ticker}, dropping")
+            if ipo_drops is not None:
+                ipo_drops.add(ticker)
 
     return result
 
@@ -1041,12 +1052,16 @@ def _filter_adr_percent(
     today_date,
     market_open: bool = True,
     single: bool | None = None,
+    ipo_drops: set[str] | None = None,
 ) -> list[str]:
     """Keep tickers whose ADR% over the last `days` completed daily bars
     is >= min_pct. ADR% = mean((High - Low) / Close) * 100. When
     `market_open` is True, today's partial bar is excluded via _trim_today;
     pass False for EOD runs where today's bar is already complete. Strict:
-    tickers with insufficient data are dropped."""
+    tickers with insufficient data are dropped. When `ipo_drops` is given,
+    tickers dropped for missing/insufficient yfinance history are recorded
+    there (real ADR% < min_pct rejections are NOT recorded — that's a
+    legitimate filter, not a data gap)."""
     if not tickers:
         return []
     if single is None:
@@ -1070,6 +1085,8 @@ def _filter_adr_percent(
             n = min(len(highs), len(lows), len(closes), days)
             if n < days:
                 logger.warning(f"  {ticker}: insufficient daily bars for ADR% ({n}<{days}), dropping")
+                if ipo_drops is not None:
+                    ipo_drops.add(ticker)
                 continue
 
             highs = highs.iloc[-days:]
@@ -1084,6 +1101,8 @@ def _filter_adr_percent(
                 logger.info(f"  {ticker}: ADR% {adr_pct:.2f}% < {min_pct}%, dropping")
         except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
             logger.warning(f"  {ticker}: ADR% check failed ({e}), dropping")
+            if ipo_drops is not None:
+                ipo_drops.add(ticker)
 
     return result
 
@@ -1234,10 +1253,17 @@ def _filter_intraday_cumulative_volume(
     return result
 
 
-def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) -> list[str]:
+def filter_relative_volume(
+    tickers: list[str],
+    min_rvol: float,
+    days: int = 20,
+    ipo_drops: set[str] | None = None,
+) -> list[str]:
     """Filter tickers by relative volume: latest day's volume / N-day average volume >= min_rvol.
     Uses yfinance to fetch daily volume data.
-    Strict: tickers with missing/insufficient data are dropped."""
+    Strict: tickers with missing/insufficient data are dropped. When
+    `ipo_drops` is given, tickers dropped for missing/insufficient yfinance
+    history are recorded there."""
     if not tickers:
         return []
 
@@ -1260,6 +1286,8 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
 
             if len(volumes) < days + 1:
                 logger.warning(f"  yfinance: insufficient volume data for {ticker}, dropping")
+                if ipo_drops is not None:
+                    ipo_drops.add(ticker)
                 continue
 
             current_vol = volumes.iloc[-1]
@@ -1271,6 +1299,8 @@ def filter_relative_volume(tickers: list[str], min_rvol: float, days: int = 20) 
                     result.append(ticker)
         except (KeyError, TypeError):
             logger.warning(f"  yfinance: failed to process {ticker}, dropping")
+            if ipo_drops is not None:
+                ipo_drops.add(ticker)
 
     return result
 
@@ -1408,6 +1438,16 @@ def main() -> int:
             fetch_rs_table(output_dir, today) if min_rs_percentile > 0 else None
         )
 
+        # --- IPO collector ---
+        # Tickers that pass Finviz's long-side screener but get dropped by
+        # yfinance for missing/insufficient daily history accumulate here.
+        # Written to its own dated file + Futu group after the long-side
+        # pipeline finishes. Separate cross-day master so a ticker that ages
+        # in still lands in its proper long-side group on first qualifying day.
+        ipo_drops: set[str] = set()
+        ipo_seen_path = _eod_seen_path(output_dir, "IPO")
+        ipo_seen = _load_seen(ipo_seen_path)
+
         # --- Longs (collect per-strategy — write deferred until after cross-group dedup) ---
         # Config list order = priority order (earlier wins). After collection,
         # tickers are assigned exclusively to the highest-priority strategy.
@@ -1427,6 +1467,7 @@ def main() -> int:
                 if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
                     tickers = filter_dollar_volume_and_adr_yf(
                         tickers, min_dollar_volume, min_adr_percent, adr_days,
+                        ipo_drops=ipo_drops,
                     )
                     logger.info(
                         f"  {len(tickers)} after dollar volume "
@@ -1435,7 +1476,9 @@ def main() -> int:
                 min_rvol = screener_cfg.get("min_relative_volume")
                 if min_rvol and tickers:
                     rvol_days = screener_cfg.get("relative_volume_days", 20)
-                    tickers = filter_relative_volume(tickers, min_rvol, rvol_days)
+                    tickers = filter_relative_volume(
+                        tickers, min_rvol, rvol_days, ipo_drops=ipo_drops,
+                    )
                     logger.info(f"  {len(tickers)} after relative volume filter (>= {min_rvol}x {rvol_days}-day avg)")
                 longs_per_strategy.append((key, name, set(tickers)))
             except Exception as e:
@@ -1474,6 +1517,7 @@ def main() -> int:
                 if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
                     tickers = filter_dollar_volume_and_adr_yf(
                         tickers, min_dollar_volume, min_adr_percent, adr_days,
+                        ipo_drops=ipo_drops,
                     )
                     logger.info(
                         f"  {len(tickers)} after dollar volume "
@@ -1533,6 +1577,7 @@ def main() -> int:
                     if (min_dollar_volume > 0 or min_adr_percent > 0) and found:
                         found = filter_dollar_volume_and_adr_yf(
                             found, min_dollar_volume, min_adr_percent, adr_days,
+                            ipo_drops=ipo_drops,
                         )
                         logger.info(
                             f"  {len(found)} after dollar volume "
@@ -1593,6 +1638,20 @@ def main() -> int:
             logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
             _write_webull(sorted_rs, dated, output_dir)
             _futu_sync(config, "rs", sorted_rs, "US")
+
+        # --- Write IPO list ---
+        # Tickers dropped by yfinance across the long-side pipeline
+        # (insufficient/no/failed daily history) — almost always fresh IPOs
+        # that passed Finviz but lack the 20+ bars needed for DV/ADR/RVol.
+        # Separate cross-day master so a ticker still lands in its proper
+        # long-side group on the first day it has enough yfinance data.
+        sorted_ipo = sorted(ipo_drops)
+        sorted_ipo = _dedup_seen("[IPO]", sorted_ipo, ipo_seen, ipo_seen_path)
+        dated = us_output_dir / f"{today}_IPO.txt"
+        write_watchlist(sorted_ipo, dated, fmt)
+        logger.info(f"[IPO] {len(sorted_ipo)} tickers -> {dated}")
+        _write_webull(sorted_ipo, dated, output_dir)
+        _futu_sync(config, "ipo", sorted_ipo, "US")
 
         # --- HK Shorts ---
         hk_shorts_cfg = config.get("hk_shorts")

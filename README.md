@@ -103,6 +103,15 @@ Based on **Oliver Kell**'s relative strength approach. Only runs when both SPY a
 |----------|-------------|
 | Relative Strength | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume >= $100M (via yfinance), ADR% >= 4.0% (via yfinance) |
 
+### IPO (auto-collected sidecar)
+
+Long-side candidates — passing any of Longs (every split), Leaders, or RS at the Finviz stage — that get dropped during yfinance post-processing because they have **insufficient daily history** (typical for stocks IPO'd within the last ~20 trading days). These names can't be filtered on dollar volume, ADR%, or relative volume yet, but they cleared price/volume on Finviz and are worth watching while they age in.
+
+- **Output:** `output/TV/US/<date>_IPO.txt` (TV) + Webull mirror + Futu group `IPO`
+- **Cross-day master:** `output/state/eod_seen_IPO.txt` — independent of `eod_seen_US.txt`. A ticker that ages into having enough yfinance bars still surfaces in its proper long-side group on the first qualifying day.
+- **Scope:** US long-side only. Shorts / HK Shorts / Morning Gap don't contribute.
+- **Triggers:** "insufficient data" / "insufficient volume data" / "insufficient daily bars for ADR%" / "failed to process" warnings from `_filter_dollar_volume_from_data`, `_filter_adr_percent`, and `filter_relative_volume`. Real ADR%/dollar-volume rejections (data was sufficient, ticker just didn't pass the threshold) are NOT collected.
+
 ### HK Shorts (1 strategy, multi-phase filtering)
 
 Hong Kong market short candidates using the same methodology as US Shorts, sourced from **HKEX + yfinance** instead of Finviz.
@@ -181,6 +190,7 @@ output/
 │   │   ├── 2026_04_27_Leaders.txt       # US trend leaders
 │   │   ├── 2026_04_27_Shorts.txt        # US short candidates
 │   │   ├── 2026_04_27_RS.txt            # Relative strength (only on RS-eligible days)
+│   │   ├── 2026_04_27_IPO.txt           # Long-side candidates dropped by yfinance (likely IPOs)
 │   │   ├── 2026_04_27_MorningGapPre.txt # Pre-market morning-gap candidates (-20/-10 min)
 │   │   └── 2026_04_27_MorningGap.txt    # Post-open morning-gap snapshot (+10..+30 min)
 │   └── HK/
@@ -202,12 +212,12 @@ After each successful watchlist write, the script can sync tickers to a Futu cus
 
 **Prerequisites:**
 1. Download & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with your Futu account (default port `11111`).
-2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts` (the API can only modify custom groups, not create them).
+2. In the Futu PC client, manually create the custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO` (the API can only modify custom groups, not create them).
 3. Set `enabled = true` in `[futu]` (already on by default).
 
 **Sync strategy:** Diff-based for any group **not** listed in `[futu] append_only_groups`; fetches current group contents, then ADDs new tickers and DELs missing ones (Futu rate limit: 10 calls per 30s).
 
-**Append-only mode (all EOD groups):** Every EOD Futu group — `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts` — is listed in `[futu] append_only_groups`, so sync only ADDs and never DELs. For the long-side groups this pairs with the cross-day master `seen` dedup so each ticker enters its group on first sighting and stays there. For `Shorts` / `HKShorts` (which skip the master), the daily `.txt` carries today's full short list including re-detections — the Futu sync simply ADDs whatever isn't already in the group, so re-detected tickers are no-ops on the Futu side and the group still grows monotonically. Tickers accumulate monotonically; clear groups manually in the Futu client when they get too crowded (Futu caps: 500 per group for non-traders, 2000 for active traders). The merged `EarningsGap` group additionally receives `morning_gap_pre` and `morning_gap`; the three corresponding `.txt` files (`EarningsGap.txt`, `MorningGapPre.txt`, `MorningGap.txt`) remain separate and unaffected.
+**Append-only mode (all EOD groups):** Every EOD Futu group — `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO` — is listed in `[futu] append_only_groups`, so sync only ADDs and never DELs. For the long-side groups this pairs with the cross-day master `seen` dedup so each ticker enters its group on first sighting and stays there. For `Shorts` / `HKShorts` (which skip the master), the daily `.txt` carries today's full short list including re-detections — the Futu sync simply ADDs whatever isn't already in the group, so re-detected tickers are no-ops on the Futu side and the group still grows monotonically. Tickers accumulate monotonically; clear groups manually in the Futu client when they get too crowded (Futu caps: 500 per group for non-traders, 2000 for active traders). The merged `EarningsGap` group additionally receives `morning_gap_pre` and `morning_gap`; the three corresponding `.txt` files (`EarningsGap.txt`, `MorningGapPre.txt`, `MorningGap.txt`) remain separate and unaffected.
 
 ### Push notifications (ntfy)
 
