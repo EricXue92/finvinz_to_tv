@@ -143,10 +143,16 @@ def _dedup_seen(
     new (unseen) subset. Mutates `seen` in place. Logs how many were dropped.
     Sorted-input → sorted-output."""
     if not sorted_tickers:
+        logger.info(f"{label} 0 candidates after upstream filters — output will be empty")
         return []
     new = [t for t in sorted_tickers if t not in seen]
     skipped = len(sorted_tickers) - len(new)
-    if skipped:
+    if skipped and not new:
+        logger.warning(
+            f"{label} cross-day dedup: ALL {skipped} candidate(s) already in master "
+            f"— output will be empty (reset by deleting {seen_path.name})"
+        )
+    elif skipped:
         logger.info(
             f"{label} cross-day dedup: {skipped} already in master, kept {len(new)} new"
         )
