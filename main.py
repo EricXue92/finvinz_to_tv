@@ -1463,6 +1463,10 @@ def main() -> int:
             try:
                 tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
                 logger.info(f"  Found {len(tickers)} tickers")
+                if min_rs_percentile_longs > 0 and tickers:
+                    tickers = filter_by_rs(
+                        tickers, rs_table, min_rs_percentile_longs, f"  [Longs/{key}]"
+                    )
                 if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
                     tickers = filter_dollar_volume_and_adr_yf(
                         tickers, min_dollar_volume, min_adr_percent, adr_days,
