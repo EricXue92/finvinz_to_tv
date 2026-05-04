@@ -10,10 +10,14 @@ min_dollar_volume = 100_000_000  # Longs 过滤: price * avg volume >= 100M
 # 多年市场相关性，与"现在是不是 in-play"正交)，由 ADR% 替代。
 min_adr_percent = 4.0
 adr_days = 20
-# IBD-style Relative Strength percentile (0-99) gate for Longs + Leaders.
+# Two-tier IBD Relative Strength percentile (0-99) gate.
 # Source: Fred6725/rs-log/output/rs_stocks.csv (refreshed weekday ~01:30 UTC).
-# 90 = top 10% momentum names. Set 0 to disable. Tickers missing from the
-# table (e.g. recent IPOs without 12 months of history) are kept by default.
+# Leaders use min_rs_percentile (top 10%). Longs (5 splits) and the
+# conditional RS group share min_rs_percentile_longs (top 20%) — softer
+# so catalyst-driven setups don't lose fresh breakouts. Set either to 0
+# to disable that tier; the GitHub fetch is skipped only when both are 0.
+# Tickers missing from the table (recent IPOs without 12 months of
+# history, foreign listings) are kept, not dropped.
 min_rs_percentile = 90          # Leaders only — IBD RS percentile gate
 min_rs_percentile_longs = 80    # Longs (5 splits) + RS group — IBD RS percentile gate
 
