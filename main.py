@@ -1408,6 +1408,7 @@ def main() -> int:
     # before yfinance dollar-volume to cut downstream work by ~10x. Set 0
     # to disable. Source: Fred6725/rs-log (refreshed weekday ~01:30 UTC).
     min_rs_percentile = settings.get("min_rs_percentile", 0)
+    min_rs_percentile_longs = settings.get("min_rs_percentile_longs", 0)
 
     today = date.today().strftime("%Y_%m_%d")
 
@@ -1435,7 +1436,9 @@ def main() -> int:
         # Fetched once per run, cached to state/rs_rating_<date>.csv. None on
         # any failure; downstream filter calls degrade to no-ops with warnings.
         rs_table = (
-            fetch_rs_table(output_dir, today) if min_rs_percentile > 0 else None
+            fetch_rs_table(output_dir, today)
+            if max(min_rs_percentile, min_rs_percentile_longs) > 0
+            else None
         )
 
         # --- IPO collector ---

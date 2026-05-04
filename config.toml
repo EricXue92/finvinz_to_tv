@@ -14,7 +14,8 @@ adr_days = 20
 # Source: Fred6725/rs-log/output/rs_stocks.csv (refreshed weekday ~01:30 UTC).
 # 90 = top 10% momentum names. Set 0 to disable. Tickers missing from the
 # table (e.g. recent IPOs without 12 months of history) are kept by default.
-min_rs_percentile = 90
+min_rs_percentile = 90          # Leaders only — IBD RS percentile gate
+min_rs_percentile_longs = 80    # Longs (5 splits) + RS group — IBD RS percentile gate
 
 # --- Futu (富途牛牛) 自动同步 ---
 # 需要本地运行 FutuOpenD,且分组需在富途客户端预先手动建好(API 不能新建分组)
