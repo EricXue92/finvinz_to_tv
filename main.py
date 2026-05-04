@@ -1577,6 +1577,10 @@ def main() -> int:
                     time.sleep(delay)
                     found = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
                     logger.info(f"  Found {len(found)} tickers")
+                    if min_rs_percentile_longs > 0 and found:
+                        found = filter_by_rs(
+                            found, rs_table, min_rs_percentile_longs, "  [RS]"
+                        )
                     if (min_dollar_volume > 0 or min_adr_percent > 0) and found:
                         found = filter_dollar_volume_and_adr_yf(
                             found, min_dollar_volume, min_adr_percent, adr_days,
