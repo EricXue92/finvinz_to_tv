@@ -599,3 +599,148 @@ def hsi_day_change_pct(
                 ctx.close()
             except Exception:
                 pass
+
+
+from pathlib import Path
+
+
+def _to_tv(code: str) -> str:
+    """``HK.00700`` → ``HKEX:0700`` (matches existing HK Shorts TV format)."""
+    return "HKEX:" + code.replace("HK.0", "", 1)
+
+
+def run_hk_eod(
+    config: dict,
+    output_dir: Path,
+    today_iso: str,
+    write_watchlist,         # callable from main.py
+    write_webull,            # callable from main.py (_write_webull)
+    futu_sync,               # callable from main.py (_futu_sync)
+    load_seen,               # callable from main.py (_load_seen)
+    persist_seen,            # callable from main.py (_persist_seen)
+    eod_seen_path,           # callable from main.py (_eod_seen_path)
+    dedup_seen,              # callable from main.py (_dedup_seen)
+) -> None:
+    """Top-level HK EOD pipeline. Runs the existing HK Shorts (unchanged)
+    plus the new long-side strategies (EarningsGap, HighVolume, GapUp,
+    Leaders, conditional RS). Writes 6 dated .txt files, mirrors to Webull,
+    and Futu-syncs each one."""
+    hk_settings = config.get("hk_settings") or {}
+    hk_longs = config.get("hk_longs") or []
+    hk_leaders = config.get("hk_leaders") or []
+    futu_cfg = config.get("futu") or {}
+    hk_output_dir = output_dir / "TV" / "HK"
+    hk_output_dir.mkdir(parents=True, exist_ok=True)
+
+    fmt = config.get("settings", {}).get("output_format", "comma")
+    host = futu_cfg.get("host", "127.0.0.1")
+    port = int(futu_cfg.get("port", 11111))
+
+    # --- HK Shorts (existing pipeline, unchanged) ---
+    hk_shorts_cfg = config.get("hk_shorts")
+    if hk_shorts_cfg:
+        hk_shorts_cfg.setdefault(
+            "min_adr_percent",
+            config.get("settings", {}).get("min_adr_percent", 4.0),
+        )
+        hk_shorts_cfg.setdefault(
+            "adr_days", config.get("settings", {}).get("adr_days", 20)
+        )
+        try:
+            total, hk_shorts_tv = filter_hk_shorts(hk_shorts_cfg, futu_cfg=futu_cfg)
+            sorted_hk = sorted(hk_shorts_tv)
+            dated = hk_output_dir / f"{today_iso}_Shorts.txt"
+            write_watchlist(sorted_hk, dated, fmt)
+            logger.info(f"[HK Shorts] {len(sorted_hk)} -> {dated}")
+            write_webull(sorted_hk, dated, output_dir)
+            futu_sync(config, "hk_shorts", sorted_hk, "HK")
+        except Exception as e:
+            logger.warning(f"[HK Shorts] Failed: {e}")
+
+    # --- HK Long-side: Futu-only ---
+    logger.info("[HK Longs] Fetching universe...")
+    codes_4d = fetch_hkex_equities()
+    # Futu format: 'HK.00700' (5-digit). Source codes are 4-digit.
+    codes = [f"HK.0{c}" for c in codes_4d]
+    logger.info(f"  Universe: {len(codes)} codes")
+
+    logger.info("[HK Longs] Fetching daily k-line via Futu (10-15 min)...")
+    klines = fetch_hk_klines(codes, days=260, host=host, port=port)
+    if klines is None:
+        logger.warning(
+            "[HK Longs] OpenD unreachable — writing empty files for the day"
+        )
+        klines = {}
+
+    logger.info("[HK Longs] Fetching market caps via Futu snapshot...")
+    # get_market_caps_futu wants TV format input; we pass it and re-key back to Futu format
+    tv_codes = [_to_tv(c) for c in klines.keys()]
+    futu_caps_by_tv = (
+        get_market_caps_futu(tv_codes, market="HK", host=host, port=port) or {}
+    )
+    # Re-key from "HKEX:0700" back to "HK.00700" so it lines up with klines
+    caps = {f"HK.0{tv.replace('HKEX:', '')}": v for tv, v in futu_caps_by_tv.items()}
+
+    logger.info("[HK Longs] Building metrics frame...")
+    metrics = build_metrics_frame(klines, caps)
+    logger.info(f"  Metrics: {len(metrics)} tickers with usable history")
+
+    # --- RS table ---
+    from hk_rs import compute_rs_table, filter_by_rs, save_cache, load_cache
+    today_d = pd.Timestamp(today_iso).date()
+    rs_table = load_cache(today_d, output_dir)
+    if rs_table is None and klines:
+        hsi_data = fetch_hk_klines(["HK.800000"], days=260, host=host, port=port) or {}
+        hsi_kline = hsi_data.get("HK.800000")
+        if hsi_kline is not None and not hsi_kline.empty:
+            rs_table = compute_rs_table(klines, hsi_kline)
+            save_cache(rs_table, today_d, output_dir)
+        else:
+            logger.warning("[HK Longs] HSI k-line fetch failed — RS gate disabled")
+
+    # --- Apply per-strategy filters ---
+    rs_trigger = hk_settings.get("hsi_rs_trigger", -1.5)
+    hsi_change = hsi_day_change_pct(host=host, port=port)
+    rs_enabled = hsi_change is not None and hsi_change <= rs_trigger
+    logger.info(
+        f"[HK Longs] HSI day-change={hsi_change} (trigger {rs_trigger}); "
+        f"RS group {'ENABLED' if rs_enabled else 'skipped'}"
+    )
+
+    raw = apply_strategy_filters(metrics, hk_settings, hk_longs, hk_leaders, rs_enabled)
+
+    # --- RS percentile gate (after raw masks) ---
+    threshold = int(hk_settings.get("min_rs_percentile_longs", 90))
+    raw = {
+        name: filter_by_rs(codes_list, rs_table, threshold)
+        for name, codes_list in raw.items()
+    }
+
+    # --- Within-day cross-strategy priority dedup ---
+    dedup = dedup_by_priority(raw)
+
+    # --- Cross-day master dedup ---
+    seen_path = eod_seen_path(output_dir, "HK")
+    seen = load_seen(seen_path)
+    final: dict[str, list[str]] = {}
+    for name, codes_list in dedup.items():
+        tag = f"[HK {name}]"
+        # Convert to TV format for the seen file (matches write_watchlist input)
+        tv = sorted(_to_tv(c) for c in codes_list)
+        tv = dedup_seen(tag, tv, seen, seen_path)
+        final[name] = tv
+
+    # --- Write outputs + Futu sync ---
+    futu_key = {
+        "EarningsGap": "hk_longs_earnings_gap",
+        "HighVolume":  "hk_longs_high_volume",
+        "GapUp":       "hk_longs_gap_up",
+        "Leaders":     "hk_leaders",
+        "RS":          "hk_rs",
+    }
+    for name, tv in final.items():
+        dated = hk_output_dir / f"{today_iso}_{name}.txt"
+        write_watchlist(tv, dated, fmt)
+        logger.info(f"[HK {name}] {len(tv)} -> {dated}")
+        write_webull(tv, dated, output_dir)
+        futu_sync(config, futu_key[name], tv, "HK")

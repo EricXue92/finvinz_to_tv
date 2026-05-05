@@ -28,7 +28,7 @@ from futu_sync import (
     pre_market_gap_futu,
     sync_to_futu,
 )
-from hk_eod import fetch_hkex_equities, filter_hk_shorts
+from hk_eod import fetch_hkex_equities, filter_hk_shorts, run_hk_eod
 from notify import notify_morning_gap
 from rs_rating import fetch_rs_table, filter_by_rs
 
@@ -1451,26 +1451,22 @@ def main() -> int:
         _write_webull(sorted_ipo, dated, output_dir)
         _futu_sync(config, "ipo", sorted_ipo, "US")
 
-        # --- HK Shorts ---
-        hk_shorts_cfg = config.get("hk_shorts")
-        if hk_shorts_cfg:
-            hk_shorts_cfg.setdefault("min_adr_percent", min_adr_percent)
-            hk_shorts_cfg.setdefault("adr_days", adr_days)
-            _log_section(f"[HK Shorts] Running: {hk_shorts_cfg['name']}")
-            try:
-                total, hk_shorts_tickers = filter_hk_shorts(
-                    hk_shorts_cfg, futu_cfg=config.get("futu") or {}
-                )
-                logger.info(f"  Universe: {total}, final: {len(hk_shorts_tickers)}")
-
-                sorted_hk = sorted(hk_shorts_tickers)
-                dated = hk_output_dir / f"{today}_Shorts.txt"
-                write_watchlist(sorted_hk, dated, fmt)
-                logger.info(f"[HK Shorts] Final: {len(sorted_hk)} tickers -> {dated}")
-                _write_webull(sorted_hk, dated, output_dir)
-                _futu_sync(config, "hk_shorts", sorted_hk, "HK")
-            except Exception as e:
-                logger.warning(f"[HK Shorts] Failed: {e}")
+        # --- HK EOD pipeline (Shorts + Longs/Leaders/RS) ---
+        try:
+            run_hk_eod(
+                config=config,
+                output_dir=output_dir,
+                today_iso=str(today),
+                write_watchlist=write_watchlist,
+                write_webull=_write_webull,
+                futu_sync=_futu_sync,
+                load_seen=_load_seen,
+                persist_seen=_persist_seen,
+                eod_seen_path=_eod_seen_path,
+                dedup_seen=_dedup_seen,
+            )
+        except Exception as e:
+            logger.warning(f"[HK EOD] Pipeline failed: {e}")
 
         logger.info("Done.")
         return 0
