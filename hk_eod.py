@@ -354,6 +354,110 @@ def fetch_hk_klines(
                 pass
 
 
+def build_metrics_frame(
+    klines: dict[str, pd.DataFrame],
+    market_caps: dict[str, float],
+) -> pd.DataFrame:
+    """Reduce a {code: kline_df} dict + caps to a metrics DataFrame indexed by
+    code. Tickers without enough history for a given metric get NaN/False.
+
+    Columns:
+      market_cap, last_price, prev_close, gap_pct, rvol, avg_vol_20d,
+      avg_dollar_vol_20d, adr_pct, sma50, sma200, above_sma50, above_sma200,
+      perf_4w, perf_13w, perf_26w, perf_ytd, perf_52w, consecutive_up_days
+    """
+    rows: list[dict] = []
+    today_year = pd.Timestamp.today().year
+    for code, df in klines.items():
+        if df is None or df.empty or len(df) < 2:
+            continue
+        closes = df["close"].astype(float).values
+        volumes = df["volume"].astype(float).values
+        highs = df["high"].astype(float).values
+        lows = df["low"].astype(float).values
+        times = df["time_key"]
+        n = len(closes)
+
+        last = float(closes[-1])
+        prev = float(closes[-2])
+        gap = (last - prev) / prev * 100.0 if prev > 0 else float("nan")
+        avg_vol_20 = float(volumes[-20:].mean()) if n >= 20 else float("nan")
+        rvol = (
+            float(volumes[-1] / volumes[-21:-1].mean())
+            if n >= 21 and volumes[-21:-1].mean() > 0
+            else float("nan")
+        )
+        avg_dv_20 = last * avg_vol_20 if n >= 20 else float("nan")
+
+        if n >= 20:
+            adr = float(((highs[-20:] - lows[-20:]) / closes[-20:]).mean()) * 100
+        else:
+            adr = float("nan")
+
+        sma50 = float(closes[-50:].mean()) if n >= 50 else float("nan")
+        sma200 = float(closes[-200:].mean()) if n >= 200 else float("nan")
+        above_sma50 = bool(n >= 50 and last > sma50)
+        above_sma200 = bool(n >= 200 and last > sma200)
+
+        def _perf(days: int) -> float:
+            if n <= days:
+                return float("nan")
+            past = closes[-days - 1]
+            return (last - past) / past * 100.0 if past > 0 else float("nan")
+
+        perf_4w = _perf(20)
+        perf_13w = _perf(65)
+        perf_26w = _perf(130)
+        perf_52w = _perf(252) if n > 252 else float("nan")
+
+        # YTD: find earliest close in the current year
+        ytd_mask = times.dt.year == today_year
+        if ytd_mask.any():
+            first_ytd = float(closes[ytd_mask.values][0])
+            perf_ytd = (last - first_ytd) / first_ytd * 100.0 if first_ytd > 0 else float("nan")
+        else:
+            perf_ytd = float("nan")
+
+        # Consecutive up days from the tail
+        cu = 0
+        for i in range(n - 1, 0, -1):
+            if closes[i] > closes[i - 1]:
+                cu += 1
+            else:
+                break
+
+        rows.append({
+            "code": code,
+            "market_cap": market_caps.get(code, float("nan")),
+            "last_price": last,
+            "prev_close": prev,
+            "gap_pct": gap,
+            "rvol": rvol,
+            "avg_vol_20d": avg_vol_20,
+            "avg_dollar_vol_20d": avg_dv_20,
+            "adr_pct": adr,
+            "sma50": sma50,
+            "sma200": sma200,
+            "above_sma50": above_sma50,
+            "above_sma200": above_sma200,
+            "perf_4w": perf_4w,
+            "perf_13w": perf_13w,
+            "perf_26w": perf_26w,
+            "perf_ytd": perf_ytd,
+            "perf_52w": perf_52w,
+            "consecutive_up_days": cu,
+        })
+    if not rows:
+        return pd.DataFrame()
+    result = pd.DataFrame(rows).set_index("code")
+    # Keep above_* as Python bool singletons (not numpy.bool_) so that
+    # ``row["above_sma50"] is False`` works correctly in callers/tests.
+    for col in ("above_sma50", "above_sma200"):
+        if col in result.columns:
+            result[col] = result[col].astype(object)
+    return result
+
+
 def hsi_day_change_pct(
     host: str = "127.0.0.1", port: int = 11111
 ) -> float | None:
