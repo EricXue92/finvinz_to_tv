@@ -15,11 +15,11 @@ Applied after the Finviz screen, before any expensive yfinance work. Configurabl
 | Gate | Scope | Threshold | Source |
 |---|---|---|---|
 | **IBD RS Percentile (Leaders)** | Leaders | ≥ 90 (top 10%; missing tickers KEPT) | [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY, refreshed weekday ~01:30 UTC |
-| **IBD RS Percentile (Longs/RS)** | Longs (5 splits) + RS group | ≥ 80 (top 20%; missing tickers KEPT) | same source as above |
+| **IBD RS Percentile (Longs/RS/US Shorts)** | Longs (5 splits) + RS group + US Shorts | ≥ 90 (top 10%; missing tickers KEPT) | same source as above |
 | **Dollar Volume** | Longs + Leaders | Price × 20-day avg volume ≥ $100M | yfinance daily |
 | **ADR%** | Longs + Leaders | mean(`(High − Low) / Close`) × 100 over 20 completed bars ≥ 4.0% | yfinance daily |
 
-**Why two RS tiers:** Leaders is a trend-leadership pipeline, so the strictest gate (top 10%) makes sense. Longs and the conditional RS group are catalyst-driven (gap-ups, earnings reactions, volume surges, weak-market relative-strength) where the trigger itself qualifies the name — a 90+ gate would prune fresh breakouts that haven't built a 12-month track record. RS ≥ 80 (top 20%) keeps that headroom while still cutting the tail.
+**RS scope:** All US long-side EOD groups plus US Shorts gate at RS ≥ 90 — the IBD top decile is the leadership cohort on both directions (a parabolic blow-off short candidate is by definition high-RS). HK Shorts, Morning Gap, and IPO are NOT RS-gated: HK tickers aren't in the US RS table; Morning Gap is intraday discovery; IPO is by definition pre-RS-rating (sub-12-month history).
 
 ADR% replaces the legacy Finviz `beta > 1.5` filter — beta measures multi-year correlation with the broad market and was excluding mid/large-cap catalyst names that were actually in-play. ADR% (Kullamägi-style) directly measures whether a stock is currently moving.
 
@@ -35,7 +35,7 @@ Oliver Kell momentum/breakout setups. Priority order — earlier wins, each tick
 | 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
 | 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers |
 
-All 5 also pass the global Dollar Volume / ADR% gates and IBD RS ≥ 80.
+All 5 also pass the global Dollar Volume / ADR% gates and IBD RS ≥ 90.
 
 ### Leaders (5 strategies, merged)
 
@@ -55,7 +55,7 @@ Long-term trend leaders above SMA50 + SMA200. All five share the same base filte
 
 Kullamägi parabolic blow-off setups. Two-phase: Finviz Ownership pre-filter, then yfinance post-processing on a single shared download.
 
-**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month avg), Cap > $300M.
+**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month avg), Cap > $300M. Then IBD RS ≥ 90 (cuts before the yfinance batch).
 
 **Phase 2 — yfinance + Futu cap snapshot, in order: performance → dollar volume → ADR% → consecutive up days.**
 
@@ -75,7 +75,7 @@ Cap is sourced from Futu (truncation-free) rather than Finviz's coarse `"6.96M"`
 
 Oliver Kell's relative-strength approach. **Runs only when SPY *and* QQQ are both down > 1.5%** on the day — surfaces stocks holding up in a weak market.
 
-Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, IBD RS ≥ 80.
+Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, IBD RS ≥ 90.
 
 ### IPO (auto-collected sidecar)
 
