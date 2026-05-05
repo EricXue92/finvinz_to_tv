@@ -28,6 +28,7 @@ from futu_sync import (
     pre_market_gap_futu,
     sync_to_futu,
 )
+from hk_eod import fetch_hkex_equities
 from notify import notify_morning_gap
 from rs_rating import fetch_rs_table, filter_by_rs
 
@@ -162,27 +163,6 @@ def _dedup_seen(
         _persist_seen(seen_path, seen)
     return new
 
-
-HKEX_SECURITIES_URL = (
-    "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx"
-)
-
-
-def fetch_hkex_equities() -> list[str]:
-    """Fetch Main Board equity stock codes from the HKEX securities list.
-    Returns 4-digit codes like ['0001', '0002', '0700']."""
-    req = Request(HKEX_SECURITIES_URL, headers={"User-Agent": "Mozilla/5.0"})
-    resp = urlopen(req)
-    wb = openpyxl.load_workbook(io.BytesIO(resp.read()))
-    ws = wb.active
-
-    codes = []
-    for i, row in enumerate(ws.iter_rows(min_row=4, values_only=True)):
-        if row[2] == "Equity" and row[3] == "Equity Securities (Main Board)":
-            codes.append(row[0][1:])  # "00700" → "0700"
-
-    wb.close()
-    return codes
 
 
 def _yf_download_with_retry(tickers, max_retries=3, **kwargs):
