@@ -53,5 +53,5 @@ def fetch_hkex_equities() -> list[str]:
         raw = str(row[code_idx]).strip()
         if not raw.isdigit():
             continue
-        codes.append(raw.zfill(5))
+        codes.append(raw.zfill(5)[1:])  # 5-digit HKEX code → 4-digit yfinance/TV form ('00700' → '0700')
     return codes
