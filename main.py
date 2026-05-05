@@ -1654,6 +1654,19 @@ def main() -> int:
         # that passed Finviz but lack the 20+ bars needed for DV/ADR/RVol.
         # Separate cross-day master so a ticker still lands in its proper
         # long-side group on the first day it has enough yfinance data.
+        # Guard: a ticker present in the IBD RS table has ≥12mo of price
+        # history per IBD's source, so it CANNOT be a fresh IPO — its
+        # yfinance drop was a transient gap (rate limit / hiccup), not a
+        # data-availability issue. Drop those from ipo_drops so a flake
+        # doesn't permanently brand them as IPOs in the cross-day master.
+        if rs_table and ipo_drops:
+            non_ipo = {t for t in ipo_drops if t.upper() in rs_table}
+            if non_ipo:
+                logger.info(
+                    f"[IPO] Dropping {len(non_ipo)} tickers with RS history "
+                    f"(transient yfinance gaps, not IPOs): {sorted(non_ipo)}"
+                )
+                ipo_drops -= non_ipo
         sorted_ipo = sorted(ipo_drops)
         sorted_ipo = _dedup_seen("[IPO]", sorted_ipo, ipo_seen, ipo_seen_path)
         dated = us_output_dir / f"{today}_IPO.txt"

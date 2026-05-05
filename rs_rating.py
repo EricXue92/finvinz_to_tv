@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -22,6 +23,12 @@ from urllib.request import Request, urlopen
 logger = logging.getLogger(__name__)
 
 RS_CSV_URL = "https://raw.githubusercontent.com/Fred6725/rs-log/main/output/rs_stocks.csv"
+
+# Retry schedule for the HTTPS GET. The launchd run fires shortly after a
+# pmset-driven wake, where Wi-Fi / DNS sometimes isn't ready for the first
+# minute or two. Three attempts spread across ~40s ride through that window
+# without turning a brief blip into a skipped RS gate for the day.
+_FETCH_RETRY_DELAYS = (10.0, 30.0)
 
 
 def fetch_rs_table(
@@ -44,13 +51,28 @@ def fetch_rs_table(
             logger.warning(f"[RS Rating] Cache read failed ({e}); refetching")
 
     if csv_text is None:
-        try:
-            req = Request(RS_CSV_URL, headers={"User-Agent": "finviz-to-tv/1.0"})
-            with urlopen(req, timeout=timeout) as resp:
-                csv_text = resp.read().decode("utf-8")
-        except (URLError, TimeoutError, OSError) as e:
+        req = Request(RS_CSV_URL, headers={"User-Agent": "finviz-to-tv/1.0"})
+        attempts = len(_FETCH_RETRY_DELAYS) + 1
+        last_err: Exception | None = None
+        for i in range(attempts):
+            try:
+                with urlopen(req, timeout=timeout) as resp:
+                    csv_text = resp.read().decode("utf-8")
+                last_err = None
+                break
+            except (URLError, TimeoutError, OSError) as e:
+                last_err = e
+                if i < len(_FETCH_RETRY_DELAYS):
+                    delay = _FETCH_RETRY_DELAYS[i]
+                    logger.warning(
+                        f"[RS Rating] Fetch attempt {i + 1}/{attempts} failed "
+                        f"({e}); retrying in {delay:.0f}s"
+                    )
+                    time.sleep(delay)
+        if csv_text is None:
             logger.warning(
-                f"[RS Rating] Fetch failed ({e}); RS filter will be skipped"
+                f"[RS Rating] Fetch failed after {attempts} attempts ({last_err}); "
+                "RS filter will be skipped"
             )
             return None
         try:
