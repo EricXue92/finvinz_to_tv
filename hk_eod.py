@@ -458,6 +458,111 @@ def build_metrics_frame(
     return result
 
 
+HK_STRATEGY_PRIORITY = ["EarningsGap", "HighVolume", "GapUp", "Leaders", "RS"]
+
+
+def apply_strategy_filters(
+    metrics: pd.DataFrame,
+    settings: dict,
+    longs_cfg: list[dict],
+    leaders_cfg: list[dict],
+    rs_enabled: bool,
+) -> dict[str, list[str]]:
+    """Apply every strategy gate against the metrics frame and return a dict
+    of {strategy_name: [code, ...]}. Codes are still in Futu format
+    (``HK.00700``); caller converts to TradingView ``HKEX:00700`` later.
+
+    Strategies returned: EarningsGap, HighVolume, GapUp, Leaders, RS
+    (the last is always returned but empty when rs_enabled is False).
+    """
+    if metrics.empty:
+        return {s: [] for s in HK_STRATEGY_PRIORITY}
+
+    cap = settings.get("min_market_cap", 300_000_000)
+    dvol = settings.get("min_dollar_volume", 100_000_000)
+    avg_vol = settings.get("min_avg_volume", 500_000)
+    adr = settings.get("min_adr_percent", 4.0)
+    price = settings.get("min_price", 20.0)
+
+    # Universal long-side baseline
+    base = (
+        (metrics["market_cap"] >= cap)
+        & (metrics["avg_vol_20d"] >= avg_vol)
+        & (metrics["avg_dollar_vol_20d"] >= dvol)
+        & (metrics["adr_pct"] >= adr)
+        & (metrics["last_price"] >= price)
+    )
+
+    # Per-strategy parameter lookup
+    by_key = {item.get("key"): item for item in longs_cfg}
+    eg = by_key.get("earnings_gap", {})
+    hv = by_key.get("high_volume", {})
+    gu = by_key.get("gap_up", {})
+
+    eg_min_rvol = float(eg.get("min_relative_volume", 3))
+    eg_min_gap = float(eg.get("min_gap_percent", 3.0))
+    hv_min_rvol = float(hv.get("min_relative_volume", 3))
+    gu_min_gap = float(gu.get("min_gap_percent", 5.0))
+
+    earnings_gap_mask = base & (metrics["gap_pct"] >= eg_min_gap) & (metrics["rvol"] >= eg_min_rvol)
+    high_volume_mask = base & (metrics["rvol"] >= hv_min_rvol)
+    gap_up_mask = base & (metrics["gap_pct"] >= gu_min_gap)
+
+    # Leaders: baseline + above SMA50 & SMA200 + any of the perf windows
+    perf_any = (
+        (metrics["perf_4w"] >= _leader_threshold(leaders_cfg, "min_perf_4w"))
+        | (metrics["perf_13w"] >= _leader_threshold(leaders_cfg, "min_perf_13w"))
+        | (metrics["perf_26w"] >= _leader_threshold(leaders_cfg, "min_perf_26w"))
+        | (metrics["perf_ytd"] >= _leader_threshold(leaders_cfg, "min_perf_ytd"))
+        | (metrics["perf_52w"] >= _leader_threshold(leaders_cfg, "min_perf_52w"))
+    ).fillna(False)
+
+    leaders_mask = (
+        base
+        & metrics["above_sma50"].astype(bool)
+        & metrics["above_sma200"].astype(bool)
+        & perf_any
+    )
+
+    # RS group: baseline + above-SMA50/200, no perf window. Always computed,
+    # caller decides whether to actually emit it based on HSI trigger.
+    rs_mask = base & metrics["above_sma50"].astype(bool) & metrics["above_sma200"].astype(bool)
+
+    return {
+        "EarningsGap": metrics.index[earnings_gap_mask].tolist(),
+        "HighVolume": metrics.index[high_volume_mask].tolist(),
+        "GapUp": metrics.index[gap_up_mask].tolist(),
+        "Leaders": metrics.index[leaders_mask].tolist(),
+        "RS": metrics.index[rs_mask].tolist() if rs_enabled else [],
+    }
+
+
+def _leader_threshold(leaders_cfg: list[dict], key: str) -> float:
+    """Find the threshold for a given perf window across the [[hk_leaders]]
+    list. Returns +inf if no matching entry (so the OR short-circuits)."""
+    for item in leaders_cfg:
+        if key in item:
+            return float(item[key])
+    return float("inf")
+
+
+def dedup_by_priority(
+    raw: dict[str, list[str]],
+    priority: list[str] | None = None,
+) -> dict[str, list[str]]:
+    """Given {strategy: [code,...]}, walk in priority order and drop codes
+    from later strategies that already appeared in an earlier one. Default
+    priority: EarningsGap > HighVolume > GapUp > Leaders > RS."""
+    order = priority or HK_STRATEGY_PRIORITY
+    seen: set[str] = set()
+    out: dict[str, list[str]] = {}
+    for name in order:
+        codes = [c for c in raw.get(name, []) if c not in seen]
+        out[name] = codes
+        seen.update(codes)
+    return out
+
+
 def hsi_day_change_pct(
     host: str = "127.0.0.1", port: int = 11111
 ) -> float | None:
