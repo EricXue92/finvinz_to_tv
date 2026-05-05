@@ -91,9 +91,9 @@ Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 
 
 **Disabled since 2026-05-05** — uncomment `[hk_shorts]` in `config.toml` (and the `HKShorts` entry under `[futu]`) to re-enable. `main.py` skips the entire pipeline when the section is absent; no code changes needed.
 
-### Morning Gap (pre-market + intraday, 7 daily scans)
+### Morning Gap (pre-market + intraday, 9 daily scans)
 
-Two-phase intraday gap scanner. **Pre-market (-20/-10 min)** writes `MorningGapPre.txt`. **Post-open (+10/+15/+20/+25/+30 min)** writes `MorningGap.txt` and adds an intraday cumulative-volume gate that surfaces stocks already trading their full daily average volume in the first 30 min — a Kullamägi signal of catalyst-driven institutional buying.
+Two-phase intraday gap scanner. **Pre-market (-20/-10/-5 min)** writes `MorningGapPre.txt`. **Post-open (+5/+10/+15/+20/+25/+30 min)** writes `MorningGap.txt` and adds an intraday cumulative-volume gate that surfaces stocks already trading their full daily average volume in the first 30 min — a Kullamägi signal of catalyst-driven institutional buying.
 
 **Phase 1 — Futu snapshot discovery (replaces Finviz `ta_topgainers`, which ranked by regular-session perf and missed pre-market gappers):**
 
@@ -169,7 +169,7 @@ sudo pmset repeat wakeorpoweron TWRFS 09:59:00
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
 ```
 
-Intraday morning-gap run: separate plist with 70 calendar entries (Mon–Fri × 7 offsets × EDT/EST). The script self-validates ET time on each trigger and exits cleanly outside any window.
+Intraday morning-gap run: separate plist with 90 calendar entries (Mon–Fri × 9 offsets × EDT/EST). The script self-validates ET time on each trigger and exits cleanly outside any window.
 
 ```bash
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist
