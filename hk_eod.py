@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+
+import pandas as pd
 
 from futu_sync import get_market_caps_futu
 
@@ -284,3 +286,107 @@ def filter_hk_shorts(
     # Convert to TradingView format: 0700.HK → HKEX:0700
     tv_tickers = ["HKEX:" + t.replace(".HK", "") for t in phase5]
     return len(codes), tv_tickers
+
+
+def fetch_hk_klines(
+    codes: list[str],
+    days: int = 260,
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> dict[str, pd.DataFrame] | None:
+    """Pull daily OHLCV k-line for a list of HK Futu codes (e.g., 'HK.00700').
+    Returns ``{code: DataFrame[time_key, open, close, high, low, volume]}``.
+    Returns ``None`` if OpenD is unreachable or the futu SDK is unavailable.
+    Tickers that error out individually are skipped silently.
+    """
+    if not codes:
+        return {}
+    try:
+        from futu import OpenQuoteContext, RET_OK, KLType
+    except ImportError:
+        logger.warning("[HK] fetch_hk_klines: futu-api not installed")
+        return None
+
+    from futu_sync import _opend_reachable
+    if not _opend_reachable(host, port):
+        logger.warning(
+            f"[HK] fetch_hk_klines: OpenD not reachable at {host}:{port}"
+        )
+        return None
+
+    end = date.today()
+    # 260 trading days ≈ 380 calendar days, with margin
+    start = end - timedelta(days=int(days * 1.5) + 30)
+    start_s = start.strftime("%Y-%m-%d")
+    end_s = end.strftime("%Y-%m-%d")
+
+    result: dict[str, pd.DataFrame] = {}
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        for i, code in enumerate(codes):
+            if i and i % 50 == 0:
+                logger.info(f"[HK] k-line: {i}/{len(codes)}")
+            try:
+                ret, df, _ = ctx.request_history_kline(
+                    code, start=start_s, end=end_s,
+                    ktype=KLType.K_DAY, max_count=1000,
+                )
+                if ret != RET_OK or df is None or df.empty:
+                    continue
+                # Keep only the columns we need; sort ascending by date.
+                cols = ["time_key", "open", "high", "low", "close", "volume"]
+                df = df[cols].copy()
+                df["time_key"] = pd.to_datetime(df["time_key"])
+                df = df.sort_values("time_key").reset_index(drop=True)
+                result[code] = df
+            except Exception:
+                continue
+        return result
+    except Exception as e:
+        logger.warning(f"[HK] fetch_hk_klines: unexpected error — {e}")
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+
+
+def hsi_day_change_pct(
+    host: str = "127.0.0.1", port: int = 11111
+) -> float | None:
+    """Return today's HSI day change in percent, derived from
+    ``(last_price - prev_close_price) / prev_close_price * 100``. Uses
+    Futu code ``HK.800000`` for HSI. Returns ``None`` on any failure
+    (caller should treat None as 'trigger condition not met')."""
+    try:
+        from futu import OpenQuoteContext, RET_OK
+    except ImportError:
+        return None
+
+    from futu_sync import _opend_reachable
+    if not _opend_reachable(host, port):
+        return None
+
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        ret, data = ctx.get_market_snapshot(["HK.800000"])
+        if ret != RET_OK or data is None or data.empty:
+            return None
+        row = data.iloc[0]
+        last = float(row.get("last_price") or 0)
+        prev = float(row.get("prev_close_price") or 0)
+        if prev <= 0:
+            return None
+        return (last - prev) / prev * 100.0
+    except Exception:
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
