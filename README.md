@@ -1,10 +1,12 @@
 # Daily Stock Screener Pipeline
 
-Multi-source momentum and short screeners (US via Finviz, HK via HKEX + yfinance, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI, based on Oliver Kell and Kristjan Kullamägi.
+Multi-source momentum and short screeners (US via Finviz, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI, based on Oliver Kell and Kristjan Kullamägi.
+
+> **Status (2026-05-05):** US-only. The HK Shorts pipeline is disabled in `config.toml` (`[hk_shorts]` commented out). Code path is preserved — uncomment to re-enable.
 
 ## Screeners
 
-All Finviz-based scans use `ind_stocksonly` to exclude ETFs/ETNs. HK Shorts (HKEX equity list) and Morning Gap (Futu `stock_type=STOCK`) are stock-only by construction.
+All Finviz-based scans use `ind_stocksonly` to exclude ETFs/ETNs. Morning Gap (Futu `stock_type=STOCK`) is stock-only by construction.
 
 ### Global gates (long-side)
 
@@ -83,13 +85,11 @@ Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get droppe
 - Has its own cross-day master `output/state/eod_seen_IPO.txt`. Once a ticker has enough yfinance bars to pass DV/ADR/RVol, it lands in its proper long-side group on the first qualifying day.
 - Triggered by yfinance "insufficient data" / "insufficient volume data" / "insufficient daily bars for ADR%" / "failed to process" warnings. Real ADR%/dollar-volume rejections (data was sufficient, just below threshold) are NOT collected.
 
-### HK Shorts
+### HK Shorts (disabled)
 
-Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds.
+Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds (cap ≥ HKD 300M, dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days; output `HKEX:XXXX` format).
 
-**Phase 1 — HKEX universe + yfinance:** SMA20 +20%, Above SMA50, Avg Vol > 1M shares/day (20-day avg).
-
-**Phase 2 — same flow as US Shorts** with HKD thresholds: cap ≥ HKD 300M, dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days. Cap from Futu snapshot → yfinance `fast_info.market_cap` fallback. Output uses `HKEX:XXXX` format (e.g. `HKEX:0700`).
+**Disabled since 2026-05-05** — uncomment `[hk_shorts]` in `config.toml` (and the `HKShorts` entry under `[futu]`) to re-enable. `main.py` skips the entire pipeline when the section is absent; no code changes needed.
 
 ### Morning Gap (pre-market + intraday, 7 daily scans)
 
@@ -121,19 +121,17 @@ Requires FutuOpenD running with US Lv1 BBO real-time quote permission. Without i
 
 - **Within Longs** — 5 strategies are mutually exclusive (priority `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`).
 - **Cross-group** — long-side priority `Longs > Leaders > RS`.
-- **Cross-day master** — `output/state/eod_seen_{US,HK,IPO}.txt`. Each ticker enters exactly one of the long-side groups on first sighting; subsequent runs only emit *new* tickers. IPO has its own master so a ticker that ages in still surfaces in its proper group later. Reset by deleting the file.
-- **Excluded from cross-day master**: Shorts, HK Shorts, Morning Gap. Re-detection is meaningful for those.
+- **Cross-day master** — `output/state/eod_seen_{US,IPO}.txt`. Each ticker enters exactly one of the long-side groups on first sighting; subsequent runs only emit *new* tickers. IPO has its own master so a ticker that ages in still surfaces in its proper group later. Reset by deleting the file.
+- **Excluded from cross-day master**: Shorts, Morning Gap. Re-detection is meaningful for those.
 
 ## Output
 
 ```
 output/
 ├── TV/                        # comma-separated, for TradingView "Import list..."
-│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
-│   └── HK/<date>_Shorts.txt
+│   └── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
 ├── Webull/                    # newline-separated mirror, for Webull "Upload as File"
-│   ├── US/<date>_*.txt
-│   └── HK/<date>_Shorts.txt
+│   └── US/<date>_*.txt
 └── state/                     # cross-day "seen" masters, RS table cache, morning-gap per-day seen
 ```
 
@@ -146,7 +144,7 @@ Configure `[futu]` in `config.toml`. Sync hooks fire after each successful watch
 **One-time setup:**
 1. Launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in (default `127.0.0.1:11111`).
 2. In the Futu PC client, manually create these custom groups (the API can only modify existing groups, not create them):
-   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO`.
+   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `IPO`.
 
 All EOD groups are append-only — clear them manually when crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
 
@@ -158,7 +156,7 @@ Morning-gap scans push an [ntfy.sh](https://ntfy.sh) notification when **new** t
 
 ```bash
 uv sync                              # install
-uv run main.py                       # EOD pipeline (Longs/Leaders/Shorts/RS/IPO/HK Shorts)
+uv run main.py                       # EOD pipeline (Longs/Leaders/Shorts/RS/IPO)
 uv run main.py --mode morning-gap    # intraday gap scan (auto-detects time window, exits cleanly outside)
 ```
 
@@ -180,8 +178,8 @@ sudo uv run scripts/schedule_morning_gap_wakes.py    # schedule one-shot wakes (
 
 ## Importing
 
-- **TradingView**: Watchlist → "Import list..." → pick the latest `output/TV/{US,HK}/<date>_*.txt`.
-- **Webull**: Watchlist → "Upload as File" → pick the matching file from `output/Webull/{US,HK}/` (newline-separated; comma format silently truncates).
+- **TradingView**: Watchlist → "Import list..." → pick the latest `output/TV/US/<date>_*.txt`.
+- **Webull**: Watchlist → "Upload as File" → pick the matching file from `output/Webull/US/` (newline-separated; comma format silently truncates).
 
 ## Configuration
 

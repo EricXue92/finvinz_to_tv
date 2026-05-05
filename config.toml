@@ -42,7 +42,7 @@ append_only_groups = [
     "Leaders",
     "Shorts",
     "RS",
-    "HKShorts",
+    # "HKShorts",  # HK 扫描已停用 (2026-05-05)
     "IPO",
 ]
 
@@ -58,7 +58,7 @@ longs_new_high_52w = "NewHigh52W"
 longs_top_gainers = "TopGainers"
 shorts = "Shorts"
 rs = "RS"
-hk_shorts = "HKShorts"
+# hk_shorts = "HKShorts"  # HK 扫描已停用 (2026-05-05)
 leaders = "Leaders"
 # IPO collects long-side candidates dropped by yfinance (insufficient daily
 # history). Separate cross-day master (state/eod_seen_IPO.txt), append-only.
@@ -141,20 +141,23 @@ name = "Relative Strength"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
 
 # --- HK Shorts: 基于 HKEX 数据的港股做空筛选，输出为 HongKongShorts/HK_Shorts.txt ---
+# 已停用 (2026-05-05): 只保留美股扫描。如需重新启用，去掉下面整段的 # 即可。
+# main.py 的 `if hk_shorts_cfg:` 会在配置缺失时跳过整个 HK 流程,所以注释掉
+# [hk_shorts] 这一段就够了 — 不需要改任何代码。
 
-[hk_shorts]
-name = "HK Short Candidates"
-min_avg_volume = 1_000_000             # 日均成交量 (股)
-min_market_cap = 300_000_000           # 最低市值 (HKD, 3亿)
-min_dollar_volume = 100_000_000        # 最低成交额 (HKD)
-min_consecutive_up_days = 3
-# 按市值分级的月涨幅阈值 (%)
-perf_large_cap = 50                    # >= 100亿 HKD
-perf_mid_cap = 200                     # 20亿-100亿 HKD
-perf_small_cap = 300                   # 3亿-20亿 HKD
-# 市值分界线 (HKD)
-large_cap_threshold = 10_000_000_000
-mid_cap_threshold = 2_000_000_000
+# [hk_shorts]
+# name = "HK Short Candidates"
+# min_avg_volume = 1_000_000             # 日均成交量 (股)
+# min_market_cap = 300_000_000           # 最低市值 (HKD, 3亿)
+# min_dollar_volume = 100_000_000        # 最低成交额 (HKD)
+# min_consecutive_up_days = 3
+# # 按市值分级的月涨幅阈值 (%)
+# perf_large_cap = 50                    # >= 100亿 HKD
+# perf_mid_cap = 200                     # 20亿-100亿 HKD
+# perf_small_cap = 300                   # 3亿-20亿 HKD
+# # 市值分界线 (HKD)
+# large_cap_threshold = 10_000_000_000
+# mid_cap_threshold = 2_000_000_000
 
 # --- Morning Gap: 盘前 -20/-10 + 盘后 +10/+15/+20/+25/+30 分钟扫描 ---
 # 负数 offset = 盘前扫描 (输出到 MorningGapPre.txt, 跳过盘中累计成交量过滤);
