@@ -12,14 +12,13 @@ min_adr_percent = 4.0
 adr_days = 20
 # Two-tier IBD Relative Strength percentile (0-99) gate.
 # Source: Fred6725/rs-log/output/rs_stocks.csv (refreshed weekday ~01:30 UTC).
-# Leaders use min_rs_percentile (top 10%). Longs (5 splits) and the
-# conditional RS group share min_rs_percentile_longs (top 20%) — softer
-# so catalyst-driven setups don't lose fresh breakouts. Set either to 0
-# to disable that tier; the GitHub fetch is skipped only when both are 0.
-# Tickers missing from the table (recent IPOs without 12 months of
-# history, foreign listings) are kept, not dropped.
+# Leaders use min_rs_percentile (top 10%). Longs (5 splits), the conditional
+# RS group, and US Shorts share min_rs_percentile_longs (also top 10%).
+# Set either to 0 to disable that tier; the GitHub fetch is skipped only
+# when both are 0. Tickers missing from the table (recent IPOs without
+# 12 months of history, foreign listings) are kept, not dropped.
 min_rs_percentile = 90          # Leaders only — IBD RS percentile gate
-min_rs_percentile_longs = 80    # Longs (5 splits) + RS group — IBD RS percentile gate
+min_rs_percentile_longs = 90    # Longs (5 splits) + RS group + US Shorts — IBD RS percentile gate
 
 # --- Futu (富途牛牛) 自动同步 ---
 # 需要本地运行 FutuOpenD,且分组需在富途客户端预先手动建好(API 不能新建分组)

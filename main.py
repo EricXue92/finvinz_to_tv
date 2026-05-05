@@ -529,6 +529,8 @@ def filter_shorts(
     min_adr_percent: float = 0,
     adr_days: int = 20,
     futu_cfg: dict | None = None,
+    rs_table: dict[str, int] | None = None,
+    min_rs_percentile: int = 0,
 ) -> tuple[int, list[str]]:
     """Run shorts pipeline: finviz Ownership → single yfinance download →
     performance / dollar-volume / consecutive-up-days filters.
@@ -552,6 +554,14 @@ def filter_shorts(
 
     if not tickers:
         return total, []
+
+    if min_rs_percentile > 0:
+        kept = filter_by_rs(tickers, rs_table, min_rs_percentile, "  [Shorts]")
+        kept_set = set(kept)
+        market_caps = {t: c for t, c in market_caps.items() if t in kept_set}
+        tickers = kept
+        if not tickers:
+            return total, []
 
     # Prefer Futu snapshot's total_market_val (real-time, USD) over Finviz's
     # coarse "6.96M" / "1.23B" string. Fall back to the Finviz cap per-ticker
@@ -1553,6 +1563,8 @@ def main() -> int:
                     min_adr_percent=shorts_cfg.get("min_adr_percent", min_adr_percent),
                     adr_days=shorts_cfg.get("adr_days", adr_days),
                     futu_cfg=config.get("futu") or {},
+                    rs_table=rs_table,
+                    min_rs_percentile=min_rs_percentile_longs,
                 )
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
