@@ -320,28 +320,60 @@ def fetch_hk_klines(
     start_s = start.strftime("%Y-%m-%d")
     end_s = end.strftime("%Y-%m-%d")
 
+    # Futu's request_history_kline rate limit is ~30 calls / 30s for free
+    # users (= 1 call/sec average). Earlier versions of this function fired
+    # 2,400 calls back-to-back and silently dropped ~96% via `ret != RET_OK`,
+    # leaving the pipeline with ~60 tickers and zero candidates. The 1.05s
+    # delay below stays comfortably under the limit; total runtime ~42 min
+    # for the full HK universe (acceptable for the daily 20:00 HKT slot).
+    REQUEST_DELAY_S = 1.05
+
     result: dict[str, pd.DataFrame] = {}
     ctx = None
+    rate_limited = 0
+    other_errors = 0
+    empty_returns = 0
+    exceptions = 0
     try:
         ctx = OpenQuoteContext(host=host, port=port)
         for i, code in enumerate(codes):
-            if i and i % 50 == 0:
-                logger.info(f"[HK] k-line: {i}/{len(codes)}")
+            if i and i % 100 == 0:
+                logger.info(
+                    f"[HK] k-line: {i}/{len(codes)} "
+                    f"(ok={len(result)}, rate-limited={rate_limited}, "
+                    f"empty={empty_returns}, other-err={other_errors}, exc={exceptions})"
+                )
             try:
                 ret, df, _ = ctx.request_history_kline(
                     code, start=start_s, end=end_s,
                     ktype=KLType.K_DAY, max_count=1000,
                 )
-                if ret != RET_OK or df is None or df.empty:
-                    continue
-                # Keep only the columns we need; sort ascending by date.
-                cols = ["time_key", "open", "high", "low", "close", "volume"]
-                df = df[cols].copy()
-                df["time_key"] = pd.to_datetime(df["time_key"])
-                df = df.sort_values("time_key").reset_index(drop=True)
-                result[code] = df
-            except Exception:
-                continue
+                if ret != RET_OK:
+                    msg = str(df) if df is not None else ""
+                    if "频率" in msg or "frequency" in msg.lower() or "rate" in msg.lower():
+                        rate_limited += 1
+                    else:
+                        other_errors += 1
+                        if other_errors <= 5:
+                            logger.warning(f"[HK] {code}: ret={ret} msg={msg[:200]}")
+                elif df is None or df.empty:
+                    empty_returns += 1
+                else:
+                    cols = ["time_key", "open", "high", "low", "close", "volume"]
+                    df = df[cols].copy()
+                    df["time_key"] = pd.to_datetime(df["time_key"])
+                    df = df.sort_values("time_key").reset_index(drop=True)
+                    result[code] = df
+            except Exception as e:
+                exceptions += 1
+                if exceptions <= 5:
+                    logger.warning(f"[HK] {code}: exception {e!r}")
+            time.sleep(REQUEST_DELAY_S)
+        logger.info(
+            f"[HK] k-line done: {len(result)}/{len(codes)} ok "
+            f"(rate-limited={rate_limited}, empty={empty_returns}, "
+            f"other-err={other_errors}, exc={exceptions})"
+        )
         return result
     except Exception as e:
         logger.warning(f"[HK] fetch_hk_klines: unexpected error — {e}")
