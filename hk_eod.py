@@ -288,102 +288,130 @@ def filter_hk_shorts(
     return len(codes), tv_tickers
 
 
-def fetch_hk_klines(
-    codes: list[str],
-    days: int = 260,
-    host: str = "127.0.0.1",
-    port: int = 11111,
-) -> dict[str, pd.DataFrame] | None:
-    """Pull daily OHLCV k-line for a list of HK Futu codes (e.g., 'HK.00700').
-    Returns ``{code: DataFrame[time_key, open, close, high, low, volume]}``.
-    Returns ``None`` if OpenD is unreachable or the futu SDK is unavailable.
-    Tickers that error out individually are skipped silently.
+def fetch_hk_klines_yf(
+    codes_4d: list[str],
+    period: str = "2y",
+    batch_size: int = 500,
+) -> dict[str, pd.DataFrame]:
+    """Pull daily OHLCV for HK Main Board tickers via yfinance, returning the
+    same shape ``build_metrics_frame`` expects: ``{futu_code: DataFrame[
+    time_key, open, high, low, close, volume]}``.
+
+    Why yfinance instead of Futu k-line: Futu free/Lv1 tier caps history depth
+    for less liquid HK names (~12% of the universe gets ≥ 12 months — see
+    PR #7). yfinance reliably gives ≥ 2 years for nearly every Main Board
+    listing, so the IBD 12-month RS algorithm actually has a universe to
+    rank. Tradeoff: occasional gappy bars on lightly traded names — handled
+    via the existing helpers' try/except in main.py.
+
+    Input: 4-digit HK codes from ``fetch_hkex_equities()`` (e.g., ``'0700'``).
+    Output keys are Futu format (``'HK.00700'``) so the rest of the pipeline
+    (caps re-key, _to_tv, dedup) is unchanged.
+
+    Mirrors the batched download pattern in ``filter_hk_shorts``: 500 tickers
+    per batch with ``threads=True``, a 5s pause between batches to be
+    polite to yfinance, and ``_trim_today`` of in-progress bars during HK
+    market hours. Total runtime ~5–10 min for the full ~2,400 universe.
     """
-    if not codes:
+    if not codes_4d:
         return {}
-    try:
-        from futu import OpenQuoteContext, RET_OK, KLType
-    except ImportError:
-        logger.warning("[HK] fetch_hk_klines: futu-api not installed")
-        return None
 
-    from futu_sync import _opend_reachable
-    if not _opend_reachable(host, port):
-        logger.warning(
-            f"[HK] fetch_hk_klines: OpenD not reachable at {host}:{port}"
-        )
-        return None
+    # Lazy import to mirror filter_hk_shorts and avoid a circular import
+    # (main.py imports from hk_eod, hk_eod imports from main only at call time).
+    from main import (
+        _yf_download_with_retry,
+        _get_closes_volumes,
+        _get_ohlc,
+        _trim_today,
+    )
 
-    end = date.today()
-    # 260 trading days ≈ 380 calendar days, with margin
-    start = end - timedelta(days=int(days * 1.5) + 30)
-    start_s = start.strftime("%Y-%m-%d")
-    end_s = end.strftime("%Y-%m-%d")
-
-    # Futu's request_history_kline rate limit is ~30 calls / 30s for free
-    # users (= 1 call/sec average). Earlier versions of this function fired
-    # 2,400 calls back-to-back and silently dropped ~96% via `ret != RET_OK`,
-    # leaving the pipeline with ~60 tickers and zero candidates. The 1.05s
-    # delay below stays comfortably under the limit; total runtime ~42 min
-    # for the full HK universe (acceptable for the daily 20:00 HKT slot).
-    REQUEST_DELAY_S = 1.05
+    yf_tickers = [f"{code}.HK" for code in codes_4d]
+    now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    market_open = 9 <= now_hk.hour < 16 and now_hk.weekday() < 5
+    today = now_hk.date()
+    if market_open:
+        logger.info("[HK Longs] HK market in session — _trim_today will drop today's incomplete bar.")
 
     result: dict[str, pd.DataFrame] = {}
-    ctx = None
-    rate_limited = 0
-    other_errors = 0
-    empty_returns = 0
-    exceptions = 0
-    try:
-        ctx = OpenQuoteContext(host=host, port=port)
-        for i, code in enumerate(codes):
-            if i and i % 100 == 0:
-                logger.info(
-                    f"[HK] k-line: {i}/{len(codes)} "
-                    f"(ok={len(result)}, rate-limited={rate_limited}, "
-                    f"empty={empty_returns}, other-err={other_errors}, exc={exceptions})"
-                )
-            try:
-                ret, df, _ = ctx.request_history_kline(
-                    code, start=start_s, end=end_s,
-                    ktype=KLType.K_DAY, max_count=1000,
-                )
-                if ret != RET_OK:
-                    msg = str(df) if df is not None else ""
-                    if "频率" in msg or "frequency" in msg.lower() or "rate" in msg.lower():
-                        rate_limited += 1
-                    else:
-                        other_errors += 1
-                        if other_errors <= 5:
-                            logger.warning(f"[HK] {code}: ret={ret} msg={msg[:200]}")
-                elif df is None or df.empty:
-                    empty_returns += 1
-                else:
-                    cols = ["time_key", "open", "high", "low", "close", "volume"]
-                    df = df[cols].copy()
-                    df["time_key"] = pd.to_datetime(df["time_key"])
-                    df = df.sort_values("time_key").reset_index(drop=True)
-                    result[code] = df
-            except Exception as e:
-                exceptions += 1
-                if exceptions <= 5:
-                    logger.warning(f"[HK] {code}: exception {e!r}")
-            time.sleep(REQUEST_DELAY_S)
-        logger.info(
-            f"[HK] k-line done: {len(result)}/{len(codes)} ok "
-            f"(rate-limited={rate_limited}, empty={empty_returns}, "
-            f"other-err={other_errors}, exc={exceptions})"
+    n_batches = (len(yf_tickers) - 1) // batch_size + 1
+    for bidx, start in enumerate(range(0, len(yf_tickers), batch_size), start=1):
+        batch = yf_tickers[start:start + batch_size]
+        logger.info(f"[HK Longs] yfinance batch {bidx}/{n_batches} ({len(batch)} tickers)...")
+        batch_data = _yf_download_with_retry(
+            batch, period=period, progress=False, group_by="ticker", threads=True,
         )
-        return result
-    except Exception as e:
-        logger.warning(f"[HK] fetch_hk_klines: unexpected error — {e}")
-        return None
-    finally:
-        if ctx is not None:
+        if batch_data is None or batch_data.empty:
+            logger.warning(f"[HK Longs]   batch failed after retries, skipping {len(batch)} tickers")
+            continue
+
+        single = len(batch) == 1
+        for ticker in batch:
             try:
-                ctx.close()
-            except Exception:
-                pass
+                closes, volumes = _get_closes_volumes(batch_data, ticker, single)
+                highs, lows, opens = _get_ohlc(batch_data, ticker, single)
+                closes = _trim_today(closes, market_open, today)
+                volumes = _trim_today(volumes, market_open, today)
+                highs = _trim_today(highs, market_open, today)
+                lows = _trim_today(lows, market_open, today)
+                opens = _trim_today(opens, market_open, today)
+                if len(closes) < 2:
+                    continue
+                df = pd.DataFrame({
+                    "time_key": pd.to_datetime(closes.index),
+                    "open": opens.values,
+                    "high": highs.values,
+                    "low": lows.values,
+                    "close": closes.values,
+                    "volume": volumes.values,
+                })
+                df = df.dropna(subset=["close"]).reset_index(drop=True)
+                if len(df) < 2:
+                    continue
+                # 4-digit yfinance ticker '0700.HK' → 5-digit Futu code 'HK.00700'
+                code_4d_only = ticker.replace(".HK", "")
+                futu_code = f"HK.0{code_4d_only}"
+                result[futu_code] = df
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        if bidx < n_batches:
+            time.sleep(5)
+
+    logger.info(f"[HK Longs] yfinance fetch done: {len(result)}/{len(yf_tickers)} tickers with usable history")
+    return result
+
+
+def fetch_hsi_kline_yf(period: str = "2y") -> pd.DataFrame | None:
+    """Fetch HSI daily k-line via yfinance (`^HSI`). Returns DataFrame with
+    the same columns as ``fetch_hk_klines_yf`` rows, or ``None`` on failure.
+
+    Note: yfinance with ``group_by="ticker"`` returns a MultiIndex DataFrame
+    even when the input is a single-element list, so ``single=False`` here
+    even though there's only one ticker.
+    """
+    from main import _yf_download_with_retry, _get_closes_volumes, _get_ohlc
+
+    data = _yf_download_with_retry(
+        ["^HSI"], period=period, progress=False, group_by="ticker", threads=False,
+    )
+    if data is None or data.empty:
+        logger.warning("[HK Longs] HSI yfinance fetch returned empty")
+        return None
+    try:
+        closes, volumes = _get_closes_volumes(data, "^HSI", single=False)
+        highs, lows, opens = _get_ohlc(data, "^HSI", single=False)
+        df = pd.DataFrame({
+            "time_key": pd.to_datetime(closes.index),
+            "open": opens.values,
+            "high": highs.values,
+            "low": lows.values,
+            "close": closes.values,
+            "volume": volumes.values,
+        })
+        return df.dropna(subset=["close"]).reset_index(drop=True)
+    except (KeyError, TypeError, ValueError) as e:
+        logger.warning(f"[HK Longs] HSI parse failed: {e}")
+        return None
 
 
 def build_metrics_frame(
@@ -689,27 +717,21 @@ def run_hk_eod(
         except Exception as e:
             logger.warning(f"[HK Shorts] Failed: {e}")
 
-    # --- HK Long-side: Futu-only ---
+    # --- HK Long-side ---
+    # Data source: yfinance for k-line + HSI (deeper history than Futu Lv1
+    # gives for less liquid HK names — see PR #7 diagnostic that found
+    # only 282/2400 made it past the 12-month threshold via Futu). Futu
+    # is still used for market caps + the live HSI day-change snapshot.
     logger.info("[HK Longs] Fetching universe...")
     codes_4d = fetch_hkex_equities()
-    # Futu format: 'HK.00700' (5-digit). Source codes are 4-digit.
-    codes = [f"HK.0{c}" for c in codes_4d]
-    logger.info(f"  Universe: {len(codes)} codes")
+    logger.info(f"  Universe: {len(codes_4d)} codes")
 
-    logger.info("[HK Longs] Fetching daily k-line via Futu (~42 min throttled)...")
-    klines = fetch_hk_klines(codes, days=260, host=host, port=port)
-    if klines is None:
-        logger.warning(
-            "[HK Longs] OpenD unreachable — writing empty files for the day"
-        )
-        klines = {}
+    logger.info("[HK Longs] Fetching daily OHLCV via yfinance (~5-10 min)...")
+    klines = fetch_hk_klines_yf(codes_4d, period="2y")
 
-    # Log k-line history-depth distribution: this tells us whether Futu is
-    # returning enough history for the RS calculation (which needs ≥ 253 rows
-    # = 12 months). HK k-line for less liquid names is often capped by Futu's
-    # data tier — names with < 253 rows get excluded from the RS percentile
-    # rank (kept as passthrough by filter_by_rs, but they don't contribute
-    # to the percentile distribution).
+    # Log k-line history-depth distribution to surface any data tier issues.
+    # The IBD 12-month RS calc needs >= 253 rows; we expect the >=253 bucket
+    # to be the dominant share of the universe under yfinance.
     if klines:
         lens = sorted(len(df) for df in klines.values())
         n = len(lens)
@@ -770,8 +792,7 @@ def run_hk_eod(
     today_d = date.today()
     rs_table = load_cache(today_d, output_dir)
     if rs_table is None and klines:
-        hsi_data = fetch_hk_klines(["HK.800000"], days=260, host=host, port=port) or {}
-        hsi_kline = hsi_data.get("HK.800000")
+        hsi_kline = fetch_hsi_kline_yf(period="2y")
         if hsi_kline is not None and not hsi_kline.empty:
             if use_yesterday:
                 hsi_kline = hsi_kline[hsi_kline["time_key"].dt.date < today_d].reset_index(drop=True)
