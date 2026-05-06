@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync                              # Install dependencies
-uv run main.py                       # EOD pipeline (US Longs/Leaders/Shorts/RS/IPO + HK Shorts/Longs/Leaders/RS)
+uv run main.py                       # Full EOD (US + HK) — ad-hoc only; production splits these
+uv run main.py --mode us-eod         # US only (Longs/Leaders/Shorts/RS/IPO) — 10:00 HKT slot
+uv run main.py --mode hk-eod         # HK only (Shorts + Longs/Leaders/RS)   — 20:00 HKT slot
 uv run main.py --mode morning-gap    # intraday gap scan; auto-detects ET window, exits clean outside
 uv run pytest tests/ -v              # Unit tests (HK pure-logic helpers)
 ```
@@ -46,7 +48,11 @@ Python tool: `main.py` (entry point + US EOD/morning-gap orchestration), `hk_eod
 
 **Config format:** TOML. Filter strings (e.g. `sh_avgvol_o500`) map directly to Finviz URL parameters. The `signal` field is optional (used for Top Gainers).
 
-**Scheduling (EOD):** Runs Tue-Sat 10:00 AM HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist`). Mac wakes at 9:59 AM via `pmset repeat wakepoweron TWRFS 9:59:00` (sudo). The 10:00 slot covers US Mon-Fri market close in both EDT and EST AND lands after the daily Fred6725/rs-log RS Rating commit (worst-observed lag: ~01:31 UTC = 09:31 HKT) so the IBD RS table is fresh when Longs/Leaders read it.
+**Scheduling (US EOD):** Runs Tue-Sat 10:00 AM HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.plist` → `scripts/run_eod.sh` → `main.py --mode us-eod`). Mac wakes at 9:59 AM via `pmset repeat wakepoweron TWRFS 9:59:00` (sudo). The 10:00 slot covers US Mon-Fri market close in both EDT and EST AND lands after the daily Fred6725/rs-log RS Rating commit (worst-observed lag: ~01:31 UTC = 09:31 HKT) so the IBD RS table is fresh when Longs/Leaders read it. Logs to `output/launchd_US.log` (rotated per calendar day by the wrapper). **Mode is `us-eod`, not `eod`** — the HK pipeline is intentionally skipped here because at 10:00 HKT the HK market has only been open 30 minutes; today's k-line bar is incomplete and would contaminate the cross-day master.
+
+**Scheduling (HK EOD):** Runs Mon-Fri 20:00 HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist` → `scripts/run_hk_eod.sh` → `main.py --mode hk-eod`). HK market closes at 16:00 HKT; the 20:00 slot leaves 4 hours of slack for k-line data to finalize. No `pmset` wake — the user's Mac is typically awake at 20:00, and launchd fires immediately on next wake if asleep. Logs to `output/launchd_HK.log`.
+
+**Modes:** `eod` (default; full US+HK run, useful for ad-hoc), `us-eod` (US only — used by the 10:00 HKT slot), `hk-eod` (HK only — used by the 20:00 HKT slot), `morning-gap` (intraday gap scanner).
 
 **Scheduling (morning-gap):** `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` fires 90 calendar entries/week (Mon-Fri × 9 ET offsets × EDT/EST). One-shot pmset wakes are scheduled by `sudo uv run scripts/schedule_morning_gap_wakes.py` (re-run weekly). The script self-validates ET on each trigger and exits cleanly outside any window — DO NOT add a hard error path here; missed wakes are silent by design.
 

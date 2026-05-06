@@ -189,19 +189,30 @@ uv run main.py --mode morning-gap    # intraday gap scan (auto-detects time wind
 
 ## Automation (macOS launchd + pmset)
 
-Daily EOD run: Tue–Sat 10:00 AM HKT (lands after US market close in both EDT and EST, and after the daily upstream RS Rating commit).
+Two daily EOD slots (split by market close) plus an intraday morning-gap scanner. Each writes its own log file under `output/`:
+
+| Slot | Trigger | Mode | Log | Plist |
+|---|---|---|---|---|
+| US EOD | Tue–Sat 10:00 HKT | `us-eod` | `output/launchd_US.log` | `~/Library/LaunchAgents/com.xue.finviz-to-tv.plist` |
+| HK EOD | Mon–Fri 20:00 HKT | `hk-eod` | `output/launchd_HK.log` | `~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist` |
+| Morning Gap | 90 entries/week (ET-aware) | `morning-gap` | (per-run) | `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` |
+
+The 10:00 HKT slot lands after US market close in both EDT and EST AND after the daily upstream RS Rating commit. The 20:00 HKT slot leaves 4 hours of slack after HK market close (16:00 HKT) for k-line data to finalize. The US slot uses `--mode us-eod` (HK is intentionally skipped — at 10:00 HKT the HK market has only been open 30 minutes and today's k-line bar is incomplete).
 
 ```bash
+# US slot
 sudo pmset repeat wakeorpoweron TWRFS 09:59:00
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.plist
-```
 
-Intraday morning-gap run: separate plist with 90 calendar entries (Mon–Fri × 9 offsets × EDT/EST). The script self-validates ET time on each trigger and exits cleanly outside any window.
+# HK slot (no pmset — Mac is typically awake at 20:00 HKT; launchd fires on next wake if asleep)
+launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist
 
-```bash
+# Morning-gap (separate plist with 90 calendar entries: Mon–Fri × 9 offsets × EDT/EST)
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist
 sudo uv run scripts/schedule_morning_gap_wakes.py    # schedule one-shot wakes (re-run weekly)
 ```
+
+The morning-gap script self-validates ET time on each trigger and exits cleanly outside any window.
 
 ## Importing
 
