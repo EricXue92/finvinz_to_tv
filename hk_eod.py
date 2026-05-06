@@ -544,13 +544,25 @@ def apply_strategy_filters(
     adr = settings.get("min_adr_percent", 4.0)
     price = settings.get("min_price", 20.0)
 
-    # Universal long-side baseline
-    base = (
-        (metrics["market_cap"] >= cap)
-        & (metrics["avg_vol_20d"] >= avg_vol)
-        & (metrics["avg_dollar_vol_20d"] >= dvol)
-        & (metrics["adr_pct"] >= adr)
-        & (metrics["last_price"] >= price)
+    # --- Funnel diagnostics: log how many tickers survive each baseline gate
+    # individually. Without this, a "0 candidates" outcome could be caused by
+    # any of cap/avg_vol/$vol/adr/price/RS — operator can't tell where the
+    # filter is too tight without per-stage counts.
+    n = len(metrics)
+    cap_ok = (metrics["market_cap"] >= cap)
+    vol_ok = (metrics["avg_vol_20d"] >= avg_vol)
+    dvol_ok = (metrics["avg_dollar_vol_20d"] >= dvol)
+    adr_ok = (metrics["adr_pct"] >= adr)
+    price_ok = (metrics["last_price"] >= price)
+    base = cap_ok & vol_ok & dvol_ok & adr_ok & price_ok
+    logger.info(
+        f"[HK Longs] baseline funnel (n={n}): "
+        f"cap>={cap:,.0f} {int(cap_ok.sum())}; "
+        f"avg_vol>={avg_vol:,.0f} {int(vol_ok.sum())}; "
+        f"$vol>={dvol:,.0f} {int(dvol_ok.sum())}; "
+        f"ADR>={adr}% {int(adr_ok.sum())}; "
+        f"price>={price} {int(price_ok.sum())}; "
+        f"baseline-AND {int(base.sum())}"
     )
 
     # Per-strategy parameter lookup
@@ -569,6 +581,7 @@ def apply_strategy_filters(
     gap_up_mask = base & (metrics["gap_pct"] >= gu_min_gap)
 
     # Leaders: baseline + above SMA50 & SMA200 + any of the perf windows
+    sma_ok = metrics["above_sma50"].astype(bool) & metrics["above_sma200"].astype(bool)
     perf_any = (
         (metrics["perf_4w"] >= _leader_threshold(leaders_cfg, "min_perf_4w"))
         | (metrics["perf_13w"] >= _leader_threshold(leaders_cfg, "min_perf_13w"))
@@ -577,16 +590,21 @@ def apply_strategy_filters(
         | (metrics["perf_52w"] >= _leader_threshold(leaders_cfg, "min_perf_52w"))
     ).fillna(False)
 
-    leaders_mask = (
-        base
-        & metrics["above_sma50"].astype(bool)
-        & metrics["above_sma200"].astype(bool)
-        & perf_any
-    )
-
+    leaders_mask = base & sma_ok & perf_any
     # RS group: baseline + above-SMA50/200, no perf window. Always computed,
     # caller decides whether to actually emit it based on HSI trigger.
-    rs_mask = base & metrics["above_sma50"].astype(bool) & metrics["above_sma200"].astype(bool)
+    rs_mask = base & sma_ok
+
+    # Per-strategy diagnostic — show pre-RS-gate counts so operator can see
+    # which strategy had no setups today vs which got cut by a downstream gate.
+    logger.info(
+        f"[HK Longs] strategy funnel (pre-RS-gate): "
+        f"EarningsGap (gap>={eg_min_gap}% AND rvol>={eg_min_rvol}) {int(earnings_gap_mask.sum())}; "
+        f"HighVolume (rvol>={hv_min_rvol}) {int(high_volume_mask.sum())}; "
+        f"GapUp (gap>={gu_min_gap}%) {int(gap_up_mask.sum())}; "
+        f"Leaders (+SMA & perf) {int(leaders_mask.sum())}; "
+        f"RS (+SMA) {int(rs_mask.sum())}"
+    )
 
     return {
         "EarningsGap": metrics.index[earnings_gap_mask].tolist(),
@@ -826,13 +844,24 @@ def run_hk_eod(
 
     # --- RS percentile gate (after raw masks) ---
     threshold = int(hk_settings.get("min_rs_percentile_longs", 90))
+    pre_rs_counts = {n: len(c) for n, c in raw.items()}
     raw = {
         name: filter_by_rs(codes_list, rs_table, threshold)
         for name, codes_list in raw.items()
     }
+    post_rs_counts = {n: len(c) for n, c in raw.items()}
+    rs_drops = {n: pre_rs_counts[n] - post_rs_counts[n] for n in raw}
+    logger.info(
+        f"[HK Longs] RS>={threshold} gate: "
+        + ", ".join(f"{n} {pre_rs_counts[n]}→{post_rs_counts[n]} (-{rs_drops[n]})" for n in HK_STRATEGY_PRIORITY)
+    )
 
     # --- Within-day cross-strategy priority dedup ---
     dedup = dedup_by_priority(raw)
+    logger.info(
+        "[HK Longs] within-day priority dedup: "
+        + ", ".join(f"{n} {post_rs_counts[n]}→{len(dedup[n])}" for n in HK_STRATEGY_PRIORITY)
+    )
 
     # --- Cross-day master dedup ---
     seen_path = eod_seen_path(output_dir, "HK")
