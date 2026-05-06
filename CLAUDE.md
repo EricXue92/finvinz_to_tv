@@ -35,7 +35,7 @@ Python tool: `main.py` (entry point + US EOD/morning-gap orchestration), `hk_eod
   - **HK RS** — conditional. Only runs when HSI day-change ≤ −1.5% (Futu snapshot of `HK.800000`). No additional gates beyond the universal baseline. Output: `output/TV/HK/<date>_RS.txt`.
 - **HK IPO** (no config; auto-collected sidecar of the HK long-side pipeline): tickers in the HKEX Main Board universe that yfinance returned but with `< 253 rows of daily close` (insufficient for the IBD 12-month RS calc) — almost always fresh HK IPOs that aged into yfinance but haven't accumulated 12 months of data. NOT RS-gated. Filters apply **conditionally** based on history depth so a true day-1 IPO still surfaces while a 200-day-old IPO is held to nearly the full long-side baseline:
   - **Always** (day 1+): cap ≥ HK$300M, price ≥ HK$20.
-  - **If ≥ 20 trading days** (i.e., `avg_vol_20d` is non-NaN): avg vol ≥ 500K shares/day, $vol ≥ HK$100M, ADR ≥ 4.0% (note: stricter than the long-side's 3.5%, since RS isn't available to do leadership-cohort filtering at this stage).
+  - **If ≥ 20 trading days** (i.e., `avg_vol_20d` is non-NaN): avg vol ≥ 500K shares/day, $vol ≥ HK$100M, ADR ≥ 3.5% (matches the long-side floor; promotion at 253 rows is seamless).
   - **If ≥ 50 trading days** (i.e., `sma50` is non-NaN): price above SMA50.
   - **If ≥ 200 trading days** (i.e., `sma200` is non-NaN): price above SMA200.
 

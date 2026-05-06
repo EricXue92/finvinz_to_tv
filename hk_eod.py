@@ -938,11 +938,12 @@ def run_hk_eod(
     ipo_min_price = hk_settings.get("min_price", 20.0)
     ipo_min_avg_vol = hk_settings.get("min_avg_volume", 500_000)
     ipo_min_dvol = hk_settings.get("min_dollar_volume", 100_000_000)
-    # IPO uses ADR>=4 (US standard) regardless of the long-side
-    # [hk_settings] tune-down — we want stricter quality gating on names
-    # without much history, since RS isn't available to do leadership-cohort
-    # filtering at this stage.
-    ipo_min_adr = 4.0
+    # IPO ADR matches the long-side floor (3.5%, tuned down from 4.0% in
+    # PR #10 to fit HK blue-chip volatility). Keeps IPO consistent with
+    # the rest of the HK long-side baseline so promotion at 253 rows is
+    # seamless — a ticker that just made it into IPO doesn't get cut by
+    # an unexpectedly looser ADR gate the next day.
+    ipo_min_adr = hk_settings.get("min_adr_percent", 3.5)
     ipo_codes: list[str] = []
     ipo_dropped = {"cap": 0, "price": 0, "avg_vol": 0, "dvol": 0,
                    "adr": 0, "sma50": 0, "sma200": 0}

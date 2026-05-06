@@ -131,12 +131,12 @@ Mirrors the US IPO sidecar. Tickers in the HKEX Main Board universe that yfinanc
   | price | ≥ HK$20 | always |
   | avg vol | ≥ 500K shares/day | only if ≥ 20 trading days |
   | $vol | ≥ HK$100M | only if ≥ 20 trading days |
-  | ADR% | ≥ 4.0% | only if ≥ 20 trading days |
+  | ADR% | ≥ 3.5% | only if ≥ 20 trading days |
   | above SMA50 | — | only if ≥ 50 trading days |
   | above SMA200 | — | only if ≥ 200 trading days |
   | RS | — | always skipped (sub-12mo by definition) |
 
-  ADR threshold is stricter than the long-side's 3.5% — an IPO doesn't get the RS leadership filter applied, so we hold the volatility floor higher to compensate.
+  ADR threshold matches the long-side's 3.5% floor — keeps the IPO baseline consistent with the rest of the HK long-side so promotion at 253 rows is seamless.
 - **Output:** `output/TV/HK/<date>_IPO.txt`, mirrored to Webull.
 - **Independent cross-day master:** `output/state/eod_seen_HKIPO.txt`. Once an IPO ages into ≥253 rows, it falls out of the IPO bucket and lands in its proper long-side group on the first qualifying day (the long-side master `eod_seen_HK.txt` is separate, no cross-contamination).
 - **Futu group:** append-only `HKIPO` — must be created manually in the Futu PC client before first run.
