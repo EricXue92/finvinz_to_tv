@@ -908,3 +908,47 @@ def run_hk_eod(
         logger.info(f"[HK {name}] {len(tv)} -> {dated}")
         write_webull(tv, dated, output_dir)
         futu_sync(config, futu_key[name], tv, "HK")
+
+    # --- HK IPO sidecar ---
+    # Mirrors the US IPO sidecar contract: catch tickers in the HKEX Main
+    # Board universe that yfinance returned but with insufficient history
+    # for the IBD 12-month RS calc (< 253 rows). These are almost always
+    # fresh HK IPOs that aged into yfinance but haven't accumulated 12mo
+    # of data yet. NOT RS-gated. NOT subject to baseline ADR/$vol/avg_vol
+    # gates (those need 20-day windows that IPOs may not have).
+    #
+    # Independent cross-day master at output/state/eod_seen_HKIPO.txt — a
+    # ticker collected today as an IPO drop still lands in its proper
+    # long-side group on the first day it has enough history (the long-
+    # side master eod_seen_HK.txt is separate, so no cross-contamination).
+    ipo_cap = hk_settings.get("min_market_cap", 300_000_000)
+    ipo_min_price = hk_settings.get("min_price", 20.0)
+    ipo_codes: list[str] = []
+    for code, df in klines.items():
+        if len(df) >= 253:
+            continue  # full history; goes through normal long-side flow
+        if code not in metrics.index:
+            continue
+        row = metrics.loc[code]
+        if (
+            pd.notna(row["market_cap"])
+            and row["market_cap"] >= ipo_cap
+            and pd.notna(row["last_price"])
+            and row["last_price"] >= ipo_min_price
+        ):
+            ipo_codes.append(code)
+
+    ipo_seen_path = eod_seen_path(output_dir, "HKIPO")
+    ipo_seen = load_seen(ipo_seen_path)
+    ipo_tv = sorted(_to_tv(c) for c in ipo_codes)
+    logger.info(
+        f"[HK IPO] {len(ipo_codes)} candidates after baseline (cap>={ipo_cap:,.0f}, "
+        f"price>={ipo_min_price}); raw klines<253: "
+        f"{sum(1 for df in klines.values() if len(df) < 253)}"
+    )
+    ipo_tv = dedup_seen("[HK IPO]", ipo_tv, ipo_seen, ipo_seen_path)
+    dated_ipo = hk_output_dir / f"{today_iso}_IPO.txt"
+    write_watchlist(ipo_tv, dated_ipo, fmt)
+    logger.info(f"[HK IPO] {len(ipo_tv)} -> {dated_ipo}")
+    write_webull(ipo_tv, dated_ipo, output_dir)
+    futu_sync(config, "hk_ipo", ipo_tv, "HK")

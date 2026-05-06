@@ -49,6 +49,7 @@ append_only_groups = [
     "HKGapUp",
     "HKLeaders",
     "HKRS",
+    "HKIPO",
 ]
 
 [futu.groups]
@@ -74,6 +75,9 @@ hk_longs_high_volume  = "HKHighVolume"
 hk_longs_gap_up       = "HKGapUp"
 hk_leaders            = "HKLeaders"
 hk_rs                 = "HKRS"
+# HK IPO sidecar — short-history HK Main Board listings that don't have
+# 12 months of yfinance data yet. Independent cross-day master.
+hk_ipo                = "HKIPO"
 
 # --- Longs: 5 个子策略，按 list 顺序内部互斥去重，每个单独输出。
 # 优先级 (高 → 低): EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers
