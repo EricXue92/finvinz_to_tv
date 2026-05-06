@@ -100,19 +100,20 @@ Five strategies sourced from **yfinance** (k-line + HSI) plus **Futu** (market c
 | Market Cap | ≥ HK$300M | small-cap-friendly; HK liquidity ~10× thinner than US |
 | Avg Volume | ≥ 500K shares/day (20-day) | mirrors US `sh_avgvol_o500` |
 | Dollar Volume | ≥ HK$100M (20-day) | held at parity with HK Shorts |
-| ADR% | ≥ 4.0% (20-day) | same as US |
+| ADR% | ≥ 3.5% (20-day) | tuned down from 4.0%; HK blue-chip volatility runs structurally lower than US |
 | Last Price | ≥ HK$20 | mirrors US `sh_price_o20` |
+| Above SMA50 & SMA200 | both | mirrors US `ta_sma50_pa` + `ta_sma200_pa` on every long-side filter |
 | RS Percentile | ≥ 90 (vs HSI) | computed locally in `hk_rs.py`, not from Fred6725 CSV |
 
-**Per-strategy gates** (priority order — earlier wins, each ticker appears in at most one HK long-side file per day):
+**Per-strategy gates** (priority order — earlier wins, each ticker appears in at most one HK long-side file per day). All five inherit the universal baseline above (which now includes the SMA50 & SMA200 trend filter), so the additional gates listed below are layered on top:
 
 | Priority | Strategy | Additional gates |
 |---|---|---|
 | 1 | HK EarningsGap | gap ≥ 3% + RVol ≥ 3 (pattern-based proxy — no HK earnings calendar) |
 | 2 | HK HighVolume | RVol ≥ 3 |
 | 3 | HK GapUp | gap ≥ 5% |
-| 4 | HK Leaders | above SMA50 & SMA200, AND any of (4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150) |
-| 5 | HK RS | above SMA50 & SMA200; **conditional** — only runs when HSI day-change ≤ −1.5% |
+| 4 | HK Leaders | any of (4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150) |
+| 5 | HK RS | none beyond baseline; **conditional** — only runs when HSI day-change ≤ −1.5% |
 
 **HK RS algorithm** (`hk_rs.py`): same `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` weighted-quarter-returns formula as the US, but the benchmark is HSI (`^HSI` via yfinance) and percentiles are ranked across the HK Main Board universe. Computed in-process from the same yfinance k-line batch already pulled for the metrics frame; cached to `output/state/hk_rs_rating_<date>.csv`.
 
