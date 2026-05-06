@@ -119,6 +119,15 @@ Five strategies sourced from **yfinance** (k-line + HSI) plus **Futu** (market c
 
 **OpenD soft-depends**: HK long-side k-line + HSI history come from yfinance, so OpenD being down does NOT empty the .txt files. With OpenD down: market caps go to NaN (and the cap≥HK$300M baseline drops everything), the conditional-RS HSI-trigger snapshot is skipped, and Futu sync is skipped — but the rank-and-write logic itself runs to completion. With OpenD up, the pipeline is fully populated. Each strategy writes to its own append-only Futu group (`HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`) — must be created manually in the Futu PC client before first run.
 
+### HK IPO (auto-collected sidecar)
+
+Mirrors the US IPO sidecar. Tickers in the HKEX Main Board universe that yfinance returned but with `< 253 rows of daily close` (insufficient for the IBD 12-month RS calc) — almost always fresh HK IPOs that aged into yfinance but haven't accumulated 12 months of data yet.
+
+- **Lighter baseline than long-side:** only `cap ≥ HK$300M` and `price ≥ HK$20` are applied. Skips ADR / $vol / avg vol / SMA50 / SMA200 / RS, all of which need 20+ trading days that an IPO may not have.
+- **Output:** `output/TV/HK/<date>_IPO.txt`, mirrored to Webull.
+- **Independent cross-day master:** `output/state/eod_seen_HKIPO.txt`. Once an IPO ages into ≥253 rows, it falls out of the IPO bucket and lands in its proper long-side group on the first qualifying day (the long-side master `eod_seen_HK.txt` is separate, no cross-contamination).
+- **Futu group:** append-only `HKIPO` — must be created manually in the Futu PC client before first run.
+
 ### Morning Gap (pre-market + intraday, 9 daily scans)
 
 Two-phase intraday gap scanner. **Pre-market (-20/-10/-5 min)** writes `MorningGapPre.txt`. **Post-open (+5/+10/+15/+20/+25/+30 min)** writes `MorningGap.txt` and adds an intraday cumulative-volume gate that surfaces stocks already trading their full daily average volume in the first 30 min — a Kullamägi signal of catalyst-driven institutional buying.
