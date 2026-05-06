@@ -561,15 +561,20 @@ def apply_strategy_filters(
 
     # --- Funnel diagnostics: log how many tickers survive each baseline gate
     # individually. Without this, a "0 candidates" outcome could be caused by
-    # any of cap/avg_vol/$vol/adr/price/RS — operator can't tell where the
-    # filter is too tight without per-stage counts.
+    # any of cap/avg_vol/$vol/adr/price/SMA/RS — operator can't tell where
+    # the filter is too tight without per-stage counts.
+    #
+    # SMA50 & SMA200 are part of the universal baseline (mirrors US Longs
+    # configs, which all carry ta_sma50_pa + ta_sma200_pa). Every HK long-
+    # side strategy gates on the same trend filter.
     n = len(metrics)
     cap_ok = (metrics["market_cap"] >= cap)
     vol_ok = (metrics["avg_vol_20d"] >= avg_vol)
     dvol_ok = (metrics["avg_dollar_vol_20d"] >= dvol)
     adr_ok = (metrics["adr_pct"] >= adr)
     price_ok = (metrics["last_price"] >= price)
-    base = cap_ok & vol_ok & dvol_ok & adr_ok & price_ok
+    sma_ok = metrics["above_sma50"].astype(bool) & metrics["above_sma200"].astype(bool)
+    base = cap_ok & vol_ok & dvol_ok & adr_ok & price_ok & sma_ok
     logger.info(
         f"[HK Longs] baseline funnel (n={n}): "
         f"cap>={cap:,.0f} {int(cap_ok.sum())}; "
@@ -577,6 +582,7 @@ def apply_strategy_filters(
         f"$vol>={dvol:,.0f} {int(dvol_ok.sum())}; "
         f"ADR>={adr}% {int(adr_ok.sum())}; "
         f"price>={price} {int(price_ok.sum())}; "
+        f"above SMA50 & SMA200 {int(sma_ok.sum())}; "
         f"baseline-AND {int(base.sum())}"
     )
 
@@ -595,8 +601,7 @@ def apply_strategy_filters(
     high_volume_mask = base & (metrics["rvol"] >= hv_min_rvol)
     gap_up_mask = base & (metrics["gap_pct"] >= gu_min_gap)
 
-    # Leaders: baseline + above SMA50 & SMA200 + any of the perf windows
-    sma_ok = metrics["above_sma50"].astype(bool) & metrics["above_sma200"].astype(bool)
+    # Leaders: baseline (incl. SMA50 & SMA200) + any of the perf windows
     perf_any = (
         (metrics["perf_4w"] >= _leader_threshold(leaders_cfg, "min_perf_4w"))
         | (metrics["perf_13w"] >= _leader_threshold(leaders_cfg, "min_perf_13w"))
@@ -605,10 +610,10 @@ def apply_strategy_filters(
         | (metrics["perf_52w"] >= _leader_threshold(leaders_cfg, "min_perf_52w"))
     ).fillna(False)
 
-    leaders_mask = base & sma_ok & perf_any
-    # RS group: baseline + above-SMA50/200, no perf window. Always computed,
+    leaders_mask = base & perf_any
+    # RS group: baseline (incl. SMA50/200), no perf window. Always computed,
     # caller decides whether to actually emit it based on HSI trigger.
-    rs_mask = base & sma_ok
+    rs_mask = base
 
     # Per-strategy diagnostic — show pre-RS-gate counts so operator can see
     # which strategy had no setups today vs which got cut by a downstream gate.
