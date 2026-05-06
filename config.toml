@@ -178,7 +178,10 @@ mid_cap_threshold = 2_000_000_000
 min_market_cap          = 300_000_000     # HKD
 min_dollar_volume       = 100_000_000     # HKD; 价 × 20 日均量
 min_avg_volume          = 500_000         # 5 个长线组的统一日均量门槛
-min_adr_percent         = 4.0
+# ADR% 调低至 3.5 (US 用 4.0)。HK 蓝筹波动率结构性低于 US — 5 只样本中
+# (00700/00005/01810/01211/09988) 仅 1 只过 ADR>=4，长期会把整个百强股
+# 池砍掉。3.5 在"放过百强股"和"还能筛掉静态低波动股"之间取折中。
+min_adr_percent         = 3.5
 min_price               = 20.0            # HKD
 min_rs_percentile_longs = 90              # 与 HSI 比较，本地 IBD 算法
 hsi_rs_trigger          = -1.5            # HSI 当日跌幅 ≤ 此值则触发 RS 组
