@@ -67,45 +67,68 @@ def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
     )
 
 
-def _morning_gap_new_tickers(
+def _morning_gap_seen_path(output_dir: Path, today: str, phase: str) -> Path:
+    """Per-phase seen file. `phase` is 'pre' or 'post'. Auto-resets daily."""
+    return output_dir / "state" / f"morning_gap_seen_{phase}_{today}.txt"
+
+
+def _read_seen_set(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip()}
+    except OSError as e:
+        logger.warning(f"[Morning Gap] could not read {path}: {e}")
+        return set()
+
+
+def _write_seen_set(path: Path, seen: set[str]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            for t in sorted(seen):
+                f.write(f"{t}\n")
+    except OSError as e:
+        logger.warning(f"[Morning Gap] could not write {path}: {e}")
+
+
+def _morning_gap_classify(
     today: str,
     tickers: list[str],
     output_dir: Path,
-) -> list[str]:
-    """Return tickers in `tickers` that have not appeared in any earlier
-    morning-gap scan today. Side effect: appends `tickers` to the per-day
-    state file so subsequent scans see them.
+    is_pre: bool,
+) -> tuple[list[str], list[str]]:
+    """Categorize tickers vs phase-specific seen sets and update seen file.
 
-    State lives at `<output_dir>/state/morning_gap_seen_<today>.txt`,
-    one ticker per line. File auto-resets each day (filename includes date).
+    Pre-market scans use `morning_gap_seen_pre_<today>.txt`; post-open scans
+    use `morning_gap_seen_post_<today>.txt`. Both auto-reset daily.
 
-    On any IO error, returns the input tickers unchanged (treats seen-set
-    as empty) — better to over-notify than silently swallow new tickers.
+    Returns (fresh, promoted):
+      - Pre-market: fresh = tickers not yet pushed in any earlier pre-market
+        scan today; promoted = [].
+      - Post-open: fresh = tickers brand-new today (not in pre OR post seen);
+        promoted = tickers that were in pre seen but appear in post for the
+        first time today (volume gate just confirmed a pre-market gapper).
+
+    Side effect: appends `tickers` to the matching phase's seen file.
     """
-    state_dir = output_dir / "state"
-    state_path = state_dir / f"morning_gap_seen_{today}.txt"
-
-    seen: set[str] = set()
-    try:
-        if state_path.exists():
-            with state_path.open("r", encoding="utf-8") as f:
-                seen = {line.strip() for line in f if line.strip()}
-    except OSError as e:
-        logger.warning(f"[Morning Gap] could not read seen-state {state_path}: {e}")
-
+    pre_path = _morning_gap_seen_path(output_dir, today, "pre")
+    post_path = _morning_gap_seen_path(output_dir, today, "post")
+    pre_seen = _read_seen_set(pre_path)
     current = set(tickers)
-    new = sorted(current - seen)
 
-    try:
-        state_dir.mkdir(parents=True, exist_ok=True)
-        union = sorted(seen | current)
-        with state_path.open("w", encoding="utf-8") as f:
-            for t in union:
-                f.write(f"{t}\n")
-    except OSError as e:
-        logger.warning(f"[Morning Gap] could not write seen-state {state_path}: {e}")
+    if is_pre:
+        fresh = sorted(current - pre_seen)
+        _write_seen_set(pre_path, pre_seen | current)
+        return fresh, []
 
-    return new
+    post_seen = _read_seen_set(post_path)
+    new_post = current - post_seen
+    promoted = sorted(new_post & pre_seen)
+    fresh = sorted(new_post - pre_seen)
+    _write_seen_set(post_path, post_seen | current)
+    return fresh, promoted
 
 
 def _eod_seen_path(output_dir: Path, market: str) -> Path:
@@ -1541,9 +1564,13 @@ def main() -> int:
         )
         _write_webull(sorted_tickers, dated, output_dir)
         _futu_sync(config, futu_key, sorted_tickers, "US")
-        new = _morning_gap_new_tickers(today, sorted_tickers, output_dir)
-        if new:
-            notify_morning_gap(new, offset, len(sorted_tickers), config)
+        fresh, promoted = _morning_gap_classify(
+            today, sorted_tickers, output_dir, is_pre
+        )
+        if fresh or promoted:
+            notify_morning_gap(
+                fresh, offset, len(sorted_tickers), config, promoted=promoted
+            )
 
         logger.info("Done.")
         return 0
