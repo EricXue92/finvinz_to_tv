@@ -91,7 +91,7 @@ Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 
 
 ### HK Long-side: EarningsGap / HighVolume / GapUp / Leaders / RS
 
-Five strategies sourced **entirely from Futu OpenAPI** (k-line + snapshot — no yfinance for the long-side). Mirrors the US Longs/Leaders/RS methodology with HKD-native thresholds. Universe = HKEX Main Board equities (~2,400). Output: `output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt`.
+Five strategies sourced from **yfinance** (k-line + HSI) plus **Futu** (market caps + live HSI day-change). The original spec was Futu-only, but Futu's free/Lv1 tier capped 12-month history coverage at ~12% of the Main Board universe — the IBD 12-month RS algorithm had nothing to rank — so the long-side k-line moved to yfinance which reliably gives 2+ years for almost every ticker. Mirrors the US Longs/Leaders/RS methodology with HKD-native thresholds. Universe = HKEX Main Board equities (~2,400). Output: `output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt`.
 
 **Universal baseline (`[hk_settings]`):**
 
@@ -114,9 +114,9 @@ Five strategies sourced **entirely from Futu OpenAPI** (k-line + snapshot — no
 | 4 | HK Leaders | above SMA50 & SMA200, AND any of (4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150) |
 | 5 | HK RS | above SMA50 & SMA200; **conditional** — only runs when HSI day-change ≤ −1.5% |
 
-**HK RS algorithm** (`hk_rs.py`): same `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` weighted-quarter-returns formula as the US, but the benchmark is HSI (Futu `HK.800000`) and percentiles are ranked across the HK Main Board universe. Computed in-process from the same Futu k-line batch already pulled for the metrics frame; cached to `output/state/hk_rs_rating_<date>.csv`.
+**HK RS algorithm** (`hk_rs.py`): same `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` weighted-quarter-returns formula as the US, but the benchmark is HSI (`^HSI` via yfinance) and percentiles are ranked across the HK Main Board universe. Computed in-process from the same yfinance k-line batch already pulled for the metrics frame; cached to `output/state/hk_rs_rating_<date>.csv`.
 
-**OpenD requirement**: HK long-side hard-depends on FutuOpenD running. If unreachable, the run writes empty .txt files (preserving the daily artifact contract) and skips Futu sync. HK Shorts still works with OpenD down (yfinance-based fallback). Each strategy writes to its own append-only Futu group (`HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`) — must be created manually in the Futu PC client before first run.
+**OpenD soft-depends**: HK long-side k-line + HSI history come from yfinance, so OpenD being down does NOT empty the .txt files. With OpenD down: market caps go to NaN (and the cap≥HK$300M baseline drops everything), the conditional-RS HSI-trigger snapshot is skipped, and Futu sync is skipped — but the rank-and-write logic itself runs to completion. With OpenD up, the pipeline is fully populated. Each strategy writes to its own append-only Futu group (`HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`) — must be created manually in the Futu PC client before first run.
 
 ### Morning Gap (pre-market + intraday, 9 daily scans)
 
