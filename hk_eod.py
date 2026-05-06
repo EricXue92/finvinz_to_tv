@@ -696,13 +696,33 @@ def run_hk_eod(
     codes = [f"HK.0{c}" for c in codes_4d]
     logger.info(f"  Universe: {len(codes)} codes")
 
-    logger.info("[HK Longs] Fetching daily k-line via Futu (10-15 min)...")
+    logger.info("[HK Longs] Fetching daily k-line via Futu (~42 min throttled)...")
     klines = fetch_hk_klines(codes, days=260, host=host, port=port)
     if klines is None:
         logger.warning(
             "[HK Longs] OpenD unreachable — writing empty files for the day"
         )
         klines = {}
+
+    # Log k-line history-depth distribution: this tells us whether Futu is
+    # returning enough history for the RS calculation (which needs ≥ 253 rows
+    # = 12 months). HK k-line for less liquid names is often capped by Futu's
+    # data tier — names with < 253 rows get excluded from the RS percentile
+    # rank (kept as passthrough by filter_by_rs, but they don't contribute
+    # to the percentile distribution).
+    if klines:
+        lens = sorted(len(df) for df in klines.values())
+        n = len(lens)
+        ge253 = sum(1 for l in lens if l >= 253)
+        ge200 = sum(1 for l in lens if l >= 200)
+        ge100 = sum(1 for l in lens if l >= 100)
+        ge20 = sum(1 for l in lens if l >= 20)
+        median = lens[n // 2] if n else 0
+        logger.info(
+            f"[HK Longs] k-line depth: n={n}, median={median} rows; "
+            f">=253: {ge253} ({100*ge253//max(n,1)}%), >=200: {ge200}, "
+            f">=100: {ge100}, >=20: {ge20}"
+        )
 
     # --- Trim incomplete today's bar if running before 20:00 HKT ---
     # The 20:00 HKT slot is when HK k-line is finalized (market closed at
