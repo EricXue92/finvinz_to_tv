@@ -1136,10 +1136,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=["eod", "morning-gap"],
+        choices=["eod", "us-eod", "hk-eod", "morning-gap"],
         default="eod",
-        help="eod: run end-of-day scanners (Longs/Shorts/RS/HK Shorts). "
-             "morning-gap: run intraday gap-up scanner.",
+        help="eod: full end-of-day run (US + HK). "
+             "us-eod: US only (Longs/Leaders/Shorts/RS/IPO) — for the morning HKT slot when HK market is mid-session. "
+             "hk-eod: HK only (Shorts + Longs/Leaders/RS) — for the evening HKT slot after HK market closes. "
+             "morning-gap: intraday gap-up scanner.",
     )
     args = parser.parse_args()
 
@@ -1151,7 +1153,12 @@ def main() -> int:
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
     now_hkt = datetime.now(ZoneInfo("Asia/Hong_Kong"))
-    mode_label = {"eod": "End-of-Day", "morning-gap": "Morning-Gap"}.get(args.mode, args.mode)
+    mode_label = {
+        "eod": "End-of-Day (full)",
+        "us-eod": "End-of-Day (US only)",
+        "hk-eod": "End-of-Day (HK only)",
+        "morning-gap": "Morning-Gap",
+    }.get(args.mode, args.mode)
     banner = f"  RUN {now_hkt.strftime('%Y-%m-%d %A %H:%M %Z')}  |  mode={mode_label}  "
     bar = "═" * (len(banner) + 2)
     logger.info(bar)
@@ -1193,7 +1200,30 @@ def main() -> int:
     hk_output_dir = output_dir / "TV" / "HK"
     hk_output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.mode == "eod":
+    if args.mode == "hk-eod":
+        # HK-only EOD path: skip the entire US pipeline (Finviz screeners, IBD
+        # RS fetch, IPO collection) and run only run_hk_eod. Intended for the
+        # evening HKT launchd slot, after HK market has closed and k-line data
+        # is finalized.
+        try:
+            run_hk_eod(
+                config=config,
+                output_dir=output_dir,
+                today_iso=str(today),
+                write_watchlist=write_watchlist,
+                write_webull=_write_webull,
+                futu_sync=_futu_sync,
+                load_seen=_load_seen,
+                persist_seen=_persist_seen,
+                eod_seen_path=_eod_seen_path,
+                dedup_seen=_dedup_seen,
+            )
+        except Exception as e:
+            logger.warning(f"[HK EOD] Pipeline failed: {e}")
+        logger.info("Done.")
+        return 0
+
+    if args.mode in ("eod", "us-eod"):
         # --- Cross-day master 'seen' files (per market) ---
         # Each EOD group's daily output is filtered against this master so a
         # ticker only ever appears once across all days/groups. Master grows
@@ -1452,21 +1482,26 @@ def main() -> int:
         _futu_sync(config, "ipo", sorted_ipo, "US")
 
         # --- HK EOD pipeline (Shorts + Longs/Leaders/RS) ---
-        try:
-            run_hk_eod(
-                config=config,
-                output_dir=output_dir,
-                today_iso=str(today),
-                write_watchlist=write_watchlist,
-                write_webull=_write_webull,
-                futu_sync=_futu_sync,
-                load_seen=_load_seen,
-                persist_seen=_persist_seen,
-                eod_seen_path=_eod_seen_path,
-                dedup_seen=_dedup_seen,
-            )
-        except Exception as e:
-            logger.warning(f"[HK EOD] Pipeline failed: {e}")
+        # In us-eod mode the HK pipeline is skipped — that's the dedicated
+        # 8 PM HKT hk-eod slot's job, where HK k-line data is finalized
+        # (HK market closed at 16:00 HKT). Running HK here at 10 AM HKT
+        # would feed the cross-day master with incomplete intraday bars.
+        if args.mode == "eod":
+            try:
+                run_hk_eod(
+                    config=config,
+                    output_dir=output_dir,
+                    today_iso=str(today),
+                    write_watchlist=write_watchlist,
+                    write_webull=_write_webull,
+                    futu_sync=_futu_sync,
+                    load_seen=_load_seen,
+                    persist_seen=_persist_seen,
+                    eod_seen_path=_eod_seen_path,
+                    dedup_seen=_dedup_seen,
+                )
+            except Exception as e:
+                logger.warning(f"[HK EOD] Pipeline failed: {e}")
 
         logger.info("Done.")
         return 0
