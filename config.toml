@@ -41,8 +41,14 @@ append_only_groups = [
     "Leaders",
     "Shorts",
     "RS",
-    # "HKShorts",  # HK 扫描已停用 (2026-05-05)
+    "HKShorts",
     "IPO",
+    # HK long-side groups (added 2026-05-06)
+    "HKEarningsGap",
+    "HKHighVolume",
+    "HKGapUp",
+    "HKLeaders",
+    "HKRS",
 ]
 
 [futu.groups]
@@ -57,11 +63,17 @@ longs_new_high_52w = "NewHigh52W"
 longs_top_gainers = "TopGainers"
 shorts = "Shorts"
 rs = "RS"
-# hk_shorts = "HKShorts"  # HK 扫描已停用 (2026-05-05)
+hk_shorts = "HKShorts"
 leaders = "Leaders"
 # IPO collects long-side candidates dropped by yfinance (insufficient daily
 # history). Separate cross-day master (state/eod_seen_IPO.txt), append-only.
 ipo = "IPO"
+# HK long-side groups (Futu-only EOD pipeline, added 2026-05-06)
+hk_longs_earnings_gap = "HKEarningsGap"
+hk_longs_high_volume  = "HKHighVolume"
+hk_longs_gap_up       = "HKGapUp"
+hk_leaders            = "HKLeaders"
+hk_rs                 = "HKRS"
 
 # --- Longs: 5 个子策略，按 list 顺序内部互斥去重，每个单独输出。
 # 优先级 (高 → 低): EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers
@@ -139,24 +151,76 @@ perf_small_cap = 300    # $300M–$2B: month perf >= 300%
 name = "Relative Strength"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
 
-# --- HK Shorts: 基于 HKEX 数据的港股做空筛选，输出为 HongKongShorts/HK_Shorts.txt ---
-# 已停用 (2026-05-05): 只保留美股扫描。如需重新启用，去掉下面整段的 # 即可。
-# main.py 的 `if hk_shorts_cfg:` 会在配置缺失时跳过整个 HK 流程,所以注释掉
-# [hk_shorts] 这一段就够了 — 不需要改任何代码。
+# --- HK Shorts: 基于 HKEX 数据的港股做空筛选，输出为 output/TV/HK/<date>_Shorts.txt ---
+# 重新启用 (2026-05-06): 与新的 HK 长线扫描共享统一阈值。
+# Shorts 保留独立的 1M 日均量门槛（与 US Shorts 对称），
+# 长线 5 个组共用 [hk_settings].min_avg_volume = 500_000。
 
-# [hk_shorts]
-# name = "HK Short Candidates"
-# min_avg_volume = 1_000_000             # 日均成交量 (股)
-# min_market_cap = 300_000_000           # 最低市值 (HKD, 3亿)
-# min_dollar_volume = 100_000_000        # 最低成交额 (HKD)
-# min_consecutive_up_days = 3
-# # 按市值分级的月涨幅阈值 (%)
-# perf_large_cap = 50                    # >= 100亿 HKD
-# perf_mid_cap = 200                     # 20亿-100亿 HKD
-# perf_small_cap = 300                   # 3亿-20亿 HKD
-# # 市值分界线 (HKD)
-# large_cap_threshold = 10_000_000_000
-# mid_cap_threshold = 2_000_000_000
+[hk_shorts]
+name = "HK Short Candidates"
+min_avg_volume = 1_000_000             # 日均成交量 (股) — Shorts 独有的 1M 门槛
+min_market_cap = 300_000_000           # 最低市值 (HKD, 3亿)
+min_dollar_volume = 100_000_000        # 最低成交额 (HKD)
+min_consecutive_up_days = 3
+# 按市值分级的月涨幅阈值 (%)
+perf_large_cap = 50                    # >= 100亿 HKD
+perf_mid_cap = 200                     # 20亿-100亿 HKD
+perf_small_cap = 300                   # 3亿-20亿 HKD
+# 市值分界线 (HKD)
+large_cap_threshold = 10_000_000_000
+mid_cap_threshold = 2_000_000_000
+
+# --- HK Long-side: EarningsGap / HighVolume / GapUp / Leaders / 条件触发 RS ---
+# 数据源: Futu OpenAPI (k-line + snapshot)，与 US 长线扫描方法学对齐，
+# 阈值用 HKD 表示。EarningsGap 用形态识别 (gap + RVol) 替代财报日历。
+
+[hk_settings]
+min_market_cap          = 300_000_000     # HKD
+min_dollar_volume       = 100_000_000     # HKD; 价 × 20 日均量
+min_avg_volume          = 500_000         # 5 个长线组的统一日均量门槛
+min_adr_percent         = 4.0
+min_price               = 20.0            # HKD
+min_rs_percentile_longs = 90              # 与 HSI 比较，本地 IBD 算法
+hsi_rs_trigger          = -1.5            # HSI 当日跌幅 ≤ 此值则触发 RS 组
+
+[[hk_longs]]
+key = "earnings_gap"
+name = "HK Earnings Gap"
+min_relative_volume = 3
+min_gap_percent = 3.0
+
+[[hk_longs]]
+key = "high_volume"
+name = "HK Relative Volume Surge"
+min_relative_volume = 3
+
+[[hk_longs]]
+key = "gap_up"
+name = "HK Gap Up"
+min_gap_percent = 5.0
+
+[[hk_leaders]]
+name = "HK Leaders 4W +30%"
+min_perf_4w = 30
+
+[[hk_leaders]]
+name = "HK Leaders 13W +50%"
+min_perf_13w = 50
+
+[[hk_leaders]]
+name = "HK Leaders 26W +100%"
+min_perf_26w = 100
+
+[[hk_leaders]]
+name = "HK Leaders YTD +100%"
+min_perf_ytd = 100
+
+[[hk_leaders]]
+name = "HK Leaders 52W +150%"
+min_perf_52w = 150
+
+[hk_rs]
+name = "HK Relative Strength"
 
 # --- Morning Gap: 盘前 -20/-10 + 盘后 +10/+15/+20/+25/+30 分钟扫描 ---
 # 负数 offset = 盘前扫描 (输出到 MorningGapPre.txt, 跳过盘中累计成交量过滤);

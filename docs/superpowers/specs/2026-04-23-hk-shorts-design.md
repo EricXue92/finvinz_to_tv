@@ -96,3 +96,4 @@ All changes in `main.py`:
 ## Scheduling
 
 Runs on the same schedule as US (Tue-Sat 6:00 AM HKT). HK market closes at 4 PM HKT the previous day, so data is finalized by run time.
+
