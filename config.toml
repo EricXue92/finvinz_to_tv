@@ -176,7 +176,11 @@ mid_cap_threshold = 2_000_000_000
 
 [hk_settings]
 min_market_cap          = 300_000_000     # HKD
-min_dollar_volume       = 100_000_000     # HKD; 价 × 20 日均量
+# 调低至 HK$50M (US 用 $100M USD)。HK 流动性结构性比 US 薄约 10× —
+# 2026-05-06 漏斗诊断显示 HK$100M 砍掉 89% 的全市场 (149/1384)，是
+# baseline 里最紧的门槛。HK$50M 仍保留有意义的日成交额下限，预期
+# 把 baseline-AND 从 ~48 提升到 ~100。
+min_dollar_volume       = 50_000_000      # HKD; 价 × 20 日均量
 min_avg_volume          = 500_000         # 5 个长线组的统一日均量门槛
 # ADR% 调低至 3.5 (US 用 4.0)。HK 蓝筹波动率结构性低于 US — 5 只样本中
 # (00700/00005/01810/01211/09988) 仅 1 只过 ADR>=4，长期会把整个百强股
