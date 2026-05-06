@@ -283,8 +283,11 @@ def filter_hk_shorts(
 
     logger.info(f"  {len(phase5)} after consecutive up days filter (>= {min_up_days})")
 
-    # Convert to TradingView format: 0700.HK → HKEX:0700
-    tv_tickers = ["HKEX:" + t.replace(".HK", "") for t in phase5]
+    # Convert to TradingView format: 0700.HK → HKEX:700.
+    # TradingView rejects HK tickers with leading zeros (HKEX:0148 won't
+    # import — must be HKEX:148); strip leading zeros from the 4-digit
+    # yfinance code before prefixing.
+    tv_tickers = ["HKEX:" + (t.replace(".HK", "").lstrip("0") or "0") for t in phase5]
     return len(codes), tv_tickers
 
 
@@ -703,8 +706,12 @@ from pathlib import Path
 
 
 def _to_tv(code: str) -> str:
-    """``HK.00700`` → ``HKEX:0700`` (matches existing HK Shorts TV format)."""
-    return "HKEX:" + code.replace("HK.0", "", 1)
+    """``HK.00700`` → ``HKEX:700``. TradingView rejects HK tickers with
+    leading zeros (e.g. ``HKEX:0148`` won't import — must be ``HKEX:148``).
+    Strip the ``HK.`` prefix and any leading zeros; fall back to ``"0"``
+    in the degenerate all-zero case so the output is never empty."""
+    stripped = code.replace("HK.", "", 1).lstrip("0")
+    return "HKEX:" + (stripped or "0")
 
 
 def run_hk_eod(
