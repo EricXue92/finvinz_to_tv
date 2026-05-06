@@ -320,8 +320,7 @@ def fetch_hk_klines_yf(
     # (main.py imports from hk_eod, hk_eod imports from main only at call time).
     from main import (
         _yf_download_with_retry,
-        _get_closes_volumes,
-        _get_ohlc,
+        _retry_sparse_in_batch,
         _trim_today,
     )
 
@@ -333,6 +332,7 @@ def fetch_hk_klines_yf(
         logger.info("[HK Longs] HK market in session — _trim_today will drop today's incomplete bar.")
 
     result: dict[str, pd.DataFrame] = {}
+    drop_buckets = {"missing": 0, "sparse": 0, "shape_err": 0, "ok": 0}
     n_batches = (len(yf_tickers) - 1) // batch_size + 1
     for bidx, start in enumerate(range(0, len(yf_tickers), batch_size), start=1):
         batch = yf_tickers[start:start + batch_size]
@@ -342,42 +342,58 @@ def fetch_hk_klines_yf(
         )
         if batch_data is None or batch_data.empty:
             logger.warning(f"[HK Longs]   batch failed after retries, skipping {len(batch)} tickers")
+            drop_buckets["missing"] += len(batch)
             continue
 
-        single = len(batch) == 1
+        # yfinance batch responses occasionally drop legitimate tickers (all-
+        # NaN columns) due to transient Yahoo errors; the single-ticker retry
+        # usually recovers them. Without this we lose ~30-40% of the universe
+        # on a flaky-yfinance day (e.g. 1384/2420 = 57% on 2026-05-06 13:57).
+        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=20)
+
+        # Build OHLCV per ticker by reading directly from the batch_data
+        # MultiIndex (rather than calling _get_closes_volumes / _get_ohlc
+        # which each do their own .dropna() and risk shape mismatch).
         for ticker in batch:
             try:
-                closes, volumes = _get_closes_volumes(batch_data, ticker, single)
-                highs, lows, opens = _get_ohlc(batch_data, ticker, single)
-                closes = _trim_today(closes, market_open, today)
-                volumes = _trim_today(volumes, market_open, today)
-                highs = _trim_today(highs, market_open, today)
-                lows = _trim_today(lows, market_open, today)
-                opens = _trim_today(opens, market_open, today)
-                if len(closes) < 2:
+                if ticker not in batch_data.columns.get_level_values(0).unique():
+                    drop_buckets["missing"] += 1
                     continue
+                sub = batch_data[ticker]
                 df = pd.DataFrame({
-                    "time_key": pd.to_datetime(closes.index),
-                    "open": opens.values,
-                    "high": highs.values,
-                    "low": lows.values,
-                    "close": closes.values,
-                    "volume": volumes.values,
+                    "time_key": pd.to_datetime(sub.index),
+                    "open": sub["Open"].values,
+                    "high": sub["High"].values,
+                    "low": sub["Low"].values,
+                    "close": sub["Close"].values,
+                    "volume": sub["Volume"].values,
                 })
                 df = df.dropna(subset=["close"]).reset_index(drop=True)
+                # Trim today's incomplete bar during HK market hours
+                if market_open and len(df) and df["time_key"].iloc[-1].date() == today:
+                    df = df.iloc[:-1].reset_index(drop=True)
                 if len(df) < 2:
+                    drop_buckets["sparse"] += 1
                     continue
                 # 4-digit yfinance ticker '0700.HK' → 5-digit Futu code 'HK.00700'
                 code_4d_only = ticker.replace(".HK", "")
                 futu_code = f"HK.0{code_4d_only}"
                 result[futu_code] = df
-            except (KeyError, TypeError, ValueError):
+                drop_buckets["ok"] += 1
+            except (KeyError, TypeError, ValueError) as e:
+                drop_buckets["shape_err"] += 1
+                if drop_buckets["shape_err"] <= 5:
+                    logger.warning(f"[HK Longs]   {ticker}: {type(e).__name__}: {e}")
                 continue
 
         if bidx < n_batches:
             time.sleep(5)
 
-    logger.info(f"[HK Longs] yfinance fetch done: {len(result)}/{len(yf_tickers)} tickers with usable history")
+    logger.info(
+        f"[HK Longs] yfinance fetch done: {len(result)}/{len(yf_tickers)} tickers "
+        f"(ok={drop_buckets['ok']}, missing={drop_buckets['missing']}, "
+        f"sparse={drop_buckets['sparse']}, shape_err={drop_buckets['shape_err']})"
+    )
     return result
 
 
@@ -386,10 +402,10 @@ def fetch_hsi_kline_yf(period: str = "2y") -> pd.DataFrame | None:
     the same columns as ``fetch_hk_klines_yf`` rows, or ``None`` on failure.
 
     Note: yfinance with ``group_by="ticker"`` returns a MultiIndex DataFrame
-    even when the input is a single-element list, so ``single=False`` here
-    even though there's only one ticker.
+    even when the input is a single-element list, so we index via
+    ``data["^HSI"]`` to get the OHLCV grid directly.
     """
-    from main import _yf_download_with_retry, _get_closes_volumes, _get_ohlc
+    from main import _yf_download_with_retry
 
     data = _yf_download_with_retry(
         ["^HSI"], period=period, progress=False, group_by="ticker", threads=False,
@@ -398,15 +414,14 @@ def fetch_hsi_kline_yf(period: str = "2y") -> pd.DataFrame | None:
         logger.warning("[HK Longs] HSI yfinance fetch returned empty")
         return None
     try:
-        closes, volumes = _get_closes_volumes(data, "^HSI", single=False)
-        highs, lows, opens = _get_ohlc(data, "^HSI", single=False)
+        sub = data["^HSI"]
         df = pd.DataFrame({
-            "time_key": pd.to_datetime(closes.index),
-            "open": opens.values,
-            "high": highs.values,
-            "low": lows.values,
-            "close": closes.values,
-            "volume": volumes.values,
+            "time_key": pd.to_datetime(sub.index),
+            "open": sub["Open"].values,
+            "high": sub["High"].values,
+            "low": sub["Low"].values,
+            "close": sub["Close"].values,
+            "volume": sub["Volume"].values,
         })
         return df.dropna(subset=["close"]).reset_index(drop=True)
     except (KeyError, TypeError, ValueError) as e:
