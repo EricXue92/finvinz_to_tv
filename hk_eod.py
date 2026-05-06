@@ -914,8 +914,14 @@ def run_hk_eod(
     # Board universe that yfinance returned but with insufficient history
     # for the IBD 12-month RS calc (< 253 rows). These are almost always
     # fresh HK IPOs that aged into yfinance but haven't accumulated 12mo
-    # of data yet. NOT RS-gated. NOT subject to baseline ADR/$vol/avg_vol
-    # gates (those need 20-day windows that IPOs may not have).
+    # of data yet. NOT RS-gated. NOT subject to ADR/SMA gates (those need
+    # 20–200 trading days that IPOs may not have).
+    #
+    # Volume filters apply *conditionally*: a ticker that already has 20+
+    # trading days must clear avg_vol >= 500K AND $vol >= HK$100M (same
+    # values as the long-side baseline, which makes graduation seamless).
+    # If the ticker has < 20 trading days, both volume gates are skipped
+    # so true "freshly listed" names still surface.
     #
     # Independent cross-day master at output/state/eod_seen_HKIPO.txt — a
     # ticker collected today as an IPO drop still lands in its proper
@@ -923,28 +929,44 @@ def run_hk_eod(
     # side master eod_seen_HK.txt is separate, so no cross-contamination).
     ipo_cap = hk_settings.get("min_market_cap", 300_000_000)
     ipo_min_price = hk_settings.get("min_price", 20.0)
+    ipo_min_avg_vol = hk_settings.get("min_avg_volume", 500_000)
+    ipo_min_dvol = hk_settings.get("min_dollar_volume", 100_000_000)
     ipo_codes: list[str] = []
+    ipo_dropped = {"cap": 0, "price": 0, "avg_vol": 0, "dvol": 0}
     for code, df in klines.items():
         if len(df) >= 253:
             continue  # full history; goes through normal long-side flow
         if code not in metrics.index:
             continue
         row = metrics.loc[code]
-        if (
-            pd.notna(row["market_cap"])
-            and row["market_cap"] >= ipo_cap
-            and pd.notna(row["last_price"])
-            and row["last_price"] >= ipo_min_price
-        ):
-            ipo_codes.append(code)
+        if not (pd.notna(row["market_cap"]) and row["market_cap"] >= ipo_cap):
+            ipo_dropped["cap"] += 1
+            continue
+        if not (pd.notna(row["last_price"]) and row["last_price"] >= ipo_min_price):
+            ipo_dropped["price"] += 1
+            continue
+        # Conditional volume filters: only enforce when the ticker has 20+
+        # trading days (i.e., avg_vol_20d / avg_dollar_vol_20d are not NaN).
+        # build_metrics_frame returns NaN for both when n < 20.
+        if pd.notna(row["avg_vol_20d"]):
+            if row["avg_vol_20d"] < ipo_min_avg_vol:
+                ipo_dropped["avg_vol"] += 1
+                continue
+            if pd.notna(row["avg_dollar_vol_20d"]) and row["avg_dollar_vol_20d"] < ipo_min_dvol:
+                ipo_dropped["dvol"] += 1
+                continue
+        ipo_codes.append(code)
 
     ipo_seen_path = eod_seen_path(output_dir, "HKIPO")
     ipo_seen = load_seen(ipo_seen_path)
     ipo_tv = sorted(_to_tv(c) for c in ipo_codes)
     logger.info(
-        f"[HK IPO] {len(ipo_codes)} candidates after baseline (cap>={ipo_cap:,.0f}, "
-        f"price>={ipo_min_price}); raw klines<253: "
-        f"{sum(1 for df in klines.values() if len(df) < 253)}"
+        f"[HK IPO] {len(ipo_codes)} candidates after baseline "
+        f"(cap>={ipo_cap:,.0f}, price>={ipo_min_price}, "
+        f"+conditional avg_vol>={ipo_min_avg_vol:,.0f} & "
+        f"$vol>={ipo_min_dvol:,.0f} when 20d window available); "
+        f"raw klines<253: {sum(1 for df in klines.values() if len(df) < 253)}; "
+        f"dropped: {ipo_dropped}"
     )
     ipo_tv = dedup_seen("[HK IPO]", ipo_tv, ipo_seen, ipo_seen_path)
     dated_ipo = hk_output_dir / f"{today_iso}_IPO.txt"

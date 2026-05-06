@@ -123,7 +123,7 @@ Five strategies sourced from **yfinance** (k-line + HSI) plus **Futu** (market c
 
 Mirrors the US IPO sidecar. Tickers in the HKEX Main Board universe that yfinance returned but with `< 253 rows of daily close` (insufficient for the IBD 12-month RS calc) — almost always fresh HK IPOs that aged into yfinance but haven't accumulated 12 months of data yet.
 
-- **Lighter baseline than long-side:** only `cap ≥ HK$300M` and `price ≥ HK$20` are applied. Skips ADR / $vol / avg vol / SMA50 / SMA200 / RS, all of which need 20+ trading days that an IPO may not have.
+- **Lighter baseline than long-side:** `cap ≥ HK$300M` and `price ≥ HK$20` always apply. `avg vol ≥ 500K` and `$vol ≥ HK$100M` apply **conditionally** — only when the ticker already has ≥20 trading days. True freshly-listed names with < 20 days bypass both volume gates so they still surface. SMA50 / SMA200 / ADR / RS are skipped entirely (those are signals that need a longer window than an IPO has).
 - **Output:** `output/TV/HK/<date>_IPO.txt`, mirrored to Webull.
 - **Independent cross-day master:** `output/state/eod_seen_HKIPO.txt`. Once an IPO ages into ≥253 rows, it falls out of the IPO bucket and lands in its proper long-side group on the first qualifying day (the long-side master `eod_seen_HK.txt` is separate, no cross-contamination).
 - **Futu group:** append-only `HKIPO` — must be created manually in the Futu PC client before first run.
