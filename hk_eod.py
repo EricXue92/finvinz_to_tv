@@ -672,6 +672,30 @@ def run_hk_eod(
         )
         klines = {}
 
+    # --- Trim incomplete today's bar if running before 20:00 HKT ---
+    # The 20:00 HKT slot is when HK k-line is finalized (market closed at
+    # 16:00, +4 hours of slack). Any earlier run sees a partial bar — during
+    # market hours it's a moving snapshot; immediately post-close (16:00–
+    # 20:00) Futu hasn't always settled the day's bar. So unless we're past
+    # 20:00 HKT, drop today's bar from every k-line and use yesterday's
+    # close as "the latest bar". Weekend runs trim a date with no bar
+    # anyway, so this is a no-op then.
+    hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    use_yesterday = hkt_now.hour < 20
+    if use_yesterday and klines:
+        today_d_local = hkt_now.date()
+        trimmed = 0
+        for code, df in list(klines.items()):
+            mask = df["time_key"].dt.date < today_d_local
+            if (~mask).any():
+                trimmed += 1
+            klines[code] = df[mask].reset_index(drop=True)
+        logger.info(
+            f"[HK Longs] Pre-20:00 HKT run (now {hkt_now.strftime('%H:%M')}); "
+            f"trimmed today's incomplete bar from {trimmed} tickers — "
+            f"using previous-day close as 'latest'."
+        )
+
     logger.info("[HK Longs] Fetching market caps via Futu snapshot...")
     # get_market_caps_futu wants TV format input; we pass it and re-key back to Futu format
     tv_codes = [_to_tv(c) for c in klines.keys()]
@@ -686,26 +710,44 @@ def run_hk_eod(
     logger.info(f"  Metrics: {len(metrics)} tickers with usable history")
 
     # --- RS table ---
+    # today_iso comes from main.py as 'YYYY_MM_DD' (filename-friendly), which
+    # pd.Timestamp can't parse. Use the actual current date for the cache key
+    # — when use_yesterday is True we still cache under today's date because
+    # the cache is keyed by run-day, not by data-day.
     from hk_rs import compute_rs_table, filter_by_rs, save_cache, load_cache
-    today_d = pd.Timestamp(today_iso).date()
+    today_d = date.today()
     rs_table = load_cache(today_d, output_dir)
     if rs_table is None and klines:
         hsi_data = fetch_hk_klines(["HK.800000"], days=260, host=host, port=port) or {}
         hsi_kline = hsi_data.get("HK.800000")
         if hsi_kline is not None and not hsi_kline.empty:
+            if use_yesterday:
+                hsi_kline = hsi_kline[hsi_kline["time_key"].dt.date < today_d].reset_index(drop=True)
             rs_table = compute_rs_table(klines, hsi_kline)
             save_cache(rs_table, today_d, output_dir)
         else:
             logger.warning("[HK Longs] HSI k-line fetch failed — RS gate disabled")
 
     # --- Apply per-strategy filters ---
+    # The conditional RS group keys off HSI's "today" day-change. When
+    # use_yesterday is True the live HSI snapshot reflects a state that
+    # doesn't match the trimmed k-line data, so the trigger is meaningless
+    # — skip the RS group in that case.
     rs_trigger = hk_settings.get("hsi_rs_trigger", -1.5)
-    hsi_change = hsi_day_change_pct(host=host, port=port)
-    rs_enabled = hsi_change is not None and hsi_change <= rs_trigger
-    logger.info(
-        f"[HK Longs] HSI day-change={hsi_change} (trigger {rs_trigger}); "
-        f"RS group {'ENABLED' if rs_enabled else 'skipped'}"
-    )
+    if use_yesterday:
+        hsi_change = None
+        rs_enabled = False
+        logger.info(
+            "[HK Longs] Pre-20:00 run uses yesterday's close — HSI conditional "
+            "RS group skipped (live HSI day-change does not match trimmed bars)."
+        )
+    else:
+        hsi_change = hsi_day_change_pct(host=host, port=port)
+        rs_enabled = hsi_change is not None and hsi_change <= rs_trigger
+        logger.info(
+            f"[HK Longs] HSI day-change={hsi_change} (trigger {rs_trigger}); "
+            f"RS group {'ENABLED' if rs_enabled else 'skipped'}"
+        )
 
     raw = apply_strategy_filters(metrics, hk_settings, hk_longs, hk_leaders, rs_enabled)
 
