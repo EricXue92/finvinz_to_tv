@@ -6,23 +6,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync                              # Install dependencies
-uv run main.py                       # EOD pipeline (Longs/Leaders/Shorts/RS/IPO/HK Shorts)
+uv run main.py                       # EOD pipeline (US Longs/Leaders/Shorts/RS/IPO + HK Shorts/Longs/Leaders/RS)
 uv run main.py --mode morning-gap    # intraday gap scan; auto-detects ET window, exits clean outside
+uv run pytest tests/ -v              # Unit tests (HK pure-logic helpers)
 ```
 
 ## Architecture
 
-Python tool: `main.py` (entry point + all EOD/morning-gap pipelines), `rs_rating.py` (IBD RS table fetcher), `futu_sync.py` (Futu OpenAPI mirror), `notify.py` (ntfy push for morning-gap). Scrapes Finviz (US EOD), HKEX + yfinance (HK), and Futu snapshots (intraday gaps), outputting TradingView- and Webull-importable `.txt` watchlists.
+Python tool: `main.py` (entry point + US EOD/morning-gap orchestration), `hk_eod.py` (full HK pipeline: Shorts + Longs/Leaders/RS, Futu-only data source), `hk_rs.py` (local IBD-style RS percentile vs HSI), `rs_rating.py` (US IBD RS table fetcher), `futu_sync.py` (Futu OpenAPI mirror), `notify.py` (ntfy push for morning-gap). Scrapes Finviz (US EOD), HKEX securities list (HK universe), Futu snapshots/k-line (HK long-side + intraday gaps), and yfinance (US post-processing + HK Shorts). Outputs TradingView- and Webull-importable `.txt` watchlists.
 
 **Flow:** Load `config.toml` → Run screener groups sequentially → Deduplicate → Write output files to `output/TV/US/` and `output/TV/HK/` (TradingView format) and mirror to `output/Webull/{US,HK}/` (newline-separated, for Webull import)
 
-**Seven screener groups** (six EOD + one intraday-only):
+**Twelve screener groups** (eleven EOD + one intraday-only):
 - **Longs** (`[[longs]]` in config): 5 strategies, each written to its **own** file (no merged `Longs.txt`). Config list order = priority for internal mutual-exclusion dedup: `EarningsGap > HighVolume (Relative Volume Surge) > GapUp > NewHigh52W > TopGainers` → `output/TV/US/{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers}.txt`. Each `[[longs]]` entry has a `key` field; the matching `longs_<key>` entry under `[futu.groups]` supplies both the Futu group name and the .txt filename stem. The union of all 5 acts as a "virtual Longs" for the cross-group `Longs > Leaders > RS` dedup. Based on Oliver Kell's methodology. HighVolume uses yfinance post-processing for 20-day relative volume (configurable via `min_relative_volume` and `relative_volume_days`).
 - **Leaders** (`[[leaders]]`): 5 strategies sharing a base filter set (cap_smallover, avg vol >500K, price >$20, above SMA50/SMA200) but differing in performance window (4w/13w/26w/YTD/52w), merged → `output/TV/US/Leaders.txt`. Global `min_dollar_volume` ($100M, 20-day avg) and `min_adr_percent` (>= 4.0%, 20-day) apply. The legacy `ta_beta_o1.5` filter has been removed across every Finviz group; ADR% is the replacement.
 - **Shorts** (`[shorts]`): Single strategy with multi-phase filtering → `output/TV/US/Shorts.txt`. Based on Kristjan Kullamägi's blog criteria. Runs Finviz Ownership screener (SMA20+20%, avg vol >1M, cap >$300M) for market cap data, then post-processes via yfinance for cap-conditional performance (2/3/4-week windows: 10, 15, 22 trading days), dollar volume, and consecutive up days.
 - **RS** (`[rs]`): Conditional → `output/TV/US/RS.txt`. Only runs when both SPY and QQQ drop >1.5% (checked via `finviz.get_stock()`). Based on Oliver Kell's relative strength approach.
 - **IPO** (no config): Auto-collected sidecar of the long-side pipeline → `output/TV/US/<date>_IPO.txt`. Tickers that pass any long-side Finviz screener (Longs/Leaders/RS) but get dropped by yfinance for missing/insufficient daily history (typically the "insufficient data" / "failed to process" warnings). These are almost always fresh IPOs that lack the 20+ daily bars needed for DV/ADR/RVol. Has its own append-only Futu group `IPO` and its own cross-day master `output/state/eod_seen_IPO.txt` — the IPO master is independent of `eod_seen_US.txt`, so a ticker that ages into having enough yfinance data still lands in its proper long-side group on the first qualifying day. ADR% < min and dollar-volume < min rejections are NOT IPO drops (they're real filter rejections, not data gaps).
-- **HK Shorts** (`[hk_shorts]`): Hong Kong market short candidates → `output/TV/HK/Shorts.txt`. Same methodology as US Shorts but sources data from HKEX securities list + yfinance. Uses HKD-native cap thresholds. Batch-downloads ~2,400 tickers in groups of 500.
+- **HK Shorts** (`[hk_shorts]`): Hong Kong market short candidates → `output/TV/HK/<date>_Shorts.txt`. Same methodology as US Shorts but sources data from HKEX securities list + yfinance. Uses HKD-native cap thresholds. Batch-downloads ~2,400 tickers in groups of 500. Retains its own `min_avg_volume = 1_000_000` floor (the 5 HK long-side groups share a 500K floor instead).
+- **HK Long-side** (`[hk_settings]` + `[[hk_longs]]` + `[[hk_leaders]]` + `[hk_rs]`): Five strategies sourced entirely from Futu OpenAPI (k-line + snapshot — **no yfinance for HK long-side**). Universe = HKEX Main Board equities (~2,400). All five share a baseline: cap ≥ HK$300M, avg vol ≥ 500K shares/day, $vol ≥ HK$100M, ADR ≥ 4%, price ≥ HK$20, RS ≥ 90 (vs HSI). Cross-strategy priority: `EarningsGap > HighVolume > GapUp > Leaders > RS`. Each writes to its own `output/TV/HK/<date>_<Name>.txt`:
+  - **HK EarningsGap** — pattern-based proxy for post-earnings setups (gap ≥ 3% + RVol ≥ 3). No HK earnings calendar, so the high-volume gap-up *pattern* is the signal.
+  - **HK HighVolume** — RVol ≥ 3 (relative volume surge).
+  - **HK GapUp** — gap ≥ 5%.
+  - **HK Leaders** — above SMA50 & SMA200 + ANY of (4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150). All 5 windows merged into one `Leaders.txt`.
+  - **HK RS** — conditional. Only runs when HSI day-change ≤ −1.5% (Futu snapshot of `HK.800000`). Above SMA50 & SMA200; no perf gate. Output: `output/TV/HK/<date>_RS.txt`.
+  - **OpenD requirement**: HK long-side hard-depends on FutuOpenD running. If unreachable, the run writes empty .txt files (preserving the daily artifact contract) and skips Futu sync. HK Shorts still works with OpenD down (yfinance-based).
 - **Morning Gap** (`--mode morning-gap` only; `[morning_gap]` config): Intraday gap-up scanner. **Pre-market** (-20/-10 min) → `MorningGapPre.txt`; **post-open** (+10/+15/+20/+25/+30 min) → `MorningGap.txt`. Phase 1 = Futu snapshot universe scan (NASDAQ/NYSE/AMEX, cap ≥ $300M, price ≥ $10, gap ≥ 5%). Phase 2 = yfinance DV/ADR/SMA/avg-vol + Futu intraday cumulative volume (post-open only; ≥ 20-day avg daily volume). Per-day seen file at `output/state/morning_gap_seen_<date>.txt`. Both files merge into the append-only `EarningsGap` Futu group. **Requires OpenD** — no Finviz fallback. Each scan that surfaces NEW tickers triggers an ntfy push via `notify.py`.
 
 **Key mechanisms:**
@@ -30,9 +38,9 @@ Python tool: `main.py` (entry point + all EOD/morning-gap pipelines), `rs_rating
 - Every dated write is mirrored to `output/Webull/{US,HK}/<same-filename>.txt` as **one ticker per line** (newline-separated, no exchange prefix change). Webull's "Upload as File" silently truncates comma-separated lists after the first 1-2 entries — the newline mirror is what you upload there. The TradingView `.txt` in `output/TV/{US,HK}/` stays comma-separated. `_write_webull(tickers, dated_path, output_dir)` runs after each `write_watchlist` call.
 - `write_watchlist(tickers, output_path, fmt)`: unconditional writer. Always writes the dated file, even when `tickers` is empty (produces a 0-byte file for the day). No drop-guard / baseline comparison — every run leaves an artifact and Futu syncs to whatever was just written.
 - **Cross-group dedup (Longs/Leaders/RS)**: Two layers. (1) Within Longs, the 5 strategies are deduped by config-list order — earlier wins. (2) After all three long-side groups have been collected, the Longs union is deduped against Leaders and RS with priority `Longs(union) > Leaders > RS` so each ticker appears in exactly one of the 7 long-side files (5 Longs splits + Leaders + RS) per run. The collection-then-write split means all Longs splits, Leaders, and RS files are written only after RS has finished. Shorts and HK Shorts are independent and written inline.
-- **Cross-day master dedup** (`output/state/eod_seen_{US,HK,IPO}.txt`, implemented in `_dedup_seen`): applied to long-side EOD groups (5 Longs splits + Leaders + RS) AFTER within-day priority dedup. Each daily output = within-day survivors **minus** master; new survivors append to master. Net effect: every long-side ticker enters exactly ONE of the 7 EOD groups on first sighting and never reappears in any long-side `.txt` / Webull / Futu push. Reset by deleting the file (manual only).
+- **Cross-day master dedup** (`output/state/eod_seen_{US,HK,IPO}.txt`, implemented in `_dedup_seen`): applied to long-side EOD groups (5 US Longs splits + Leaders + RS; 5 HK long-side groups) AFTER within-day priority dedup. Each daily output = within-day survivors **minus** master; new survivors append to master. Net effect: every long-side ticker enters exactly ONE of its market's long-side groups on first sighting and never reappears in any long-side `.txt` / Webull / Futu push. Reset by deleting the file (manual only). **Markets are independent**: `eod_seen_US.txt` and `eod_seen_HK.txt` never cross-contaminate — a ticker dual-listed in both markets (rare for our universe) would track separately.
   - **IPO has its own master** `eod_seen_IPO.txt`, independent of `eod_seen_US.txt` — a ticker collected as an IPO drop today still lands in its proper long-side group on the first day it has enough yfinance history.
-  - **Excluded**: Shorts, HK Shorts, Morning Gap. Short setups are time-sensitive (parabolic blow-off can re-qualify weeks later), so re-detection is meaningful and a Shorts hit today does NOT suppress a future Longs hit on the same ticker. Morning Gap uses its own per-day seen file `output/state/morning_gap_seen_<date>.txt`.
+  - **Excluded**: US Shorts, HK Shorts, Morning Gap. Short setups are time-sensitive (parabolic blow-off can re-qualify weeks later), so re-detection is meaningful and a Shorts hit today does NOT suppress a future Longs hit on the same ticker. Morning Gap uses its own per-day seen file `output/state/morning_gap_seen_<date>.txt`.
   - **Futu side**: long-side groups are in `[futu] append_only_groups` so they accumulate monotonically — the dated `.txt` records "today's NEW additions"; the Futu group records the all-time union. Shorts/HKShorts are also append-only on Futu but the daily `.txt` contains every Finviz-detected short for the day (including re-detections).
 - 8-second delay between Finviz requests to avoid rate limiting (configurable in `config.toml`).
 
@@ -44,7 +52,15 @@ Python tool: `main.py` (entry point + all EOD/morning-gap pipelines), `rs_rating
 
 ## IBD Relative Strength Rating
 
+Two separate RS implementations — one per market.
+
+### US: `rs_rating.py` (CSV-based, vs SPY)
+
 `rs_rating.py` pulls the daily IBD-style RS percentile table (0-99) from `Fred6725/rs-log/output/rs_stocks.csv` (the published artifact of the [Fred6725/relative-strength](https://github.com/Fred6725/relative-strength) GitHub Action) and exposes a filter applied to gated EOD groups **right after `run_screener`** (or after the Finviz Ownership screener for Shorts) — placed before any yfinance batch download so the gate cuts most tickers before the expensive step. All US EOD long-side groups plus US Shorts gate at **RS ≥ 90** (top 10%): **Leaders** uses `min_rs_percentile`; **Longs (5 splits) + RS group + US Shorts** share `min_rs_percentile_longs`. HK Shorts, Morning Gap, and IPO are NOT RS-gated.
+
+### HK: `hk_rs.py` (computed locally, vs HSI)
+
+The Fred6725 CSV is US-only, so HK long-side groups use a **separate local RS computation**. Same algorithm (`RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12`) but the benchmark is HSI (Futu code `HK.800000`) instead of SPY, and the percentile is ranked across the HK Main Board universe (~2,400 tickers) instead of US. Computed in-process from the same Futu k-line batch already pulled for the metrics frame, so there's no separate fetch step. Cached to `output/state/hk_rs_rating_<date>.csv`. All 5 HK long-side groups gate at `[hk_settings] min_rs_percentile_longs = 90`. HK Shorts is NOT RS-gated.
 
 - **Algorithm**: `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY's same-formula score, then percentile-ranked across ~6100 NYSE/NASDAQ stocks (ETFs and test issues excluded). All 0-99 percentiles are pre-computed in the CSV — we don't recompute anything.
 - **Caching**: First call per day downloads to `output/state/rs_rating_<date>.csv`; subsequent calls (e.g. ad-hoc re-runs) read the cache.
@@ -64,14 +80,14 @@ Uses `finviz` package (web scraping, no API key needed):
 `futu_sync.py` mirrors each successfully-written watchlist into a Futu custom watchlist group via the `futu-api` SDK. The `.txt` files remain the primary artifact — Futu sync is a soft side-effect that logs a warning on any failure and never raises.
 
 **Architecture:**
-- Hooks fire after every `write_watchlist` of the dated file in `main.py` — one call per group: each Longs split (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers), Leaders, Shorts, RS, IPO, HKShorts, MorningGap, MorningGapPre. Empty result = empty .txt **but Futu sync is skipped** so the existing Futu group is preserved (handled by `_futu_sync` early-return on empty `tickers`).
-- `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running.
+- Hooks fire after every `write_watchlist` of the dated file in `main.py` / `hk_eod.py` — one call per group: each US Longs split (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers), US Leaders/Shorts/RS/IPO, HKShorts + 5 HK long-side groups (HKEarningsGap/HKHighVolume/HKGapUp/HKLeaders/HKRS), MorningGap, MorningGapPre. Empty result = empty .txt **but Futu sync is skipped** so the existing Futu group is preserved (handled by `_futu_sync` early-return on empty `tickers`).
+- `_futu_sync(config, key, tickers, market)` helper in `main.py` is a no-op when `[futu] enabled = false` or the group isn't mapped, so the EOD/morning-gap pipelines work identically with or without OpenD running. **Note:** the HK long-side pipeline still hard-depends on OpenD for the k-line/snapshot data fetch — Futu sync being soft-fail doesn't mean the data fetch is.
 - `sync_to_futu()` is **diff-based**: calls `get_user_security(group_name)` for current contents, computes set diff, then issues at most one `DEL` and one `ADD` (under the 10-call/30s API rate limit).
-- **Append-only / merged groups**: When a group is listed in `[futu] append_only_groups`, `sync_to_futu(append_only=True)` skips the DEL phase — tickers only accumulate. **All EOD groups** (`EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO`) are append-only to pair with the cross-day master dedup. The merged `EarningsGap` group additionally receives `morning_gap` + `morning_gap_pre`. Groups grow monotonically across runs and must be cleared manually in the Futu client when they get too crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
+- **Append-only / merged groups**: When a group is listed in `[futu] append_only_groups`, `sync_to_futu(append_only=True)` skips the DEL phase — tickers only accumulate. **All EOD groups** (US: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `IPO`; HK: `HKShorts`, `HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`) are append-only to pair with the cross-day master dedup. The merged `EarningsGap` group additionally receives `morning_gap` + `morning_gap_pre`. Groups grow monotonically across runs and must be cleared manually in the Futu client when they get too crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
 
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
-2. In the Futu PC client, manually create the 10 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO`. **The API cannot create groups — it can only modify existing custom groups.** The earnings-gap, pre-market and post-open morning-gap scans all sync into the single append-only `EarningsGap` group.
+2. In the Futu PC client, manually create the 15 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO`, `HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`. **The API cannot create groups — it can only modify existing custom groups.** The earnings-gap, pre-market and post-open morning-gap scans all sync into the single append-only `EarningsGap` group.
 3. The morning-gap scan now **requires** OpenD running — discovery is
    Futu-snapshot based (it no longer depends on Finviz). With OpenD down,
    `--mode morning-gap` writes empty `.txt` files and skips the Futu sync,
@@ -87,6 +103,7 @@ port = 11111
 append_only_groups = [
     "EarningsGap", "HighVolume", "GapUp", "NewHigh52W", "TopGainers",
     "Leaders", "Shorts", "RS", "HKShorts", "IPO",
+    "HKEarningsGap", "HKHighVolume", "HKGapUp", "HKLeaders", "HKRS",
 ]
 
 [futu.groups]
@@ -102,6 +119,12 @@ rs = "RS"
 hk_shorts = "HKShorts"
 leaders = "Leaders"
 ipo = "IPO"                          # auto-collected; long-side yfinance drops
+# HK long-side groups (Futu-only EOD, added 2026-05-06)
+hk_longs_earnings_gap = "HKEarningsGap"
+hk_longs_high_volume  = "HKHighVolume"
+hk_longs_gap_up       = "HKGapUp"
+hk_leaders            = "HKLeaders"
+hk_rs                 = "HKRS"
 ```
 
 **Ticker format conversion (`_to_futu_code`):**

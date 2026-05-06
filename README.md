@@ -2,7 +2,7 @@
 
 Multi-source momentum and short screeners (US via Finviz, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI, based on Oliver Kell and Kristjan Kullamägi.
 
-> **Status (2026-05-05):** US-only. The HK Shorts pipeline is disabled in `config.toml` (`[hk_shorts]` commented out). Code path is preserved — uncomment to re-enable.
+> **Status (2026-05-06):** US + HK. US uses Finviz + yfinance + IBD RS CSV. HK uses Futu OpenAPI for the long-side (HK EarningsGap / HighVolume / GapUp / Leaders / conditional RS) plus the existing yfinance-based HK Shorts. HK long-side hard-depends on FutuOpenD running.
 
 ## Screeners
 
@@ -85,11 +85,38 @@ Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get droppe
 - Has its own cross-day master `output/state/eod_seen_IPO.txt`. Once a ticker has enough yfinance bars to pass DV/ADR/RVol, it lands in its proper long-side group on the first qualifying day.
 - Triggered by yfinance "insufficient data" / "insufficient volume data" / "insufficient daily bars for ADR%" / "failed to process" warnings. Real ADR%/dollar-volume rejections (data was sufficient, just below threshold) are NOT collected.
 
-### HK Shorts (disabled)
+### HK Shorts
 
-Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds (cap ≥ HKD 300M, dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days; output `HKEX:XXXX` format).
+Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds (cap ≥ HKD 300M, avg vol ≥ 1M shares/day [own floor — long-side uses 500K], dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days; output `HKEX:XXXX` format). Re-enabled 2026-05-06.
 
-**Disabled since 2026-05-05** — uncomment `[hk_shorts]` in `config.toml` (and the `HKShorts` entry under `[futu]`) to re-enable. `main.py` skips the entire pipeline when the section is absent; no code changes needed.
+### HK Long-side: EarningsGap / HighVolume / GapUp / Leaders / RS
+
+Five strategies sourced **entirely from Futu OpenAPI** (k-line + snapshot — no yfinance for the long-side). Mirrors the US Longs/Leaders/RS methodology with HKD-native thresholds. Universe = HKEX Main Board equities (~2,400). Output: `output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt`.
+
+**Universal baseline (`[hk_settings]`):**
+
+| Gate | Threshold | Note |
+|---|---|---|
+| Market Cap | ≥ HK$300M | small-cap-friendly; HK liquidity ~10× thinner than US |
+| Avg Volume | ≥ 500K shares/day (20-day) | mirrors US `sh_avgvol_o500` |
+| Dollar Volume | ≥ HK$100M (20-day) | held at parity with HK Shorts |
+| ADR% | ≥ 4.0% (20-day) | same as US |
+| Last Price | ≥ HK$20 | mirrors US `sh_price_o20` |
+| RS Percentile | ≥ 90 (vs HSI) | computed locally in `hk_rs.py`, not from Fred6725 CSV |
+
+**Per-strategy gates** (priority order — earlier wins, each ticker appears in at most one HK long-side file per day):
+
+| Priority | Strategy | Additional gates |
+|---|---|---|
+| 1 | HK EarningsGap | gap ≥ 3% + RVol ≥ 3 (pattern-based proxy — no HK earnings calendar) |
+| 2 | HK HighVolume | RVol ≥ 3 |
+| 3 | HK GapUp | gap ≥ 5% |
+| 4 | HK Leaders | above SMA50 & SMA200, AND any of (4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150) |
+| 5 | HK RS | above SMA50 & SMA200; **conditional** — only runs when HSI day-change ≤ −1.5% |
+
+**HK RS algorithm** (`hk_rs.py`): same `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` weighted-quarter-returns formula as the US, but the benchmark is HSI (Futu `HK.800000`) and percentiles are ranked across the HK Main Board universe. Computed in-process from the same Futu k-line batch already pulled for the metrics frame; cached to `output/state/hk_rs_rating_<date>.csv`.
+
+**OpenD requirement**: HK long-side hard-depends on FutuOpenD running. If unreachable, the run writes empty .txt files (preserving the daily artifact contract) and skips Futu sync. HK Shorts still works with OpenD down (yfinance-based fallback). Each strategy writes to its own append-only Futu group (`HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`) — must be created manually in the Futu PC client before first run.
 
 ### Morning Gap (pre-market + intraday, 9 daily scans)
 
