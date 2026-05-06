@@ -2,7 +2,7 @@
 
 Multi-source momentum and short screeners (US via Finviz, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI, based on Oliver Kell and Kristjan Kullamägi.
 
-> **Status (2026-05-06):** US + HK. US uses Finviz + yfinance + IBD RS CSV. HK uses Futu OpenAPI for the long-side (HK EarningsGap / HighVolume / GapUp / Leaders / conditional RS) plus the existing yfinance-based HK Shorts. HK long-side hard-depends on FutuOpenD running.
+> **Status (2026-05-06):** US + HK. US uses Finviz + yfinance + IBD RS CSV. HK uses yfinance for k-line + HSI history (the original Futu-only spec was rolled back when Futu's free/Lv1 tier was found to cap 12-month history at ~12% of the Main Board universe). Futu still handles HK market caps, the live HSI day-change snapshot for the conditional RS trigger, and watchlist sync. HK pipeline runs in its own scheduled slot at 20:00 HKT (US runs at 10:00 HKT) — both write per-market logs.
 
 ## Screeners
 
@@ -87,11 +87,11 @@ Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get droppe
 
 ### HK Shorts
 
-Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds (cap ≥ HKD 300M, avg vol ≥ 1M shares/day [own floor — long-side uses 500K], dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days; output `HKEX:XXXX` format). Re-enabled 2026-05-06.
+Same Kullamägi methodology as US Shorts, sourced from HKEX equity list (~2,400 Main Board stocks) + yfinance, with HKD-native cap thresholds (cap ≥ HKD 300M, avg vol ≥ 1M shares/day [own floor — long-side uses 500K], dollar volume ≥ HKD 100M, ADR% ≥ 4.0%, perf 50/200/300% by HKD 10B / 2B / 300M cap buckets, 3+ consecutive up days; output `HKEX:NNN` format with leading zeros stripped). Re-enabled 2026-05-06.
 
 ### HK Long-side: EarningsGap / HighVolume / GapUp / Leaders / RS
 
-Five strategies sourced from **yfinance** (k-line + HSI) plus **Futu** (market caps + live HSI day-change). The original spec was Futu-only, but Futu's free/Lv1 tier capped 12-month history coverage at ~12% of the Main Board universe — the IBD 12-month RS algorithm had nothing to rank — so the long-side k-line moved to yfinance which reliably gives 2+ years for almost every ticker. Mirrors the US Longs/Leaders/RS methodology with HKD-native thresholds. Universe = HKEX Main Board equities (~2,400). Output: `output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt`.
+Five strategies sourced from **yfinance** (k-line + HSI) plus **Futu** (market caps + live HSI day-change). The original spec was Futu-only, but Futu's free/Lv1 tier capped 12-month history coverage at ~12% of the Main Board universe — the IBD 12-month RS algorithm had nothing to rank — so the long-side k-line moved to yfinance which reliably gives 2+ years for almost every ticker. Mirrors the US Longs/Leaders/RS methodology with HKD-native thresholds. Universe = HKEX Main Board equities (~2,400). Output: `output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt` in `HKEX:NNN` TradingView format (leading zeros stripped — TV silently rejects `HKEX:0148`-style tickers).
 
 **Universal baseline (`[hk_settings]`):**
 
@@ -179,13 +179,24 @@ Requires FutuOpenD running with US Lv1 BBO real-time quote permission. Without i
 ```
 output/
 ├── TV/                        # comma-separated, for TradingView "Import list..."
-│   └── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO}.txt
 ├── Webull/                    # newline-separated mirror, for Webull "Upload as File"
-│   └── US/<date>_*.txt
-└── state/                     # cross-day "seen" masters, RS table cache, morning-gap per-day seen
+│   ├── US/<date>_*.txt
+│   └── HK/<date>_*.txt
+└── state/                     # cross-day "seen" masters, RS table caches, morning-gap per-day seen
+    ├── eod_seen_US.txt        # US long-side master (5 Longs splits + Leaders + RS)
+    ├── eod_seen_HK.txt        # HK long-side master (EarningsGap/HighVolume/GapUp/Leaders/RS)
+    ├── eod_seen_IPO.txt       # US IPO sidecar (independent — promoted into US groups when ready)
+    ├── eod_seen_HKIPO.txt     # HK IPO sidecar (independent — promoted into HK groups when ready)
+    ├── morning_gap_seen_<date>.txt  # per-day MorningGap dedup
+    ├── rs_rating_<date>.csv         # US IBD RS percentile cache (Fred6725/rs-log)
+    └── hk_rs_rating_<date>.csv      # HK RS percentile cache (computed locally vs HSI)
 ```
 
 Every run writes a fresh dated `.txt` per group (0-byte file when empty). Futu sync is **skipped** on empty results so an off day doesn't wipe an existing group.
+
+**TradingView ticker format:** US groups use `NASDAQ:AAPL` / `NYSE:WMT` / `AMEX:GLD` (Finviz-derived). HK groups use `HKEX:NNN` with **leading zeros stripped** — TradingView silently rejects `HKEX:0148`-style tickers, must be `HKEX:148`. Codes ≥ 1000 (4-digit) are written unchanged: `HKEX:1810` (Xiaomi), `HKEX:9988` (Alibaba). Codes < 1000 lose their padding: `HKEX:148` (KGI), `HKEX:522` (ASMPT), `HKEX:700` (Tencent).
 
 ## Futu auto-sync
 
@@ -239,8 +250,8 @@ The morning-gap script self-validates ET time on each trigger and exits cleanly 
 
 ## Importing
 
-- **TradingView**: Watchlist → "Import list..." → pick the latest `output/TV/US/<date>_*.txt`.
-- **Webull**: Watchlist → "Upload as File" → pick the matching file from `output/Webull/US/` (newline-separated; comma format silently truncates).
+- **TradingView**: Watchlist → "Import list..." → pick the latest `output/TV/{US,HK}/<date>_*.txt`. HK tickers are written without leading zeros (`HKEX:148`, not `HKEX:0148`) — TradingView silently rejects the padded form.
+- **Webull**: Watchlist → "Upload as File" → pick the matching file from `output/Webull/{US,HK}/` (newline-separated; comma format silently truncates).
 
 ## Configuration
 
