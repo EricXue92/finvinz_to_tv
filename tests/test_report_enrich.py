@@ -103,6 +103,48 @@ def test_fetch_ticker_data_uses_space_form_yfinance_labels():
     assert data["annual_revenue_yoy_5y"][0] is None  # FY-5 missing
 
 
+def test_extract_quarterly_yoy_4q_full_history():
+    """8 quarters of data → 4 valid YoY datapoints (oldest→newest)."""
+    cols = pd.to_datetime(
+        ["2026-03-31", "2025-12-31", "2025-09-30", "2025-06-30",
+         "2025-03-31", "2024-12-31", "2024-09-30", "2024-06-30"]
+    )
+    df = pd.DataFrame(
+        {"TotalRevenue": [110, 105, 100, 95, 100, 95, 90, 80]}, index=cols
+    ).T
+    yoy, labels = enrich.extract_quarterly_yoy(df, "TotalRevenue", 4)
+    # Oldest first: Q -3 (Jun '25 vs Jun '24) … Latest (Mar '26 vs Mar '25)
+    # Jun '25 (95) vs Jun '24 (80) = +18.75%
+    assert yoy[0] == pytest.approx(18.75, rel=0.01)
+    # Sep '25 (100) vs Sep '24 (90) = +11.11%
+    assert yoy[1] == pytest.approx(11.11, rel=0.01)
+    # Dec '25 (105) vs Dec '24 (95) = +10.53%
+    assert yoy[2] == pytest.approx(10.53, rel=0.01)
+    # Mar '26 (110) vs Mar '25 (100) = +10.0%
+    assert yoy[3] == pytest.approx(10.0, rel=0.01)
+    # Period labels populated, oldest first.
+    assert labels[0] == "Jun'25"
+    assert labels[3] == "Mar'26"
+
+
+def test_extract_quarterly_yoy_4q_partial_history():
+    """5 quarters of data → only the most recent quarter has a YoY pair."""
+    cols = pd.to_datetime(
+        ["2026-03-31", "2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31"]
+    )
+    df = pd.DataFrame({"TotalRevenue": [110, 105, 100, 95, 100]}, index=cols).T
+    yoy, labels = enrich.extract_quarterly_yoy(df, "TotalRevenue", 4)
+    assert yoy[:3] == [None, None, None]
+    assert yoy[3] == pytest.approx(10.0, rel=0.01)
+    assert labels[3] == "Mar'26"
+
+
+def test_extract_quarterly_yoy_4q_empty_frame():
+    yoy, labels = enrich.extract_quarterly_yoy(pd.DataFrame(), "TotalRevenue", 4)
+    assert yoy == [None, None, None, None]
+    assert labels == ["", "", "", ""]
+
+
 def test_extract_annual_yoy_default_5_years_with_partial_history():
     cols = pd.to_datetime(["2025-12-31", "2024-12-31", "2023-12-31"])
     df = pd.DataFrame({"TotalRevenue": [120, 100, 90]}, index=cols).T

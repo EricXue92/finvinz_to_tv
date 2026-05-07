@@ -62,6 +62,40 @@ def latest_quarterly_with_yoy(
     return (latest, compute_yoy(latest, prior))
 
 
+def extract_quarterly_yoy(
+    df: pd.DataFrame,
+    row_label: str | tuple[str, ...],
+    n_quarters: int = 4,
+) -> tuple[list[float | None], list[str]]:
+    """Last `n_quarters` quarters of YoY % (oldest→newest) + period labels.
+    YoY for each quarter = current value / same quarter 4 quarters back. Pads
+    with `None` and `""` when the frame doesn't have enough history (yfinance
+    typically returns 4-5 quarters; full 4-quarter YoY needs 8 quarters)."""
+    values = _row_values(df, row_label)
+    yoy_values: list[float | None] = []
+    labels: list[str] = []
+    cols = list(df.columns) if (df is not None and not df.empty) else []
+    for q_idx in range(n_quarters - 1, -1, -1):  # 3, 2, 1, 0 → oldest first
+        try:
+            current = values[q_idx]
+            prior = values[q_idx + 4]
+        except IndexError:
+            yoy_values.append(None)
+            labels.append("")
+            continue
+        yoy_values.append(compute_yoy(current, prior))
+        try:
+            d = cols[q_idx]
+            if hasattr(d, "strftime"):
+                # "Mar'25" — short month + 2-digit year, mono-friendly
+                labels.append(d.strftime("%b'%y"))
+            else:
+                labels.append(str(d)[:7])
+        except (IndexError, AttributeError):
+            labels.append("")
+    return (yoy_values, labels)
+
+
 def extract_annual_yoy(
     df: pd.DataFrame,
     row_label: str | tuple[str, ...],
@@ -119,6 +153,11 @@ def fetch_ticker_data(
         # Annual earnings increases — past 5 fiscal years of YoY (CANSLIM "A")
         "annual_eps_yoy_5y": [None, None, None, None, None],
         "annual_revenue_yoy_5y": [None, None, None, None, None],
+        # Past 4 quarters of YoY % + period labels (CANSLIM "C" trajectory)
+        "quarterly_eps_yoy_4q": [None, None, None, None],
+        "quarterly_eps_yoy_4q_labels": ["", "", "", ""],
+        "quarterly_revenue_yoy_4q": [None, None, None, None],
+        "quarterly_revenue_yoy_4q_labels": ["", "", "", ""],
         "latest_earnings_date": None,
         "rs_percentile": None,
         # Yahoo's pre-computed MRQ YoY — used as fallback when income_stmt is sparse
@@ -181,6 +220,15 @@ def fetch_ticker_data(
         rev_val, rev_yoy = latest_quarterly_with_yoy(qdf, REVENUE_LABELS)
         data["revenue_latest_q"] = rev_val
         data["revenue_latest_q_yoy_pct"] = rev_yoy
+        # Past 4 quarters of YoY trajectory.
+        eps_q4, eps_lbl = extract_quarterly_yoy(qdf, DILUTED_EPS_LABELS, 4)
+        if all(v is None for v in eps_q4):
+            eps_q4, eps_lbl = extract_quarterly_yoy(qdf, BASIC_EPS_LABELS, 4)
+        data["quarterly_eps_yoy_4q"] = eps_q4
+        data["quarterly_eps_yoy_4q_labels"] = eps_lbl
+        rev_q4, rev_lbl = extract_quarterly_yoy(qdf, REVENUE_LABELS, 4)
+        data["quarterly_revenue_yoy_4q"] = rev_q4
+        data["quarterly_revenue_yoy_4q_labels"] = rev_lbl
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: quarterly fetch failed: {e}")
 

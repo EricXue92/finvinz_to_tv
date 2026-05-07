@@ -602,6 +602,37 @@ def _render_quarterly(data: dict[str, Any]) -> str:
     )
 
 
+def _render_quarterly_trend(data: dict[str, Any]) -> str:
+    """Past 4 quarters of YoY growth — shows whether quarterly EPS / Revenue
+    YoY is accelerating, decelerating, or rolling over."""
+    eps = data.get("quarterly_eps_yoy_4q") or [None] * 4
+    rev = data.get("quarterly_revenue_yoy_4q") or [None] * 4
+    eps_lbl = data.get("quarterly_eps_yoy_4q_labels") or [""] * 4
+    rev_lbl = data.get("quarterly_revenue_yoy_4q_labels") or [""] * 4
+    # Both rows should have identical period labels (same quarterly_income_stmt
+    # columns); fall back to "−Nq" notation if labels are missing.
+    labels = []
+    for i, l in enumerate(eps_lbl):
+        if l:
+            labels.append(l)
+        elif rev_lbl[i]:
+            labels.append(rev_lbl[i])
+        else:
+            n = len(eps_lbl) - 1 - i
+            labels.append("Latest" if n == 0 else f"−{n}Q")
+    return (
+        f'<section class="annual">'
+        f'<div class="annual-title">Past 4 Quarters — YoY Growth</div>'
+        f'<div class="chart-row">'
+        f'<div class="chart-name">EPS YoY</div>'
+        f'{_line_chart_svg(eps, labels)}</div>'
+        f'<div class="chart-row">'
+        f'<div class="chart-name">Rev. YoY</div>'
+        f'{_line_chart_svg(rev, labels)}</div>'
+        f"</section>"
+    )
+
+
 def _render_annual_yoy(data: dict[str, Any]) -> str:
     eps_5y = data.get("annual_eps_yoy_5y") or [None] * 5
     rev_5y = data.get("annual_revenue_yoy_5y") or [None] * 5
@@ -660,6 +691,7 @@ def _render_ticker_block(idx: int, data: dict[str, Any], prose_md: str) -> str:
         f'<div class="ticker-body">'
         f'{_render_snapshot(data)}'
         f'{_render_quarterly(data)}'
+        f'{_render_quarterly_trend(data)}'
         f'{_render_annual_yoy(data)}'
         f'{_render_prose(prose_md)}'
         f"</div>"
