@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.40.0",
     "finviz>=2.0.0",
     "futu-api>=9.3.5308",
+    "markdown>=3.6",
     "openpyxl>=3.1.5",
     "yfinance>=0.2.0",
 ]
@@ -14,4 +16,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

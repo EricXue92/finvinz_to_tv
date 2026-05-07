@@ -23,4 +23,19 @@ if [[ -f "$LOG" && "$(date -r "$LOG" +%Y-%m-%d)" != "$(date +%Y-%m-%d)" ]]; then
 fi
 
 exec >> "$LOG" 2>&1
-exec /Users/xue/.local/bin/uv run --directory /Users/xue/finviz_to_tv main.py --mode us-eod
+
+UV=/Users/xue/.local/bin/uv
+PROJECT=/Users/xue/finviz_to_tv
+
+"$UV" run --directory "$PROJECT" main.py --mode us-eod
+# Under `set -e`, a non-zero EOD exits the script here; the report only runs on
+# success. EOD_STATUS is preserved so launchd sees the EOD's true exit code
+# even if the report step (below) is reached and itself fails.
+EOD_STATUS=$?
+
+# Report is a soft side-effect; failures here must not turn the EOD run red.
+set +e
+"$UV" run --directory "$PROJECT" main.py --mode report --market us
+set -e
+
+exit $EOD_STATUS

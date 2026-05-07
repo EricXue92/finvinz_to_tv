@@ -1159,12 +1159,21 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=["eod", "us-eod", "hk-eod", "morning-gap"],
+        choices=["eod", "us-eod", "hk-eod", "morning-gap", "report"],
         default="eod",
         help="eod: full end-of-day run (US + HK). "
              "us-eod: US only (Longs/Leaders/Shorts/RS/IPO) — for the morning HKT slot when HK market is mid-session. "
              "hk-eod: HK only (Shorts + Longs/Leaders/RS) — for the evening HKT slot after HK market closes. "
-             "morning-gap: intraday gap-up scanner.",
+             "morning-gap: intraday gap-up scanner. "
+             "report: generate CANSLIM Markdown+HTML report from today's dated .txt files (requires --market).",
+    )
+    parser.add_argument(
+        "--market", choices=["us", "hk"],
+        help="Required when --mode=report. Selects which market's .txt files to analyze.",
+    )
+    parser.add_argument(
+        "--date",
+        help="Optional YYYY-MM-DD override for --mode=report (default: today HKT).",
     )
     args = parser.parse_args()
 
@@ -1222,6 +1231,13 @@ def main() -> int:
     us_output_dir.mkdir(parents=True, exist_ok=True)
     hk_output_dir = output_dir / "TV" / "HK"
     hk_output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.mode == "report":
+        if not args.market:
+            logger.error("--mode=report requires --market {us,hk}")
+            return 1
+        from report.__main__ import run as run_report
+        return run_report(args.market, args.date)
 
     if args.mode == "hk-eod":
         # HK-only EOD path: skip the entire US pipeline (Finviz screeners, IBD
