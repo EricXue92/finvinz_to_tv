@@ -97,8 +97,34 @@ def test_fetch_ticker_data_uses_space_form_yfinance_labels():
         data = enrich.fetch_ticker_data("T", "Leaders", "NYSE", rs_lookup=lambda t: 90)
     assert data["revenue_latest_q"] == 110
     assert data["eps_latest_q"] == 1.1
-    assert data["annual_revenue_yoy_3y"][2] == pytest.approx(10.0, rel=0.01)
-    assert data["annual_eps_yoy_3y"][2] == pytest.approx(10.0, rel=0.01)
+    # Frame has 4 fiscal years → 3 YoY datapoints; padded to 5 with leading Nones.
+    assert data["annual_revenue_yoy_5y"][-1] == pytest.approx(10.0, rel=0.01)
+    assert data["annual_eps_yoy_5y"][-1] == pytest.approx(10.0, rel=0.01)
+    assert data["annual_revenue_yoy_5y"][0] is None  # FY-5 missing
+
+
+def test_extract_annual_yoy_default_5_years_with_partial_history():
+    cols = pd.to_datetime(["2025-12-31", "2024-12-31", "2023-12-31"])
+    df = pd.DataFrame({"TotalRevenue": [120, 100, 90]}, index=cols).T
+    yoy = enrich.extract_annual_yoy(df, "TotalRevenue", years_back=5)
+    # 3 fiscal years = 2 YoY pairs; older 3 slots are None.
+    assert yoy == [None, None, None,
+                   pytest.approx(11.11, rel=0.01),
+                   pytest.approx(20.0, rel=0.01)]
+
+
+def test_extract_annual_yoy_full_5_years():
+    cols = pd.to_datetime(
+        ["2025-12-31", "2024-12-31", "2023-12-31", "2022-12-31", "2021-12-31", "2020-12-31"]
+    )
+    df = pd.DataFrame(
+        {"TotalRevenue": [600, 500, 400, 300, 250, 200]}, index=cols
+    ).T
+    yoy = enrich.extract_annual_yoy(df, "TotalRevenue", years_back=5)
+    assert len(yoy) == 5
+    # Oldest first: 250→300 +20%, 300→400 +33.3%, 400→500 +25%, 500→600 +20%
+    assert yoy[0] == pytest.approx(25.0, rel=0.01)   # 200→250
+    assert yoy[-1] == pytest.approx(20.0, rel=0.01)  # 500→600
 
 
 def test_latest_quarterly_with_yoy():
@@ -120,7 +146,8 @@ def test_fetch_ticker_data_handles_missing_yfinance_gracefully():
     assert data["group"] == "EarningsGap"
     assert data["exchange"] == "NASDAQ"
     assert data["market_cap"] is None
-    assert data["annual_revenue_yoy_3y"] == [None, None, None]
+    assert data["annual_revenue_yoy_5y"] == [None, None, None, None, None]
+    assert data["institutional_holdings_pct"] is None
 
 
 def test_fetch_ticker_data_full_path():
@@ -141,12 +168,12 @@ def test_fetch_ticker_data_full_path():
     assert data["company_name"] == "Apple Inc."
     assert data["market_cap"] == 3_000_000_000_000
     assert data["last_price"] == 200.0
-    assert data["pe_ratio"] == 30.0
+    assert data["institutional_holdings_pct"] == pytest.approx(60.0)
     assert data["rs_percentile"] == 95
     assert data["revenue_latest_q"] == 1100
     assert data["revenue_latest_q_yoy_pct"] == pytest.approx(10.0)
-    assert len(data["annual_revenue_yoy_3y"]) == 3
-    assert data["annual_revenue_yoy_3y"][2] == pytest.approx(10.0, rel=0.01)
+    assert len(data["annual_revenue_yoy_5y"]) == 5
+    assert data["annual_revenue_yoy_5y"][-1] == pytest.approx(10.0, rel=0.01)
 
 
 def test_fetch_ticker_data_gap_pct_handles_zero_prev_close():

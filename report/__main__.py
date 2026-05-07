@@ -104,23 +104,16 @@ def _load_rs_lookup(market: str, date_stem: str):
 
 _EMPTY_DATA_TEMPLATE: dict = {
     "ticker": None, "group": None, "exchange": None, "company_name": None,
+    "sector": None, "industry": None,
     "market_cap": None, "last_price": None, "prev_close": None, "gap_pct": None,
-    "pe_ratio": None, "roe": None, "institutional_holdings_pct": None,
+    "institutional_holdings_pct": None,
     "eps_latest_q": None, "eps_latest_q_yoy_pct": None,
     "revenue_latest_q": None, "revenue_latest_q_yoy_pct": None,
-    "annual_eps_yoy_3y": [None, None, None],
-    "annual_revenue_yoy_3y": [None, None, None],
+    "annual_eps_yoy_5y": [None, None, None, None, None],
+    "annual_revenue_yoy_5y": [None, None, None, None, None],
     "latest_earnings_date": None, "rs_percentile": None,
-    # Extended Yahoo Finance fields — see report/enrich.py.
-    "forward_pe": None, "ps_ratio": None,
-    "profit_margin_pct": None, "operating_margin_pct": None, "gross_margin_pct": None,
-    "revenue_growth_yoy_pct": None, "earnings_growth_yoy_pct": None,
-    "debt_to_equity": None, "ev_to_revenue": None, "ev_to_ebitda": None,
-    "target_mean_price": None, "target_high_price": None, "target_low_price": None,
-    "num_analysts": None, "recommendation_mean": None, "recommendation_key": None,
-    "fifty_two_week_high": None, "fifty_two_week_low": None,
-    "short_pct_of_float": None,
-    "sector": None, "industry": None,
+    "yahoo_revenue_growth_yoy_pct": None,
+    "yahoo_earnings_growth_yoy_pct": None,
 }
 
 
@@ -186,20 +179,15 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
     finally:
         await client.close()
 
-    md_text = renderer.render_markdown(
-        market=market,
-        date_iso=date_iso,
-        analyzed_count=len(analyzed_entries),
-        truncated=[(q.split(":", 1)[-1], g) for q, g in truncated_entries],
-        sections=sections,
-        generated_at=datetime.now(HKT),
-    )
     md_path, html_path = renderer.write_report_files(
         out_dir=OUTPUT_REPORTS_DIR,
         date_stem=date_stem,
         market=market,
-        markdown_text=md_text,
-        page_title=f"Scan Report — {date_iso} ({market.upper()})",
+        enriched=enriched,
+        prose_sections=sections,
+        truncated=[(q.split(":", 1)[-1], g) for q, g in truncated_entries],
+        generated_at=datetime.now(HKT),
+        date_iso=date_iso,
     )
     logger.info(f"[report] wrote {md_path}")
     logger.info(f"[report] wrote {html_path}")

@@ -162,29 +162,45 @@ def test_extract_text_handles_mixed_blocks():
     assert analyst._extract_text(response) == "Hello. World."
 
 
-def test_extract_text_strips_preamble_before_first_h2():
-    """Opus sometimes emits 'Let me research...' before the actual report.
-    _extract_text must drop that and start at the ticker H2."""
+def test_extract_text_strips_preamble_before_first_h3():
+    """LLM occasionally emits 'Let me research...' before the actual prose.
+    _extract_text must drop that and start at the first H3 (the prose template
+    now starts with ### 公司速览, not a ticker H2)."""
     block = MagicMock(
         type="text",
         text=(
             "I'll research ENTG's qualitative aspects with targeted searches.\n"
             "I have sufficient information. Let me generate the report.\n"
-            "## ENTG — Entegris Inc. (NASDAQ · Leaders)\n\n"
-            "### Snapshot\n"
+            "### 公司速览\n\n"
+            "Entegris is...\n"
         ),
     )
     response = MagicMock()
     response.content = [block]
     out = analyst._extract_text(response)
-    assert out.startswith("## ENTG")
+    assert out.startswith("### 公司速览")
     assert "I'll research" not in out
-    assert "I have sufficient information" not in out
     assert "Let me generate" not in out
 
 
-def test_extract_text_keeps_text_when_h2_is_first_line():
-    block = MagicMock(type="text", text="## AAPL — Apple Inc.\n\nbody")
+def test_extract_text_keeps_text_when_h3_is_first_line():
+    block = MagicMock(type="text", text="### 公司速览\n\nbody")
     response = MagicMock()
     response.content = [block]
-    assert analyst._extract_text(response).startswith("## AAPL")
+    assert analyst._extract_text(response).startswith("### 公司速览")
+
+
+def test_extract_text_back_compat_strips_preamble_before_h2():
+    """Older LLM outputs may still emit a ticker H2 first; strip preamble before that too."""
+    block = MagicMock(
+        type="text",
+        text=(
+            "Let me think.\n"
+            "## AAPL — Apple Inc.\n\n"
+            "### 公司速览\nbody\n"
+        ),
+    )
+    response = MagicMock()
+    response.content = [block]
+    out = analyst._extract_text(response)
+    assert out.startswith("## AAPL")

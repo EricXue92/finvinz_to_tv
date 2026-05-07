@@ -40,18 +40,26 @@ def build_user_message(data: dict[str, Any]) -> str:
 
 def _extract_text(response: Any) -> str:
     """Concatenate all text blocks in the response, ignoring tool_use blocks.
-    Strip any model preamble before the first H2 heading — Opus sometimes adds
-    a "Let me research X" sentence even when the system prompt forbids it."""
+    Strip any model preamble before the first H3 heading — Sonnet/Opus
+    sometimes adds a "Let me research X" sentence even when the system
+    prompt forbids it. The new prompt asks the model to begin with
+    `### 公司速览` (H3); legacy outputs starting with `## ` are also tolerated."""
     parts: list[str] = []
     for block in response.content or []:
         if getattr(block, "type", None) == "text":
             parts.append(getattr(block, "text", "") or "")
     text = "".join(parts).strip()
-    idx = text.find("\n## ")
-    if idx == -1 and text.startswith("## "):
+    # Find the first H3 or H2 heading and trim preamble before it.
+    candidates = []
+    for marker in ("\n### ", "\n## "):
+        i = text.find(marker)
+        if i != -1:
+            candidates.append(i)
+    if text.startswith("### ") or text.startswith("## "):
         return text
-    if idx != -1:
-        return text[idx + 1 :].strip()
+    if candidates:
+        cut = min(candidates)
+        return text[cut + 1 :].strip()
     return text
 
 

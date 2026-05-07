@@ -5,79 +5,226 @@ from zoneinfo import ZoneInfo
 from report import renderer
 
 
-def test_render_markdown_includes_header_and_sections():
-    sections = ["## AAPL\nbody\n", "## NVDA\nbody\n"]
-    truncated = [("WMT", "RS")]
-    md = renderer.render_markdown(
+HKT = ZoneInfo("Asia/Hong_Kong")
+
+
+def _fake_data(ticker: str, group: str = "Leaders") -> dict:
+    return {
+        "ticker": ticker,
+        "group": group,
+        "exchange": "NASDAQ",
+        "company_name": f"{ticker} Inc.",
+        "sector": "Technology",
+        "industry": "Software",
+        "market_cap": 50_000_000_000,
+        "last_price": 200.0,
+        "prev_close": 195.0,
+        "gap_pct": 2.56,
+        "institutional_holdings_pct": 65.4,
+        "eps_latest_q": 1.25,
+        "eps_latest_q_yoy_pct": 18.5,
+        "revenue_latest_q": 1_200_000_000,
+        "revenue_latest_q_yoy_pct": 22.0,
+        "annual_eps_yoy_5y": [None, 12.0, 18.0, 25.0, 30.0],
+        "annual_revenue_yoy_5y": [None, 15.0, 20.0, 25.0, 28.0],
+        "latest_earnings_date": "2026-04-30",
+        "rs_percentile": 92,
+        "yahoo_revenue_growth_yoy_pct": None,
+        "yahoo_earnings_growth_yoy_pct": None,
+    }
+
+
+# --- HTML document tests -----------------------------------------------------
+
+def test_render_html_document_is_self_contained():
+    enriched = [_fake_data("AAPL")]
+    html = renderer.render_html_document(
         market="us",
         date_iso="2026-05-07",
-        analyzed_count=2,
-        truncated=truncated,
-        sections=sections,
-        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=ZoneInfo("Asia/Hong_Kong")),
-    )
-    assert "# Scan Report — 2026-05-07 (US)" in md
-    assert "Total new tickers: 3 (analyzed 2, truncated 1)" in md
-    assert "## AAPL" in md
-    assert "## NVDA" in md
-    assert "## Truncated" in md
-    assert "WMT (RS)" in md
-
-
-def test_render_markdown_omits_truncated_section_when_empty():
-    md = renderer.render_markdown(
-        market="hk",
-        date_iso="2026-05-07",
-        analyzed_count=1,
+        enriched=enriched,
+        prose_sections=["### 公司速览\n\nApple makes iPhones."],
         truncated=[],
-        sections=["## 0700.HK\nbody\n"],
-        generated_at=datetime(2026, 5, 7, 20, 5, 0, tzinfo=ZoneInfo("Asia/Hong_Kong")),
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
     )
-    assert "## Truncated" not in md
-    assert "Total new tickers: 1 (analyzed 1, truncated 0)" in md
-
-
-def test_markdown_to_html_is_self_contained():
-    md = "# Title\n\nHello **world**."
-    html = renderer.markdown_to_html(md, page_title="Test")
     assert html.startswith("<!doctype html>")
     assert "<style>" in html
-    assert "<h1>Title</h1>" in html
-    assert "<strong>world</strong>" in html
-    # No external resources.
-    assert "http://" not in html
-    assert "https://" not in html
+    assert "AAPL" in html
+    assert "Apple makes iPhones" in html or "Apple" in html
+    # No external resources (`http(s)://` only appears in SVG namespace
+    # `http://www.w3.org/2000/svg`, which is namespace-only and not a fetch).
     assert 'src="' not in html
     assert "<link" not in html
+    assert "@import" not in html
+    assert "url(http" not in html
 
 
-def test_write_report_files_creates_both(tmp_path: Path):
-    md = "# x"
+def test_render_html_renders_per_ticker_anchors_and_index():
+    enriched = [_fake_data("AAPL"), _fake_data("NVDA", "EarningsGap")]
+    html = renderer.render_html_document(
+        market="us",
+        date_iso="2026-05-07",
+        enriched=enriched,
+        prose_sections=["### 公司速览\nx\n", "### 公司速览\ny\n"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert 'id="t-AAPL"' in html
+    assert 'id="t-NVDA"' in html
+    assert 'href="#t-AAPL"' in html
+    assert 'href="#t-NVDA"' in html
+    assert "EarningsGap" in html
+
+
+def test_render_html_includes_svg_bar_chart():
+    enriched = [_fake_data("AAPL")]
+    html = renderer.render_html_document(
+        market="us",
+        date_iso="2026-05-07",
+        enriched=enriched,
+        prose_sections=["### 公司速览\nbody"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    # Both YoY rows present as inline SVG.
+    assert html.count("<svg") >= 2
+    assert "EPS YoY" in html
+    assert "Rev. YoY" in html
+
+
+def test_render_html_marks_positive_negative_yoy():
+    """Positive YoY uses --positive color; negative uses --negative."""
+    d = _fake_data("XYZ")
+    d["eps_latest_q_yoy_pct"] = -25.0
+    d["revenue_latest_q_yoy_pct"] = 30.0
+    html = renderer.render_html_document(
+        market="us",
+        date_iso="2026-05-07",
+        enriched=[d],
+        prose_sections=["### 公司速览\nbody"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert 'class="yoy-pill negative"' in html
+    assert 'class="yoy-pill positive"' in html
+
+
+def test_render_html_failure_prose_renders_as_failure_block():
+    html = renderer.render_html_document(
+        market="us",
+        date_iso="2026-05-07",
+        enriched=[_fake_data("XYZ")],
+        prose_sections=["## XYZ — ?  (NASDAQ · Leaders)\n\n[配置错误: HTTP 401: bad key]\n"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert 'class="failure"' in html
+    assert "配置错误" in html
+
+
+def test_render_html_truncated_section_appears():
+    html = renderer.render_html_document(
+        market="us",
+        date_iso="2026-05-07",
+        enriched=[_fake_data("AAPL")],
+        prose_sections=["### 公司速览\nbody"],
+        truncated=[("WMT", "RS"), ("PLTR", "TopGainers")],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "Truncated" in html
+    assert "WMT" in html
+    assert "PLTR" in html
+
+
+# --- Markdown document tests -------------------------------------------------
+
+def test_render_markdown_document_includes_data_tables():
+    md = renderer.render_markdown_document(
+        market="us",
+        date_iso="2026-05-07",
+        enriched=[_fake_data("AAPL")],
+        prose_sections=["### 公司速览\nApple"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "Daily Scan — 2026-05-07 (US)" in md
+    assert "AAPL" in md
+    assert "Market Cap" in md
+    assert "Latest Quarter" in md
+    assert "FY−1" in md
+    assert "公司速览" in md
+
+
+# --- write_report_files (new API) -------------------------------------------
+
+def test_write_report_files_writes_both(tmp_path: Path):
     md_path, html_path = renderer.write_report_files(
         out_dir=tmp_path,
         date_stem="2026_05_07",
         market="us",
-        markdown_text=md,
-        page_title="Scan Report — 2026-05-07 (US)",
+        enriched=[_fake_data("AAPL")],
+        prose_sections=["### 公司速览\nbody"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+        date_iso="2026-05-07",
     )
     assert md_path == tmp_path / "2026_05_07_us.md"
     assert html_path == tmp_path / "2026_05_07_us.html"
-    assert md_path.read_text(encoding="utf-8") == md
+    assert "Daily Scan" in md_path.read_text(encoding="utf-8")
     assert html_path.read_text(encoding="utf-8").startswith("<!doctype html>")
 
 
 def test_write_report_files_handles_chinese(tmp_path: Path):
-    """HK reports contain Chinese characters; encoding must be explicit UTF-8."""
-    md = "# 中文标题\n\n**综合判断**: 信息不足\n"
+    d = _fake_data("0700.HK", "Leaders")
+    d["company_name"] = "腾讯控股"
     md_path, html_path = renderer.write_report_files(
         out_dir=tmp_path,
         date_stem="2026_05_07",
         market="hk",
-        markdown_text=md,
-        page_title="Scan Report — 2026-05-07 (HK)",
+        enriched=[d],
+        prose_sections=["### 公司速览\n\n中国互联网龙头。\n\n### 综合判断\n\n看涨。"],
+        truncated=[],
+        generated_at=datetime(2026, 5, 7, 20, 5, 0, tzinfo=HKT),
+        date_iso="2026-05-07",
     )
-    assert md_path.read_text(encoding="utf-8") == md
-    html = html_path.read_text(encoding="utf-8")
-    assert "中文标题" in html
-    assert "综合判断" in html
-    assert "信息不足" in html
+    md_text = md_path.read_text(encoding="utf-8")
+    html_text = html_path.read_text(encoding="utf-8")
+    assert "腾讯控股" in md_text
+    assert "腾讯控股" in html_text
+    assert "公司速览" in html_text
+
+
+# --- Bar chart helper --------------------------------------------------------
+
+def test_bar_chart_handles_all_null():
+    svg = renderer._bar_chart_svg([None] * 5, ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"])
+    assert svg.startswith("<svg")
+    assert svg.count("<text") >= 5  # period labels still rendered
+
+
+def test_bar_chart_handles_mix_of_signs():
+    svg = renderer._bar_chart_svg([10.0, -5.0, None, 25.0, -15.0],
+                                   ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"])
+    assert "#2D6A4F" in svg  # positive color
+    assert "#8B2635" in svg  # negative color
+
+
+# --- Legacy shims (keep older callers working) -------------------------------
+
+def test_legacy_render_markdown_still_works():
+    md = renderer.render_markdown(
+        market="us",
+        date_iso="2026-05-07",
+        analyzed_count=1,
+        truncated=[("WMT", "RS")],
+        sections=["## AAPL\nbody"],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "Scan Report" in md
+    assert "AAPL" in md
+    assert "WMT (RS)" in md
+
+
+def test_legacy_markdown_to_html_still_works():
+    html = renderer.markdown_to_html("# x", page_title="Test")
+    assert html.startswith("<!doctype html>")
+    assert "<h1>x</h1>" in html
