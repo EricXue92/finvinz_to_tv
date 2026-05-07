@@ -23,16 +23,16 @@ INLINE_CSS = """
 :root {
   --bg:           #FAFAFA;
   --card:         #FFFFFF;
-  --ink:          #1A1A1A;
-  --ink-soft:     #444444;
-  --muted:        #777777;
-  --faint:        #AAAAAA;
-  --rule:         #E0E0E0;
-  --navy:         #2C3E50;
-  --navy-soft:    #34495E;
-  --tint:         #F7F9FB;
-  --positive:     #27AE60;
-  --negative:     #C0392B;
+  --ink:          #0A0A0A;     /* near-black */
+  --ink-soft:     #222222;     /* deeper than before */
+  --muted:        #555555;     /* darker secondary text */
+  --faint:        #888888;
+  --rule:         #D0D0D0;
+  --navy:         #1F2D3D;     /* deeper navy */
+  --navy-soft:    #2C3E50;
+  --tint:         #F1F4F7;
+  --positive:     #1E7E34;     /* deeper green */
+  --negative:     #A02828;     /* deeper red */
 }
 * { box-sizing: border-box; }
 html, body { background: var(--bg); }
@@ -42,8 +42,8 @@ body {
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  font-size: 15px;
-  line-height: 1.65;
+  font-size: 17px;
+  line-height: 1.7;
   -webkit-font-smoothing: antialiased;
 }
 .sheet { max-width: 920px; margin: 0 auto; padding: 0 1.2em; }
@@ -61,13 +61,13 @@ body {
 }
 .masthead-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--navy);
 }
 .masthead-meta {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -126,20 +126,20 @@ body {
   min-width: 22px;
 }
 .ticker-symbol {
-  font-size: 20px;
+  font-size: 23px;
   font-weight: 700;
   letter-spacing: -0.005em;
 }
 .ticker-group {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
-  color: rgba(255,255,255,0.78);
+  color: rgba(255,255,255,0.88);
   letter-spacing: 0.02em;
 }
 .ticker-company {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
-  color: rgba(255,255,255,0.68);
+  color: rgba(255,255,255,0.78);
   margin-left: 4px;
 }
 
@@ -156,7 +156,7 @@ body {
 .snapshot-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
   background: var(--card);
   border: 1px solid var(--rule);
@@ -165,15 +165,15 @@ body {
 .snapshot-table thead th {
   background: var(--tint);
   color: var(--navy);
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: 700;
+  font-size: 13px;
   text-align: left;
-  padding: 8px 14px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--rule);
   letter-spacing: 0.04em;
 }
 .snapshot-table tbody td {
-  padding: 7px 14px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--rule);
   vertical-align: top;
 }
@@ -202,17 +202,17 @@ body {
   border-radius: 3px;
 }
 .quarterly .qtr-label {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted);
-  margin-bottom: 6px;
-  font-weight: 600;
+  margin-bottom: 7px;
+  font-weight: 700;
 }
 .quarterly .metric-value {
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: 26px;
-  font-weight: 600;
+  font-size: 30px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1.1;
@@ -220,13 +220,13 @@ body {
 }
 .quarterly .yoy {
   display: inline-block;
-  font-size: 13px;
+  font-size: 14px;
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-variant-numeric: tabular-nums;
-  margin-top: 6px;
-  padding: 2px 8px;
+  margin-top: 7px;
+  padding: 3px 10px;
   border-radius: 3px;
-  font-weight: 600;
+  font-weight: 700;
 }
 .quarterly .yoy.positive { background: rgba(39,174,96,0.10); color: var(--positive); }
 .quarterly .yoy.negative { background: rgba(192,57,43,0.10); color: var(--negative); }
@@ -241,49 +241,49 @@ body {
   margin-bottom: 24px;
 }
 .annual-title {
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted);
-  margin-bottom: 10px;
-  font-weight: 600;
+  margin-bottom: 12px;
+  font-weight: 700;
 }
 .chart-row {
   display: grid;
-  grid-template-columns: 90px 1fr;
+  grid-template-columns: 96px 1fr;
   gap: 14px;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
 }
 .chart-row + .chart-row {
   border-top: 1px solid var(--rule);
   margin-top: 4px;
-  padding-top: 12px;
+  padding-top: 14px;
 }
 .chart-name {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--navy);
   letter-spacing: 0.02em;
 }
-.chart-svg { width: 100%; height: 76px; display: block; }
+.chart-svg { width: 100%; height: 88px; display: block; }
 
 /* --- Prose sections (LLM output) — main reading area --- */
 .prose h3 {
-  margin: 22px 0 8px;
+  margin: 26px 0 10px;
   color: var(--navy);
   border-left: 4px solid var(--navy);
-  padding: 2px 0 2px 12px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 4px 0 4px 14px;
+  font-size: 18px;
+  font-weight: 700;
   line-height: 1.3;
 }
 .prose h3.emph {
   border-left-width: 5px;
   background: var(--tint);
-  padding-top: 6px;
-  padding-bottom: 6px;
-  font-size: 17px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-size: 19px;
 }
 .prose p { margin: 0 0 10px; }
 .prose ul, .prose ol { padding-left: 1.5em; margin: 4px 0 10px; }
@@ -471,8 +471,8 @@ def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
                 'fill="#FFFFFF" stroke="#AAAAAA" stroke-width="1"/>'
             )
             parts.append(
-                f'<text x="{x:.1f}" y="{baseline - 6:.1f}" font-size="9" '
-                f'font-family="SF Mono,Menlo,monospace" fill="#AAAAAA" '
+                f'<text x="{x:.1f}" y="{baseline - 6:.1f}" font-size="10" '
+                f'font-family="SF Mono,Menlo,monospace" fill="#888888" '
                 f'text-anchor="middle">—</text>'
             )
             continue
@@ -488,11 +488,11 @@ def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
         else:
             label_y = min(y + 13, height - pad_bottom - 1)
         # Bold black label, with red tint when strongly negative for emphasis.
-        color = "#111111" if v >= 0 else "#B00020"
+        color = "#0A0A0A" if v >= 0 else "#A02828"
         parts.append(
-            f'<text x="{x:.1f}" y="{label_y:.1f}" font-size="10" '
+            f'<text x="{x:.1f}" y="{label_y:.1f}" font-size="11" '
             f'font-family="SF Mono,Menlo,monospace" fill="{color}" '
-            f'text-anchor="middle" font-weight="600">{sign}{v:.1f}%</text>'
+            f'text-anchor="middle" font-weight="700">{sign}{v:.1f}%</text>'
         )
     return (
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" '

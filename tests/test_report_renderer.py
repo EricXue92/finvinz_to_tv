@@ -207,8 +207,8 @@ def test_line_chart_handles_mix_of_signs():
     svg = renderer._line_chart_svg([10.0, -5.0, None, 25.0, -15.0],
                                     ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"])
     assert "<circle" in svg                    # at least one filled dot
-    assert "#111111" in svg                    # ink color
-    assert "#B00020" in svg                    # negative-label color
+    assert "#0A0A0A" in svg                    # ink color (positive label)
+    assert "#A02828" in svg                    # negative-label color
     assert svg.count("<line") >= 2             # baseline + connecting segments
 
 
