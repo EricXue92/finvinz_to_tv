@@ -158,4 +158,33 @@ def test_extract_text_handles_mixed_blocks():
     other_text = MagicMock(type="text", text=" World.")
     response = MagicMock()
     response.content = [text_block, tool_block, other_text]
+    # No "## " heading anywhere → return concatenated text as-is.
     assert analyst._extract_text(response) == "Hello. World."
+
+
+def test_extract_text_strips_preamble_before_first_h2():
+    """Opus sometimes emits 'Let me research...' before the actual report.
+    _extract_text must drop that and start at the ticker H2."""
+    block = MagicMock(
+        type="text",
+        text=(
+            "I'll research ENTG's qualitative aspects with targeted searches.\n"
+            "I have sufficient information. Let me generate the report.\n"
+            "## ENTG — Entegris Inc. (NASDAQ · Leaders)\n\n"
+            "### Snapshot\n"
+        ),
+    )
+    response = MagicMock()
+    response.content = [block]
+    out = analyst._extract_text(response)
+    assert out.startswith("## ENTG")
+    assert "I'll research" not in out
+    assert "I have sufficient information" not in out
+    assert "Let me generate" not in out
+
+
+def test_extract_text_keeps_text_when_h2_is_first_line():
+    block = MagicMock(type="text", text="## AAPL — Apple Inc.\n\nbody")
+    response = MagicMock()
+    response.content = [block]
+    assert analyst._extract_text(response).startswith("## AAPL")

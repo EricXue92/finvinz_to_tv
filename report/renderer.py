@@ -7,18 +7,32 @@ from pathlib import Path
 import markdown as md_lib
 
 INLINE_CSS = """
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  max-width: 900px; margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.55; }
-h1 { border-bottom: 2px solid #ddd; padding-bottom: 0.3em; }
-h2 { margin-top: 2em; border-bottom: 1px solid #eee; padding-bottom: 0.2em; }
-h3 { margin-top: 1.5em; }
-code, pre { background: #f5f5f5; border-radius: 4px; }
-code { padding: 0.1em 0.3em; }
-pre { padding: 0.8em; overflow-x: auto; }
-table { border-collapse: collapse; margin: 1em 0; }
-th, td { border: 1px solid #ddd; padding: 0.4em 0.8em; text-align: left; }
-ul { padding-left: 1.5em; }
-hr { border: none; border-top: 1px solid #eee; margin: 2em 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  max-width: 920px; margin: 2em auto; padding: 0 1.2em; color: #222;
+  line-height: 1.65; background: #fafafa; }
+h1 { border-bottom: 2px solid #444; padding-bottom: 0.3em; margin-top: 0; }
+h2 { margin-top: 2.5em; padding: 0.45em 0.7em; background: #2c3e50; color: #fff;
+  border-radius: 4px; font-size: 1.35em; }
+h3 { margin-top: 1.6em; color: #2c3e50;
+  border-left: 4px solid #2c3e50; padding-left: 0.6em; font-size: 1.1em; }
+p { margin: 0.6em 0; }
+code, pre { background: #f0f0f0; border-radius: 4px; font-family:
+  "SF Mono", Menlo, Monaco, Consolas, monospace; }
+code { padding: 0.1em 0.35em; font-size: 0.92em; }
+pre { padding: 0.9em; overflow-x: auto; }
+table { border-collapse: collapse; margin: 1em 0; width: 100%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+th, td { border: 1px solid #e0e0e0; padding: 0.5em 0.9em; text-align: left;
+  vertical-align: top; }
+th { background: #f5f5f5; font-weight: 600; }
+tbody tr:nth-child(odd) { background: #fbfbfb; }
+tbody td:first-child { font-weight: 600; color: #555; white-space: nowrap;
+  width: 200px; }
+ul, ol { padding-left: 1.6em; margin: 0.6em 0; }
+li { margin: 0.25em 0; }
+hr { border: none; border-top: 4px double #c0c0c0; margin: 3em 0; }
+strong { color: #1a1a1a; }
 """
 
 

@@ -11,7 +11,11 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-opus-4-7"
-MAX_TOKENS = 1500
+# 8 sections × ~250 Chinese tokens each + Snapshot table + headings ≈ 2300 output
+# tokens. 1500 was empirically truncating 12/14 reports mid-section. 2800 leaves
+# headroom without uncapping cost. Cost per ticker ≈ $0.21 output (was $0.11);
+# daily cap stays under spec's $25/market.
+MAX_TOKENS = 2800
 WEB_SEARCH_MAX_USES = 3
 RETRY_BACKOFF_SECONDS = 5.0
 PER_CALL_TIMEOUT_SECONDS = 90.0
@@ -30,12 +34,20 @@ def build_user_message(data: dict[str, Any]) -> str:
 
 
 def _extract_text(response: Any) -> str:
-    """Concatenate all text blocks in the response, ignoring tool_use blocks."""
+    """Concatenate all text blocks in the response, ignoring tool_use blocks.
+    Strip any model preamble before the first H2 heading — Opus sometimes adds
+    a "Let me research X" sentence even when the system prompt forbids it."""
     parts: list[str] = []
     for block in response.content or []:
         if getattr(block, "type", None) == "text":
             parts.append(getattr(block, "text", "") or "")
-    return "".join(parts).strip()
+    text = "".join(parts).strip()
+    idx = text.find("\n## ")
+    if idx == -1 and text.startswith("## "):
+        return text
+    if idx != -1:
+        return text[idx + 1 :].strip()
+    return text
 
 
 async def analyze_ticker(

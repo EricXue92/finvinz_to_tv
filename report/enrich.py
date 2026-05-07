@@ -20,12 +20,27 @@ def compute_yoy(current: float | None, prior: float | None) -> float | None:
     return (current - prior) / prior * 100.0
 
 
-def _row_values(df: pd.DataFrame, row_label: str) -> list[float | None]:
+# yfinance row labels in the wild use spaces ("Total Revenue", "Diluted EPS").
+# Older / mocked frames may use the camelCase form. Try both, in order.
+REVENUE_LABELS = ("Total Revenue", "TotalRevenue", "Operating Revenue")
+DILUTED_EPS_LABELS = ("Diluted EPS", "DilutedEPS")
+BASIC_EPS_LABELS = ("Basic EPS", "BasicEPS")
+
+
+def _row_values(df: pd.DataFrame, row_label: str | tuple[str, ...]) -> list[float | None]:
     """Return a row of the income statement as floats (most recent first).
-    yfinance frames are line-items × periods, so we look up the row by index label."""
-    if df is None or df.empty or row_label not in df.index:
+    yfinance frames are line-items × periods, so we look up the row by index label.
+    Accepts either a single label or a tuple of fallback candidates (first match wins)."""
+    if df is None or df.empty:
         return []
-    series = df.loc[row_label]
+    candidates = (row_label,) if isinstance(row_label, str) else row_label
+    series = None
+    for label in candidates:
+        if label in df.index:
+            series = df.loc[label]
+            break
+    if series is None:
+        return []
     out: list[float | None] = []
     for v in series.tolist():
         try:
@@ -36,7 +51,7 @@ def _row_values(df: pd.DataFrame, row_label: str) -> list[float | None]:
 
 
 def latest_quarterly_with_yoy(
-    df: pd.DataFrame, row_label: str
+    df: pd.DataFrame, row_label: str | tuple[str, ...]
 ) -> tuple[float | None, float | None]:
     """Latest quarter value + YoY vs same quarter last year (4 quarters back)."""
     values = _row_values(df, row_label)
@@ -47,7 +62,9 @@ def latest_quarterly_with_yoy(
     return (latest, compute_yoy(latest, prior))
 
 
-def extract_annual_yoy_3y(df: pd.DataFrame, row_label: str) -> list[float | None]:
+def extract_annual_yoy_3y(
+    df: pd.DataFrame, row_label: str | tuple[str, ...]
+) -> list[float | None]:
     """Three YoY datapoints in [FY-3, FY-2, FY-1] order. yfinance annual frames
     have most-recent fiscal year first, so we reverse before pairing."""
     values = list(reversed(_row_values(df, row_label)))
@@ -130,12 +147,12 @@ def fetch_ticker_data(
 
     try:
         qdf = t.quarterly_income_stmt
-        eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, "DilutedEPS")
+        eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, DILUTED_EPS_LABELS)
         if eps_val is None:
-            eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, "BasicEPS")
+            eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, BASIC_EPS_LABELS)
         data["eps_latest_q"] = eps_val
         data["eps_latest_q_yoy_pct"] = eps_yoy
-        rev_val, rev_yoy = latest_quarterly_with_yoy(qdf, "TotalRevenue")
+        rev_val, rev_yoy = latest_quarterly_with_yoy(qdf, REVENUE_LABELS)
         data["revenue_latest_q"] = rev_val
         data["revenue_latest_q_yoy_pct"] = rev_yoy
     except Exception as e:
@@ -143,10 +160,10 @@ def fetch_ticker_data(
 
     try:
         adf = t.income_stmt
-        data["annual_eps_yoy_3y"] = extract_annual_yoy_3y(adf, "DilutedEPS")
+        data["annual_eps_yoy_3y"] = extract_annual_yoy_3y(adf, DILUTED_EPS_LABELS)
         if all(v is None for v in data["annual_eps_yoy_3y"]):
-            data["annual_eps_yoy_3y"] = extract_annual_yoy_3y(adf, "BasicEPS")
-        data["annual_revenue_yoy_3y"] = extract_annual_yoy_3y(adf, "TotalRevenue")
+            data["annual_eps_yoy_3y"] = extract_annual_yoy_3y(adf, BASIC_EPS_LABELS)
+        data["annual_revenue_yoy_3y"] = extract_annual_yoy_3y(adf, REVENUE_LABELS)
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: annual fetch failed: {e}")
 

@@ -60,6 +60,47 @@ def test_extract_annual_yoy_3y_too_few_rows():
     assert yoy == [None, None, pytest.approx(11.11, rel=0.01)]
 
 
+def test_row_values_accepts_label_tuple_and_picks_first_match():
+    """Real yfinance uses 'Total Revenue' (with space); the lookup must accept
+    a tuple of fallback labels and pick whichever exists in the frame."""
+    cols = pd.to_datetime(["2025-12-31", "2024-12-31"])
+    df = pd.DataFrame({"TotalRevenue": [100, 90]}, index=cols).T
+    assert enrich._row_values(df, ("Total Revenue", "TotalRevenue")) == [100.0, 90.0]
+
+
+def test_row_values_label_tuple_picks_space_form_when_present():
+    cols = pd.to_datetime(["2025-12-31", "2024-12-31"])
+    df = pd.DataFrame({"Total Revenue": [120, 100]}, index=cols).T
+    assert enrich._row_values(df, ("Total Revenue", "TotalRevenue")) == [120.0, 100.0]
+
+
+def test_fetch_ticker_data_uses_space_form_yfinance_labels():
+    """Regression: real yfinance returns 'Diluted EPS' / 'Total Revenue' with spaces.
+    Earlier impl only tried 'DilutedEPS'/'TotalRevenue' and silently produced 信息不足."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "T", "currentPrice": 100, "previousClose": 99}
+    qcols = pd.to_datetime(["2026-03-31", "2025-12-31", "2025-09-30",
+                            "2025-06-30", "2025-03-31"])
+    fake_ticker.quarterly_income_stmt = pd.DataFrame(
+        {"Total Revenue": [110, 100, 95, 90, 100],
+         "Diluted EPS": [1.1, 1.0, 0.95, 0.90, 1.0]},
+        index=qcols,
+    ).T
+    acols = pd.to_datetime(["2025-12-31", "2024-12-31", "2023-12-31", "2022-12-31"])
+    fake_ticker.income_stmt = pd.DataFrame(
+        {"Total Revenue": [4400, 4000, 3500, 3000],
+         "Diluted EPS": [4.40, 4.00, 3.50, 3.00]},
+        index=acols,
+    ).T
+    fake_ticker.earnings_dates = None
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker):
+        data = enrich.fetch_ticker_data("T", "Leaders", "NYSE", rs_lookup=lambda t: 90)
+    assert data["revenue_latest_q"] == 110
+    assert data["eps_latest_q"] == 1.1
+    assert data["annual_revenue_yoy_3y"][2] == pytest.approx(10.0, rel=0.01)
+    assert data["annual_eps_yoy_3y"][2] == pytest.approx(10.0, rel=0.01)
+
+
 def test_latest_quarterly_with_yoy():
     df = _fake_quarterly_income_stmt()
     val, yoy = enrich.latest_quarterly_with_yoy(df, "TotalRevenue")
