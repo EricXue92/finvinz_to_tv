@@ -74,6 +74,7 @@ async def test_analyze_ticker_retries_on_5xx(fake_data):
         response=MagicMock(status_code=503),
         body=None,
     )
+    failure.status_code = 503
     fake_client.messages.create = AsyncMock(
         side_effect=[failure, _make_anthropic_response("## AAPL\nfine")]
     )
@@ -100,6 +101,54 @@ async def test_analyze_ticker_returns_failure_section_after_retry_exhausted(fake
     )
     assert "AAPL" in section
     assert "分析失败" in section
+
+
+async def test_analyze_ticker_does_not_retry_on_4xx(fake_data):
+    """4xx (e.g. 401 bad API key) must fail fast — single attempt, distinct placeholder."""
+    import anthropic
+    fake_client = MagicMock()
+    failure = anthropic.APIStatusError(
+        message="invalid x-api-key",
+        response=MagicMock(status_code=401),
+        body=None,
+    )
+    # Patch status_code attribute since SDK reads it from response
+    failure.status_code = 401
+    fake_client.messages.create = AsyncMock(side_effect=failure)
+    section = await analyst.analyze_ticker(
+        client=fake_client,
+        system_prompt="<sp>",
+        data=fake_data,
+        semaphore=asyncio.Semaphore(1),
+    )
+    assert "AAPL" in section
+    assert "配置错误" in section
+    assert "401" in section
+    # Must NOT have retried
+    assert fake_client.messages.create.await_count == 1
+
+
+async def test_analyze_ticker_retries_on_429_rate_limit(fake_data):
+    """429 IS retriable (transient rate limit). Must attempt twice."""
+    import anthropic
+    fake_client = MagicMock()
+    failure = anthropic.APIStatusError(
+        message="rate limited",
+        response=MagicMock(status_code=429),
+        body=None,
+    )
+    failure.status_code = 429
+    fake_client.messages.create = AsyncMock(
+        side_effect=[failure, _make_anthropic_response("## AAPL\nfine")]
+    )
+    section = await analyst.analyze_ticker(
+        client=fake_client,
+        system_prompt="<sp>",
+        data=fake_data,
+        semaphore=asyncio.Semaphore(1),
+    )
+    assert "## AAPL" in section
+    assert fake_client.messages.create.await_count == 2
 
 
 def test_extract_text_handles_mixed_blocks():

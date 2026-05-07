@@ -77,8 +77,30 @@ async def analyze_ticker(
             if not text:
                 raise RuntimeError("empty response")
             return text
+        except anthropic.APIStatusError as e:
+            # Retry only transient HTTP failures: 5xx server errors, 408 timeout,
+            # 429 rate limit. 4xx (401 bad key, 400 malformed, 404 wrong model) are
+            # configuration bugs — fail loudly with a distinct placeholder rather
+            # than burn a retry and produce N misleading "[分析失败]" sections.
+            status = getattr(e, "status_code", None)
+            retriable = status is None or status >= 500 or status in (408, 429)
+            if not retriable:
+                logger.error(
+                    f"[analyst] {data['ticker']}: non-retriable HTTP {status}: {e}"
+                )
+                return (
+                    f"## {data['ticker']} — {data.get('company_name') or '?'} "
+                    f"({data['exchange']} · {data['group']})\n\n"
+                    f"[配置错误: HTTP {status}: {e}]\n"
+                )
+            last_error = e
+            logger.warning(
+                f"[analyst] {data['ticker']}: attempt {attempt} failed: "
+                f"HTTP {status}: {e}"
+            )
+            if attempt == 1:
+                await asyncio.sleep(RETRY_BACKOFF_SECONDS)
         except (
-            anthropic.APIStatusError,
             anthropic.APIConnectionError,
             asyncio.TimeoutError,
             RuntimeError,
