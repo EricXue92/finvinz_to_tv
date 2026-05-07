@@ -7,3 +7,6 @@ __pycache__/
 .playwright-mcp/
 /20[0-9][0-9]_*.txt
 .worktrees/
+.env
+.env.*
+!.env.example

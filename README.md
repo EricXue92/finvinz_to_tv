@@ -1,8 +1,8 @@
 # Daily Stock Screener Pipeline
 
-Multi-source momentum and short screeners (US via Finviz, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists and auto-sync to Futu (富途牛牛) custom groups via OpenAPI, based on Oliver Kell and Kristjan Kullamägi.
+Multi-source momentum and short screeners (US via Finviz, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists, auto-sync to Futu (富途牛牛) custom groups via OpenAPI, and produce daily CANSLIM-style research briefs via Claude Opus 4.7. Methodology based on Oliver Kell and Kristjan Kullamägi.
 
-> **Status (2026-05-06):** US + HK. US uses Finviz + yfinance + IBD RS CSV. HK uses yfinance for k-line + HSI history (the original Futu-only spec was rolled back when Futu's free/Lv1 tier was found to cap 12-month history at ~12% of the Main Board universe). Futu still handles HK market caps, the live HSI day-change snapshot for the conditional RS trigger, and watchlist sync. HK pipeline runs in its own scheduled slot at 20:00 HKT (US runs at 10:00 HKT) — both write per-market logs.
+> **Status (2026-05-07):** US + HK. US uses Finviz + yfinance + IBD RS CSV. HK uses yfinance for k-line + HSI history (the original Futu-only spec was rolled back when Futu's free/Lv1 tier was found to cap 12-month history at ~12% of the Main Board universe). Futu still handles HK market caps, the live HSI day-change snapshot for the conditional RS trigger, and watchlist sync. HK pipeline runs in its own scheduled slot at 20:00 HKT (US runs at 10:00 HKT) — both write per-market logs. After each EOD run the wrapper scripts also invoke `--mode report` for that market, generating a CANSLIM Markdown + standalone-HTML brief for the day's newly-detected long-side tickers.
 
 ## Screeners
 
@@ -167,6 +167,24 @@ Two-phase intraday gap scanner. **Pre-market (-20/-10/-5 min)** writes `MorningG
 
 Requires FutuOpenD running with US Lv1 BBO real-time quote permission. Without it, both Phase 1 discovery and the post-open volume filter return empty — there's no Finviz fallback. Each scan that surfaces *new* tickers (not seen in any earlier scan today) pushes an ntfy notification.
 
+## Daily CANSLIM Report
+
+After each EOD run, `--mode report --market {us,hk}` reads the day's dated long-side `.txt` files, ranks tickers by group priority, caps at 50 per market, and calls Claude Opus 4.7 with the `web_search_20250305` tool to produce a CANSLIM-style fundamentals + outlook brief for each ticker. Output: `output/Reports/<date>_{us,hk}.md` and a self-contained `<date>_{us,hk}.html` (inline CSS, no external assets — double-click to open in any browser).
+
+| Aspect | Detail |
+|---|---|
+| **Inputs (US)** | 8 dated files: `EarningsGap`, `HighVolume`, `Leaders`, `GapUp`, `NewHigh52W`, `IPO`, `TopGainers`, `RS` |
+| **Inputs (HK)** | 6 dated files: `EarningsGap`, `HighVolume`, `Leaders`, `GapUp`, `IPO`, `RS` (no NewHigh52W / TopGainers) |
+| **Cap & priority** | 50 tickers/market; `EarningsGap > HighVolume > Leaders > GapUp > NewHigh52W > IPO > TopGainers > RS`. Overflow listed in a "Truncated" tail section. |
+| **Structured fields** | yfinance: Market Cap, Price, EPS (latest Q + YoY), Revenue (latest Q + YoY), **3-year annual YoY** for both, PE, ROE, Inst. Hold %, latest earnings date. RS percentile from the cached IBD/HSI tables. |
+| **Qualitative sections** | Model-generated with up to 3 `web_search` calls per ticker: 公司速览, 基本面/财报, 竞争力, 政策/政府支持, 新产品/催化剂, 风险点, 综合判断. |
+| **Bilingual** | Snapshot fields stay in English/numbers; qualitative analysis in Simplified Chinese. |
+| **Soft-fail** | Mirrors the Futu-sync contract — wrapper exit code reflects only the EOD step. Missing `ANTHROPIC_API_KEY` → step skipped with a warning, `.txt` artifacts unaffected. 4xx config errors fail fast with a distinct `[配置错误]` placeholder; 5xx/429/timeouts retry once before falling back to `[分析失败]`. |
+| **Excluded** | US Shorts, HK Shorts, Morning Gap — technical/intraday plays where fundamentals don't drive entries. |
+| **Cost envelope** | ~$0.13–0.25/ticker (Opus 4.7 + web_search). Typical $10–15/day. Hard cap $25/day (50 × 2 markets × $0.25). |
+
+**Setup:** `export ANTHROPIC_API_KEY=sk-ant-...` in your shell (interactive use) and either in `scripts/run_eod.sh` / `scripts/run_hk_eod.sh` or via `launchctl setenv` / the plist's `EnvironmentVariables` (so launchd inherits it for the scheduled slots).
+
 ## Dedup
 
 - **Within Longs** — 5 strategies are mutually exclusive (priority `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`).
@@ -184,6 +202,8 @@ output/
 ├── Webull/                    # newline-separated mirror, for Webull "Upload as File"
 │   ├── US/<date>_*.txt
 │   └── HK/<date>_*.txt
+├── Reports/                   # daily CANSLIM briefs (Markdown + standalone HTML)
+│   └── <date>_{us,hk}.{md,html}
 └── state/                     # cross-day "seen" masters, RS table caches, morning-gap per-day seen
     ├── eod_seen_US.txt        # US long-side master (5 Longs splits + Leaders + RS)
     ├── eod_seen_HK.txt        # HK long-side master (EarningsGap/HighVolume/GapUp/Leaders/RS)
@@ -216,9 +236,11 @@ Morning-gap scans push an [ntfy.sh](https://ntfy.sh) notification when **new** t
 ## Setup
 
 ```bash
-uv sync                              # install
-uv run main.py                       # EOD pipeline (Longs/Leaders/Shorts/RS/IPO)
-uv run main.py --mode morning-gap    # intraday gap scan (auto-detects time window, exits cleanly outside)
+uv sync                                              # install
+uv run main.py                                       # EOD pipeline (Longs/Leaders/Shorts/RS/IPO)
+uv run main.py --mode morning-gap                    # intraday gap scan (auto-detects time window, exits cleanly outside)
+uv run main.py --mode report --market us             # CANSLIM brief for today's US tickers (needs ANTHROPIC_API_KEY)
+uv run main.py --mode report --market hk --date YYYY-MM-DD   # back-fill a specific day
 ```
 
 ## Automation (macOS launchd + pmset)
@@ -231,7 +253,7 @@ Two daily EOD slots (split by market close) plus an intraday morning-gap scanner
 | HK EOD | Mon–Fri 20:00 HKT | `hk-eod` | `output/launchd_HK.log` | `~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist` |
 | Morning Gap | 90 entries/week (ET-aware) | `morning-gap` | (per-run) | `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` |
 
-The 10:00 HKT slot lands after US market close in both EDT and EST AND after the daily upstream RS Rating commit. The 20:00 HKT slot leaves 4 hours of slack after HK market close (16:00 HKT) for k-line data to finalize. The US slot uses `--mode us-eod` (HK is intentionally skipped — at 10:00 HKT the HK market has only been open 30 minutes and today's k-line bar is incomplete).
+The 10:00 HKT slot lands after US market close in both EDT and EST AND after the daily upstream RS Rating commit. The 20:00 HKT slot leaves 4 hours of slack after HK market close (16:00 HKT) for k-line data to finalize. The US slot uses `--mode us-eod` (HK is intentionally skipped — at 10:00 HKT the HK market has only been open 30 minutes and today's k-line bar is incomplete). After each EOD step succeeds, the wrapper script makes a soft-fail call to `--mode report --market {us,hk}` so the day's CANSLIM brief is produced in the same window — failures there don't affect the EOD's exit code.
 
 ```bash
 # US slot
@@ -259,4 +281,4 @@ All screener filters, thresholds, and Futu/ntfy settings are in `config.toml`. S
 
 ## Dependencies
 
-Python ≥ 3.12 — [finviz](https://github.com/mariostoev/finviz), [yfinance](https://github.com/ranaroussi/yfinance), [openpyxl](https://openpyxl.readthedocs.io/), [futu-api](https://pypi.org/project/futu-api/) (optional).
+Python ≥ 3.12 — [finviz](https://github.com/mariostoev/finviz), [yfinance](https://github.com/ranaroussi/yfinance), [openpyxl](https://openpyxl.readthedocs.io/), [futu-api](https://pypi.org/project/futu-api/) (optional), [anthropic](https://pypi.org/project/anthropic/) + [markdown](https://pypi.org/project/Markdown/) (for the daily CANSLIM report).

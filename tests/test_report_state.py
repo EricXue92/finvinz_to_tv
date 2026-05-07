@@ -62,3 +62,40 @@ def test_groups_for_hk_excludes_newhigh_topgainers():
     assert state.groups_for_market("hk") == [
         "EarningsGap", "HighVolume", "Leaders", "GapUp", "IPO", "RS",
     ]
+
+
+def test_load_dotenv_populates_env_when_missing(monkeypatch, tmp_path):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("FOO_BAR", raising=False)
+    env = tmp_path / ".env"
+    env.write_text(
+        "# a comment\n"
+        "ANTHROPIC_API_KEY=sk-ant-xyz\n"
+        "FOO_BAR=baz\n"
+        "\n"
+    )
+    state.load_dotenv(env)
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-xyz"
+    assert os.environ["FOO_BAR"] == "baz"
+
+
+def test_load_dotenv_does_not_override_existing(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "already-set")
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=should-not-overwrite\n")
+    state.load_dotenv(env)
+    assert os.environ["ANTHROPIC_API_KEY"] == "already-set"
+
+
+def test_load_dotenv_handles_export_prefix_and_quotes(monkeypatch, tmp_path):
+    monkeypatch.delenv("KEY1", raising=False)
+    monkeypatch.delenv("KEY2", raising=False)
+    env = tmp_path / ".env"
+    env.write_text('export KEY1="quoted"\nKEY2=\'single-quoted\'\n')
+    state.load_dotenv(env)
+    assert os.environ["KEY1"] == "quoted"
+    assert os.environ["KEY2"] == "single-quoted"
+
+
+def test_load_dotenv_missing_file_is_noop(tmp_path):
+    state.load_dotenv(tmp_path / "nope.env")  # must not raise

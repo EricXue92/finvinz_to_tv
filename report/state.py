@@ -26,6 +26,33 @@ _HK_EXCLUDES = {"NewHigh52W", "TopGainers"}
 MAX_TICKERS_PER_REPORT = 50
 
 
+def load_dotenv(path: Path | None = None) -> None:
+    """Populate os.environ from a project-root `.env` file, but never override
+    values already set in the environment. Silent no-op if the file is absent.
+
+    Without this, running `uv run main.py --mode report --market us` directly
+    (instead of via the wrapper) wouldn't see ANTHROPIC_API_KEY because the
+    wrapper's `source .env` only applies to launchd-triggered runs.
+    """
+    p = path or PROJECT_ROOT / ".env"
+    if not p.is_file():
+        return
+    try:
+        for raw in p.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError as e:
+        logger.warning(f"[state] failed to read {p}: {e}")
+
+
 def get_api_key() -> str | None:
     """Return ANTHROPIC_API_KEY env var or None when unset."""
     return os.environ.get("ANTHROPIC_API_KEY")

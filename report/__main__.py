@@ -23,6 +23,7 @@ from report.state import (
     PROJECT_ROOT,
     get_api_key,
     input_dir_for_market,
+    load_dotenv,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,10 @@ def _empty_data(ticker: str, group: str, exchange: str) -> dict:
 
 
 async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
+    # Direct `uv run main.py --mode report ...` invocations don't go through the
+    # wrapper script's `source .env`, so try to fill the gap here. No-op if the
+    # env var is already set or .env is absent.
+    load_dotenv()
     api_key = get_api_key()
     if not api_key:
         logger.warning("[report] ANTHROPIC_API_KEY not set; skipping report generation")
