@@ -106,3 +106,20 @@ def test_fetch_ticker_data_full_path():
     assert data["revenue_latest_q_yoy_pct"] == pytest.approx(10.0)
     assert len(data["annual_revenue_yoy_3y"]) == 3
     assert data["annual_revenue_yoy_3y"][2] == pytest.approx(10.0, rel=0.01)
+
+
+def test_fetch_ticker_data_gap_pct_handles_zero_prev_close():
+    """Penny-stock or data-error case: prev_close=0 must not crash or compute spurious gap."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {
+        "longName": "Zero Co.",
+        "currentPrice": 5.0,
+        "previousClose": 0.0,
+    }
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker):
+        data = enrich.fetch_ticker_data("ZERO", "GapUp", "NASDAQ", rs_lookup=lambda t: None)
+    assert data["last_price"] == 5.0
+    assert data["prev_close"] == 0.0
+    assert data["gap_pct"] is None  # not computed because prev_close is not > 0

@@ -104,14 +104,27 @@ def fetch_ticker_data(
         data["market_cap"] = info.get("marketCap")
         data["last_price"] = info.get("currentPrice") or info.get("regularMarketPrice")
         data["prev_close"] = info.get("previousClose")
-        if data["last_price"] and data["prev_close"]:
+        if (
+            data["last_price"] is not None
+            and data["prev_close"] is not None
+            and data["prev_close"] > 0
+        ):
             data["gap_pct"] = (data["last_price"] - data["prev_close"]) / data["prev_close"] * 100.0
         data["pe_ratio"] = info.get("trailingPE")
         roe = info.get("returnOnEquity")
         data["roe"] = roe * 100.0 if isinstance(roe, (int, float)) else None
         inst = info.get("heldPercentInstitutions")
         data["institutional_holdings_pct"] = inst * 100.0 if isinstance(inst, (int, float)) else None
-        data["latest_earnings_date"] = info.get("lastFiscalYearEnd")
+        try:
+            ed = t.earnings_dates
+            if ed is not None and not ed.empty:
+                past = ed[ed.index <= pd.Timestamp.now(tz=ed.index.tz)]
+                if not past.empty:
+                    data["latest_earnings_date"] = past.index.max()
+        except Exception:
+            pass
+        if data["latest_earnings_date"] is None:
+            data["latest_earnings_date"] = info.get("mostRecentQuarter")
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: info access failed: {e}")
 
