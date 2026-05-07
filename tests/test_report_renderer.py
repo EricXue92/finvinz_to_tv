@@ -92,7 +92,8 @@ def test_render_html_includes_svg_bar_chart():
 
 
 def test_render_html_marks_positive_negative_yoy():
-    """Positive YoY uses --positive color; negative uses --negative."""
+    """Positive YoY gets `positive` class; negative gets `negative` class
+    on the latest-quarter YoY badge."""
     d = _fake_data("XYZ")
     d["eps_latest_q_yoy_pct"] = -25.0
     d["revenue_latest_q_yoy_pct"] = 30.0
@@ -104,8 +105,8 @@ def test_render_html_marks_positive_negative_yoy():
         truncated=[],
         generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
     )
-    assert 'class="yoy-pill negative"' in html
-    assert 'class="yoy-pill positive"' in html
+    assert 'class="yoy negative"' in html
+    assert 'class="yoy positive"' in html
 
 
 def test_render_html_failure_prose_renders_as_failure_block():
@@ -201,11 +202,14 @@ def test_bar_chart_handles_all_null():
     assert svg.count("<text") >= 5  # period labels still rendered
 
 
-def test_bar_chart_handles_mix_of_signs():
-    svg = renderer._bar_chart_svg([10.0, -5.0, None, 25.0, -15.0],
-                                   ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"])
-    assert "#2D6A4F" in svg  # positive color
-    assert "#8B2635" in svg  # negative color
+def test_line_chart_handles_mix_of_signs():
+    """Line chart: black ink on white, red emphasis only on negative labels."""
+    svg = renderer._line_chart_svg([10.0, -5.0, None, 25.0, -15.0],
+                                    ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"])
+    assert "<circle" in svg                    # at least one filled dot
+    assert "#111111" in svg                    # ink color
+    assert "#B00020" in svg                    # negative-label color
+    assert svg.count("<line") >= 2             # baseline + connecting segments
 
 
 # --- Legacy shims (keep older callers working) -------------------------------

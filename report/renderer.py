@@ -21,350 +21,281 @@ import markdown as md_lib
 
 INLINE_CSS = """
 :root {
-  --paper:        #F8F4ED;
-  --paper-lift:   #FCFAF4;
-  --ink:          #1B1814;
-  --muted:        #6F665A;
-  --rule:         #E0D6C0;
-  --rule-strong:  #B8AB95;
-  --symbol:       #16314C;
-  --positive:     #2D6A4F;
-  --negative:     #8B2635;
-  --null:         #B8AB95;
-  --highlight:    #F3E7CC;
-  --accent:       #BD8B3C;
+  --bg:           #FFFFFF;
+  --ink:          #111111;
+  --ink-soft:     #2C2C2C;
+  --muted:        #777777;
+  --faint:        #AAAAAA;
+  --rule:         #E0E0E0;
+  --rule-strong:  #999999;
+  --accent:       #111111;   /* monochromatic */
+  --emphasis-bg:  #FAFAFA;   /* subtle gray for emphasized sections */
+  --negative:     #B00020;   /* used only for clear loss markers */
+  --positive:     #1A7F37;   /* used only sparingly */
 }
 * { box-sizing: border-box; }
-html { background: var(--paper); }
+html, body { background: var(--bg); }
 body {
   margin: 0;
-  padding: 56px 32px 96px;
+  padding: 40px 24px 80px;
   color: var(--ink);
-  background: var(--paper);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  font-size: 15px;
-  line-height: 1.65;
-  font-feature-settings: "kern", "liga", "calt";
+  font-size: 14px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
-.sheet { max-width: 760px; margin: 0 auto; }
+.sheet { max-width: 780px; margin: 0 auto; }
 
-/* --- Masthead --- */
+/* --- Masthead (compact) --- */
 .masthead {
-  border-top: 4px double var(--ink);
   border-bottom: 1px solid var(--rule-strong);
-  padding: 24px 0 18px;
-  margin-bottom: 56px;
+  padding-bottom: 12px;
+  margin-bottom: 28px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 .masthead-title {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
   margin: 0;
-  line-height: 1.1;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 .masthead-meta {
-  display: flex;
-  gap: 18px;
   font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .masthead-meta strong { color: var(--ink); font-weight: 600; }
 
-/* --- Index --- */
+/* --- Index (compact grid of tickers) --- */
 .index {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px 16px;
-  margin: 0 0 64px;
-  padding: 16px 0;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 4px 12px;
+  margin: 0 0 36px;
+  padding: 10px 0;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .index a {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   text-decoration: none;
   color: var(--ink);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-.index a:hover { color: var(--symbol); }
-.index .num {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  color: var(--muted);
-  font-size: 11px;
-  letter-spacing: 0.05em;
-}
-.index .sym { font-weight: 600; letter-spacing: 0.02em; }
-.index .grp { color: var(--muted); font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.1em; margin-left: auto; }
-
-/* --- Ticker block --- */
-.ticker {
-  margin-bottom: 88px;
-  scroll-margin-top: 24px;
-}
-.ticker-head {
-  display: grid;
-  grid-template-columns: 64px 1fr;
+  display: flex;
   align-items: baseline;
-  gap: 12px 18px;
-  border-top: 2px solid var(--ink);
-  padding-top: 22px;
-  margin-bottom: 22px;
+  gap: 6px;
+}
+.index a:hover { text-decoration: underline; }
+.index .num { color: var(--faint); font-size: 10px; min-width: 16px; }
+.index .sym { font-weight: 600; }
+.index .grp { color: var(--muted); font-size: 10px; margin-left: auto; }
+
+/* --- Ticker block (compact) --- */
+.ticker {
+  margin-bottom: 56px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule-strong);
+  scroll-margin-top: 16px;
+}
+.ticker:first-of-type { border-top: 0; padding-top: 0; }
+.ticker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 .ticker-num {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-variant-numeric: lining-nums tabular-nums;
-  align-self: start;
-  padding-top: 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
 }
 .ticker-symbol {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  font-size: 44px;
-  font-weight: 600;
-  color: var(--symbol);
-  letter-spacing: -0.02em;
-  line-height: 1;
-}
-.ticker-symbol .em-dash {
-  color: var(--muted);
-  font-weight: 400;
-  margin: 0 0.15em;
-}
-.ticker-symbol .company {
-  font-style: italic;
-  font-weight: 400;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
   color: var(--ink);
+}
+.ticker-company {
+  font-size: 13px;
+  color: var(--ink-soft);
 }
 .ticker-meta {
-  grid-column: 2;
-  margin-top: 6px;
   font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--muted);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.ticker-meta .sep { margin: 0 6px; color: var(--faint); }
+
+/* --- Compact snapshot row --- */
+.snapshot {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+  padding: 6px 0 10px;
+  margin-bottom: 14px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
+  gap: 4px 18px;
 }
-.ticker-meta .group-tag {
-  background: var(--highlight);
-  color: var(--ink);
-  padding: 1px 8px;
-  border-radius: 2px;
-  letter-spacing: 0.08em;
-}
-
-/* --- Snapshot strip --- */
-.snapshot {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 1px;
-  background: var(--rule);
-  margin-bottom: 28px;
-  border: 1px solid var(--rule);
-}
-.snapshot .cell {
-  background: var(--paper-lift);
-  padding: 10px 12px;
-}
-.snapshot .label {
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.snapshot .value {
-  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  line-height: 1.2;
-}
-.snapshot .value.muted { color: var(--muted); }
+.snapshot .field { display: inline-flex; gap: 5px; align-items: baseline; }
+.snapshot .label { color: var(--muted); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; }
+.snapshot .value { color: var(--ink); }
 .snapshot .value.positive { color: var(--positive); }
 .snapshot .value.negative { color: var(--negative); }
 
-/* --- Quarterly earnings card --- */
+/* --- Latest quarter (prominent — this is core CANSLIM "C") --- */
 .quarterly {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--accent);
-  padding: 18px 22px;
-  background: var(--paper-lift);
-  margin-bottom: 28px;
+  padding: 14px 0 18px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
 }
 .quarterly .qtr-label {
-  font-size: 9px;
-  letter-spacing: 0.18em;
+  font-size: 10px;
   text-transform: uppercase;
+  letter-spacing: 0.1em;
   color: var(--muted);
-  font-weight: 600;
   margin-bottom: 6px;
 }
 .quarterly .metric-name {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
-  margin-bottom: 4px;
-  letter-spacing: 0.04em;
+  margin-bottom: 2px;
 }
 .quarterly .metric-value {
-  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: 26px;
-  font-weight: 500;
+  font-size: 22px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
-  line-height: 1;
+  line-height: 1.1;
 }
-.quarterly .yoy-pill {
+.quarterly .yoy {
   display: inline-block;
-  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  padding: 2px 8px;
-  border-radius: 2px;
-  margin-top: 8px;
-}
-.quarterly .yoy-pill.positive { background: rgba(45,106,79,.10); color: var(--positive); }
-.quarterly .yoy-pill.negative { background: rgba(139,38,53,.10); color: var(--negative); }
-.quarterly .yoy-pill.null { background: var(--paper); color: var(--muted); }
-
-/* --- Annual YoY chart --- */
-.annual {
-  border: 1px solid var(--rule);
-  padding: 18px 22px;
-  margin-bottom: 28px;
-  background: var(--paper-lift);
-}
-.annual h4 {
-  margin: 0 0 14px;
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
   font-size: 12px;
-  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.quarterly .yoy.positive { color: var(--positive); }
+.quarterly .yoy.negative { color: var(--negative); }
+.quarterly .yoy.null { color: var(--muted); }
+
+/* --- Annual YoY line charts (the user's "连线点图") --- */
+.annual {
+  margin-bottom: 22px;
+  padding-bottom: 4px;
+}
+.annual-title {
+  font-size: 10px;
   text-transform: uppercase;
+  letter-spacing: 0.1em;
   color: var(--muted);
-  font-weight: 600;
+  margin-bottom: 10px;
 }
 .chart-row {
   display: grid;
-  grid-template-columns: 80px 1fr;
-  gap: 16px;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
   align-items: center;
-  padding: 4px 0;
+  padding: 6px 0;
 }
-.chart-row + .chart-row { border-top: 1px solid var(--rule); padding-top: 14px; margin-top: 10px; }
 .chart-name {
   font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink);
   font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.04em;
 }
-.chart-svg { width: 100%; height: 56px; display: block; }
+.chart-svg { width: 100%; height: 70px; display: block; }
 
-/* --- Prose sections (LLM output) --- */
+/* --- Prose sections (LLM output) — main reading area --- */
 .prose h3 {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--ink);
-  margin: 26px 0 8px;
-  padding-left: 14px;
-  border-left: 2px solid var(--accent);
-  line-height: 1.25;
+  margin: 18px 0 6px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--rule);
+  letter-spacing: 0.02em;
 }
-.prose h3::before {
-  content: counter(prose-section, decimal-leading-zero) ".";
-  font-size: 11px;
-  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-weight: 500;
-  color: var(--muted);
-  margin-right: 8px;
-  letter-spacing: 0.06em;
+.prose h3.emph {
+  border-bottom: 2px solid var(--ink);
+  margin-top: 22px;
+}
+.prose h3.emph::before {
+  content: "● ";
+  color: var(--ink);
+  font-size: 10px;
   vertical-align: 1px;
+  margin-right: 2px;
 }
-.prose { counter-reset: prose-section; }
-.prose h3 { counter-increment: prose-section; }
 .prose p {
-  margin: 0 0 0.85em;
-  text-align: justify;
-  hyphens: auto;
+  margin: 0 0 8px;
 }
-.prose ul, .prose ol { padding-left: 1.4em; margin: 0.4em 0 0.85em; }
-.prose li { margin: 0.15em 0; }
-.prose strong { font-weight: 600; color: var(--ink); }
-.prose em { color: var(--muted); }
+.prose ul, .prose ol {
+  padding-left: 1.4em;
+  margin: 4px 0 8px;
+}
+.prose li { margin: 2px 0; }
+.prose strong { font-weight: 700; color: var(--ink); }
+.prose em { font-style: italic; color: var(--ink-soft); }
 
-/* --- Truncated --- */
+/* --- Truncated tail --- */
 .truncated {
-  margin-top: 64px;
-  padding-top: 24px;
-  border-top: 4px double var(--ink);
+  margin-top: 48px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-strong);
 }
 .truncated h2 {
-  font-family: "New York", "Iowan Old Style", "Charter", "Georgia", serif;
-  font-size: 16px;
-  letter-spacing: 0.04em;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 8px;
+  color: var(--muted);
   font-weight: 600;
-  margin: 0 0 12px;
 }
 .truncated .lst {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 4px 12px;
-  font-size: 13px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 12px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-.truncated .lst span { color: var(--muted); font-size: 11px; margin-left: 6px;
-  letter-spacing: 0.08em; text-transform: uppercase; }
+.truncated .lst span { color: var(--muted); font-size: 10px; margin-left: 4px; }
 
-/* --- Empty / failure block --- */
+/* --- Failure / placeholder --- */
 .failure {
-  padding: 14px 18px;
-  border: 1px dashed var(--rule-strong);
-  background: var(--paper-lift);
-  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  font-size: 12px;
   color: var(--negative);
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
 
-/* Print friendly */
+/* Print */
 @media print {
-  body { padding: 0; font-size: 11pt; }
-  .ticker { page-break-inside: avoid; margin-bottom: 32px; }
+  body { padding: 0; font-size: 10pt; }
+  .ticker { page-break-inside: avoid; margin-bottom: 28px; }
   .index { display: none; }
 }
 
 /* Narrow screens */
 @media (max-width: 720px) {
-  body { padding: 24px 14px 64px; font-size: 14px; }
-  .snapshot { grid-template-columns: repeat(3, 1fr); }
-  .quarterly { grid-template-columns: 1fr; gap: 14px; }
-  .ticker-head { grid-template-columns: 48px 1fr; }
-  .ticker-symbol { font-size: 32px; }
+  body { padding: 16px 12px 48px; }
+  .quarterly { grid-template-columns: 1fr; gap: 10px; }
+  .chart-row { grid-template-columns: 70px 1fr; gap: 8px; }
 }
 """
 
@@ -420,75 +351,107 @@ def _fmt_date(v: Any) -> str:
 
 # --- Bar chart SVG -----------------------------------------------------------
 
-def _bar_chart_svg(values: list[float | None], labels: list[str]) -> str:
-    """Mini bar chart for YoY deltas. Positive = forest green up-bar,
-    negative = oxblood down-bar, null = thin gray rule on baseline.
-    Width is responsive (viewBox auto-scales)."""
+def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
+    """Connected-dot line chart for YoY deltas. Black ink on white,
+    one filled dot per period, line connecting non-null neighbors,
+    each dot annotated with its YoY %, period labels along the
+    x-axis below the zero line."""
     n = len(values)
     if n == 0:
         return ""
-    width, height = 360, 56
-    pad_x = 4
-    bar_gap = 6
-    bar_w = (width - 2 * pad_x - (n - 1) * bar_gap) / n
-    baseline = height / 2 + 4
+    width, height = 420, 70
+    pad_x, pad_top, pad_bottom = 24, 14, 16
+    plot_h = height - pad_top - pad_bottom
+    baseline = pad_top + plot_h / 2
 
     nonnull_abs = [abs(v) for v in values if v is not None]
-    max_abs = max(nonnull_abs, default=1.0)
-    if max_abs == 0:
-        max_abs = 1.0
-    max_bar_h = (height - 24) / 2  # leave room for labels above + below
+    max_abs = max(nonnull_abs, default=1.0) or 1.0
+    half = plot_h / 2 - 4  # leave space for labels
+
+    def x_for(i: int) -> float:
+        if n == 1:
+            return width / 2
+        return pad_x + i * ((width - 2 * pad_x) / (n - 1))
+
+    def y_for(v: float | None) -> float:
+        if v is None:
+            return baseline
+        return baseline - (v / max_abs) * half
 
     parts: list[str] = []
+
+    # Zero baseline (subtle)
     parts.append(
         f'<line x1="0" y1="{baseline:.1f}" x2="{width}" y2="{baseline:.1f}" '
-        'stroke="#D8CDB8" stroke-width="0.6"/>'
+        'stroke="#E0E0E0" stroke-width="0.6"/>'
     )
+
+    # Connecting polyline through consecutive non-null points only.
+    segments: list[tuple[float, float, float, float]] = []
+    last_xy: tuple[float, float] | None = None
     for i, v in enumerate(values):
-        x = pad_x + i * (bar_w + bar_gap)
-        cx = x + bar_w / 2
-        # Period label below baseline
+        if v is None:
+            last_xy = None
+            continue
+        x = x_for(i)
+        y = y_for(v)
+        if last_xy is not None:
+            segments.append((last_xy[0], last_xy[1], x, y))
+        last_xy = (x, y)
+    for x1, y1, x2, y2 in segments:
         parts.append(
-            f'<text x="{cx:.1f}" y="{height - 2:.1f}" font-size="8" '
-            f'font-family="SF Mono,Menlo,monospace" fill="#6F665A" '
-            f'text-anchor="middle" letter-spacing="0.06em">{labels[i]}</text>'
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            'stroke="#111111" stroke-width="1"/>'
+        )
+
+    # Dots + labels
+    for i, v in enumerate(values):
+        x = x_for(i)
+        # Period label (FY-5..FY-1) below the zero line, near the bottom edge
+        parts.append(
+            f'<text x="{x:.1f}" y="{height - 3:.1f}" font-size="9" '
+            f'font-family="SF Mono,Menlo,monospace" fill="#777777" '
+            f'text-anchor="middle">{labels[i]}</text>'
         )
         if v is None:
+            # Hollow gray ring on baseline + em-dash above
             parts.append(
-                f'<rect x="{x:.1f}" y="{baseline - 1:.1f}" width="{bar_w:.1f}" '
-                f'height="2" fill="#B8AB95" opacity="0.5"/>'
+                f'<circle cx="{x:.1f}" cy="{baseline:.1f}" r="2.5" '
+                'fill="#FFFFFF" stroke="#AAAAAA" stroke-width="1"/>'
             )
             parts.append(
-                f'<text x="{cx:.1f}" y="{baseline - 6:.1f}" font-size="9" '
-                f'font-family="SF Mono,Menlo,monospace" fill="#6F665A" '
+                f'<text x="{x:.1f}" y="{baseline - 6:.1f}" font-size="9" '
+                f'font-family="SF Mono,Menlo,monospace" fill="#AAAAAA" '
                 f'text-anchor="middle">—</text>'
             )
             continue
-        h = (abs(v) / max_abs) * max_bar_h
-        if v >= 0:
-            y = baseline - h
-            color = "#2D6A4F"
-            label_y = max(y - 4, 10)
-        else:
-            y = baseline
-            color = "#8B2635"
-            label_y = min(baseline + h + 11, height - 14)
+        y = y_for(v)
+        # Filled black dot
         parts.append(
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" '
-            f'height="{h:.1f}" fill="{color}" rx="1"/>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="#111111"/>'
         )
-        # Numeric label
+        # YoY% label — above the dot for positive, below for negative
         sign = "+" if v >= 0 else ""
+        if v >= 0:
+            label_y = max(y - 6, pad_top + 4)
+        else:
+            label_y = min(y + 13, height - pad_bottom - 1)
+        # Bold black label, with red tint when strongly negative for emphasis.
+        color = "#111111" if v >= 0 else "#B00020"
         parts.append(
-            f'<text x="{cx:.1f}" y="{label_y:.1f}" font-size="9" '
-            f'font-family="SF Mono,Menlo,monospace" fill="#1B1814" '
-            f'text-anchor="middle" font-weight="600">{sign}{v:.0f}%</text>'
+            f'<text x="{x:.1f}" y="{label_y:.1f}" font-size="10" '
+            f'font-family="SF Mono,Menlo,monospace" fill="{color}" '
+            f'text-anchor="middle" font-weight="600">{sign}{v:.1f}%</text>'
         )
     return (
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" '
         f'preserveAspectRatio="xMidYMid meet" '
         f'xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>'
     )
+
+
+# Keep legacy name as alias so existing test imports still resolve.
+_bar_chart_svg = _line_chart_svg
 
 
 # --- Per-ticker HTML blocks --------------------------------------------------
@@ -500,44 +463,36 @@ def _render_ticker_header(idx: int, data: dict[str, Any]) -> str:
     group = data.get("group") or ""
     sector = data.get("sector") or ""
     industry = data.get("industry") or ""
-    company_html = (
-        f'<span class="em-dash">—</span><span class="company">{company}</span>'
-        if company else ""
+    meta_bits = [bit for bit in (exchange, group, sector, industry) if bit]
+    meta_html = '<span class="sep">·</span>'.join(
+        f'<span>{b}</span>' for b in meta_bits
     )
-    meta_parts: list[str] = []
-    if exchange:
-        meta_parts.append(f"<span>{exchange}</span>")
-    if group:
-        meta_parts.append(f'<span class="group-tag">{group}</span>')
-    if sector or industry:
-        tax = " / ".join(filter(None, [sector, industry]))
-        meta_parts.append(f"<span>{tax}</span>")
-    meta_html = "".join(meta_parts)
     return (
         f'<header class="ticker-head">'
-        f'<div class="ticker-num">№ {idx:02d}</div>'
-        f'<div class="ticker-symbol">{ticker}{company_html}</div>'
-        f'<div class="ticker-meta">{meta_html}</div>'
+        f'<span class="ticker-num">{idx:02d}</span>'
+        f'<span class="ticker-symbol">{ticker}</span>'
+        f'<span class="ticker-company">{company}</span>'
+        f'<span class="ticker-meta">{meta_html}</span>'
         f"</header>"
     )
 
 
 def _render_snapshot(data: dict[str, Any]) -> str:
-    cells: list[tuple[str, str, str]] = []
-    cells.append(("Market Cap", _fmt_money(data.get("market_cap")), ""))
-    cells.append(("Price", _fmt_money(data.get("last_price")), ""))
+    fields: list[tuple[str, str, str]] = []
+    fields.append(("Cap", _fmt_money(data.get("market_cap")), ""))
+    fields.append(("Price", _fmt_money(data.get("last_price")), ""))
     gap = data.get("gap_pct")
-    cells.append(("Gap Today", _fmt_pct(gap), _yoy_class(gap)))
+    fields.append(("Gap", _fmt_pct(gap), _yoy_class(gap) if gap is not None else ""))
     rs = data.get("rs_percentile")
-    cells.append(("RS Pct.", str(rs) if rs is not None else "—", ""))
+    fields.append(("RS", str(rs) if rs is not None else "—", ""))
     inst = data.get("institutional_holdings_pct")
     inst_str = f"{inst:.1f}%" if isinstance(inst, (int, float)) else "—"
-    cells.append(("Inst. Hold", inst_str, ""))
-    cells.append(("Earnings Date", _fmt_date(data.get("latest_earnings_date")), ""))
+    fields.append(("Inst.", inst_str, ""))
+    fields.append(("Earnings", _fmt_date(data.get("latest_earnings_date")), ""))
     parts = [
-        f'<div class="cell"><div class="label">{lab}</div>'
-        f'<div class="value{(" " + cls) if cls else ""}">{val}</div></div>'
-        for lab, val, cls in cells
+        f'<span class="field"><span class="label">{lab}</span>'
+        f'<span class="value{(" " + cls) if cls else ""}">{val}</span></span>'
+        for lab, val, cls in fields
     ]
     return f'<section class="snapshot">{"".join(parts)}</section>'
 
@@ -562,18 +517,16 @@ def _render_quarterly(data: dict[str, Any]) -> str:
     rev_str = _fmt_money(rev)
 
     eps_pill = (
-        f'<span class="yoy-pill {_yoy_class(eps_yoy)}">YoY {_fmt_pct(eps_yoy)}{eps_yoy_src}</span>'
+        f'<div class="yoy {_yoy_class(eps_yoy)}">YoY {_fmt_pct(eps_yoy)}{eps_yoy_src}</div>'
     )
     rev_pill = (
-        f'<span class="yoy-pill {_yoy_class(rev_yoy)}">YoY {_fmt_pct(rev_yoy)}{rev_yoy_src}</span>'
+        f'<div class="yoy {_yoy_class(rev_yoy)}">YoY {_fmt_pct(rev_yoy)}{rev_yoy_src}</div>'
     )
     return (
         f'<section class="quarterly">'
-        f'<div><div class="qtr-label">Latest Quarter</div>'
-        f'<div class="metric-name">EPS (diluted)</div>'
+        f'<div><div class="qtr-label">Latest Quarter — EPS</div>'
         f'<div class="metric-value">{eps_str}</div>{eps_pill}</div>'
-        f'<div><div class="qtr-label">&nbsp;</div>'
-        f'<div class="metric-name">Revenue</div>'
+        f'<div><div class="qtr-label">Latest Quarter — Revenue</div>'
         f'<div class="metric-value">{rev_str}</div>{rev_pill}</div>'
         f"</section>"
     )
@@ -582,18 +535,38 @@ def _render_quarterly(data: dict[str, Any]) -> str:
 def _render_annual_yoy(data: dict[str, Any]) -> str:
     eps_5y = data.get("annual_eps_yoy_5y") or [None] * 5
     rev_5y = data.get("annual_revenue_yoy_5y") or [None] * 5
-    labels = ["FY−5", "FY−4", "FY−3", "FY−2", "FY−1"]
+    labels = ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"]
     return (
         f'<section class="annual">'
-        f'<h4>Annual Earnings Increases — Past 5 Fiscal Years</h4>'
+        f'<div class="annual-title">5-Year Annual Earnings Increases (YoY)</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">EPS YoY</div>'
-        f'{_bar_chart_svg(eps_5y, labels)}</div>'
+        f'{_line_chart_svg(eps_5y, labels)}</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">Rev. YoY</div>'
-        f'{_bar_chart_svg(rev_5y, labels)}</div>'
+        f'{_line_chart_svg(rev_5y, labels)}</div>'
         f"</section>"
     )
+
+
+# Section names whose H3 should be marked with an "emphasis" class so the CSS
+# can highlight them. These map to the user-prioritized analysis legs:
+# fundamentals, policy/government support, bottom-line CANSLIM judgement.
+_EMPHASIS_HEADINGS = ("基本面", "政策", "综合判断")
+
+
+def _emphasize_prose_html(html: str) -> str:
+    """Wrap heading + following content in <section class="emphasis"> for the
+    user-prioritized prose legs. Done by string replacement on the rendered
+    H3s — the markdown package doesn't expose a hook for per-heading classes."""
+    import re
+    # Find each emphasized H3 and inject a class on the heading element.
+    # Markdown lib emits `<h3>基本面 / 财报</h3>` (no attributes), so a simple
+    # regex is safe.
+    for needle in _EMPHASIS_HEADINGS:
+        pattern = re.compile(rf'<h3>([^<]*{re.escape(needle)}[^<]*)</h3>')
+        html = pattern.sub(r'<h3 class="emph">\1</h3>', html)
+    return html
 
 
 def _render_prose(prose_md: str) -> str:
@@ -605,6 +578,7 @@ def _render_prose(prose_md: str) -> str:
         prose_md,
         extensions=["fenced_code", "sane_lists"],
     )
+    body = _emphasize_prose_html(body)
     return f'<div class="prose">{body}</div>'
 
 
