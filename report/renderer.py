@@ -21,66 +21,68 @@ import markdown as md_lib
 
 INLINE_CSS = """
 :root {
-  --bg:           #FFFFFF;
-  --ink:          #111111;
-  --ink-soft:     #2C2C2C;
+  --bg:           #FAFAFA;
+  --card:         #FFFFFF;
+  --ink:          #1A1A1A;
+  --ink-soft:     #444444;
   --muted:        #777777;
   --faint:        #AAAAAA;
   --rule:         #E0E0E0;
-  --rule-strong:  #999999;
-  --accent:       #111111;   /* monochromatic */
-  --emphasis-bg:  #FAFAFA;   /* subtle gray for emphasized sections */
-  --negative:     #B00020;   /* used only for clear loss markers */
-  --positive:     #1A7F37;   /* used only sparingly */
+  --navy:         #2C3E50;
+  --navy-soft:    #34495E;
+  --tint:         #F7F9FB;
+  --positive:     #27AE60;
+  --negative:     #C0392B;
 }
 * { box-sizing: border-box; }
 html, body { background: var(--bg); }
 body {
   margin: 0;
-  padding: 40px 24px 80px;
+  padding: 32px 24px 80px;
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
 }
-.sheet { max-width: 780px; margin: 0 auto; }
+.sheet { max-width: 920px; margin: 0 auto; padding: 0 1.2em; }
 
-/* --- Masthead (compact) --- */
+/* --- Masthead --- */
 .masthead {
-  border-bottom: 1px solid var(--rule-strong);
-  padding-bottom: 12px;
-  margin-bottom: 28px;
+  border-bottom: 2px solid var(--navy);
+  padding-bottom: 14px;
+  margin-bottom: 24px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 .masthead-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--navy);
 }
 .masthead-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .masthead-meta strong { color: var(--ink); font-weight: 600; }
 
-/* --- Index (compact grid of tickers) --- */
+/* --- Index (anchored ticker grid) --- */
 .index {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 4px 12px;
-  margin: 0 0 36px;
-  padding: 10px 0;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px 16px;
+  margin: 0 0 40px;
+  padding: 12px 0;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .index a {
@@ -88,79 +90,116 @@ body {
   color: var(--ink);
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
 }
-.index a:hover { text-decoration: underline; }
-.index .num { color: var(--faint); font-size: 10px; min-width: 16px; }
+.index a:hover { color: var(--navy); }
+.index a:hover .sym { text-decoration: underline; }
+.index .num { color: var(--faint); font-size: 11px; min-width: 18px; }
 .index .sym { font-weight: 600; }
-.index .grp { color: var(--muted); font-size: 10px; margin-left: auto; }
+.index .grp {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
-/* --- Ticker block (compact) --- */
+/* --- Ticker block --- */
 .ticker {
   margin-bottom: 56px;
-  padding-top: 28px;
-  border-top: 1px solid var(--rule-strong);
   scroll-margin-top: 16px;
 }
-.ticker:first-of-type { border-top: 0; padding-top: 0; }
 .ticker-head {
+  background: var(--navy);
+  color: #FFFFFF;
+  padding: 10px 16px;
+  border-radius: 5px 5px 0 0;
   display: flex;
   align-items: baseline;
-  gap: 8px 14px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
 }
 .ticker-num {
-  color: var(--faint);
-  font-size: 11px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
   font-variant-numeric: tabular-nums;
   min-width: 22px;
 }
 .ticker-symbol {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.005em;
-  color: var(--ink);
+}
+.ticker-group {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.78);
+  letter-spacing: 0.02em;
 }
 .ticker-company {
   font-size: 13px;
-  color: var(--ink-soft);
+  font-weight: 400;
+  color: rgba(255,255,255,0.68);
+  margin-left: 4px;
 }
-.ticker-meta {
-  font-size: 11px;
-  color: var(--muted);
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.ticker-meta .sep { margin: 0 6px; color: var(--faint); }
 
-/* --- Compact snapshot row --- */
-.snapshot {
+.ticker-body {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-top: 0;
+  border-radius: 0 0 5px 5px;
+  padding: 18px 20px 22px;
+}
+
+/* --- Snapshot table (vertical, zebra-striped) --- */
+.snapshot { margin-bottom: 22px; }
+.snapshot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.snapshot-table thead th {
+  background: var(--tint);
+  color: var(--navy);
+  font-weight: 600;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
+  text-align: left;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--rule);
-  padding: 6px 0 10px;
-  margin-bottom: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
+  letter-spacing: 0.04em;
 }
-.snapshot .field { display: inline-flex; gap: 5px; align-items: baseline; }
-.snapshot .label { color: var(--muted); font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.06em; }
-.snapshot .value { color: var(--ink); }
-.snapshot .value.positive { color: var(--positive); }
-.snapshot .value.negative { color: var(--negative); }
+.snapshot-table tbody td {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+.snapshot-table tbody tr:last-child td { border-bottom: 0; }
+.snapshot-table tbody tr:nth-child(odd) td { background: #FBFBFB; }
+.snapshot-table .snap-label {
+  font-weight: 600;
+  color: var(--ink-soft);
+  width: 200px;
+  white-space: nowrap;
+}
+.snapshot-table .snap-value { color: var(--ink); }
+.snapshot-table .snap-value.positive { color: var(--positive); font-weight: 500; }
+.snapshot-table .snap-value.negative { color: var(--negative); font-weight: 500; }
 
-/* --- Latest quarter (prominent — this is core CANSLIM "C") --- */
+/* --- Latest quarter (CANSLIM "C") --- */
 .quarterly {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  padding: 14px 0 18px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--rule);
+  gap: 22px;
+  padding: 16px 18px;
+  margin-bottom: 22px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--navy);
+  border-radius: 3px;
 }
 .quarterly .qtr-label {
   font-size: 10px;
@@ -168,134 +207,146 @@ body {
   letter-spacing: 0.1em;
   color: var(--muted);
   margin-bottom: 6px;
-}
-.quarterly .metric-name {
-  font-size: 11px;
-  color: var(--muted);
-  margin-bottom: 2px;
+  font-weight: 600;
 }
 .quarterly .metric-value {
-  font-size: 22px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 26px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1.1;
+  color: var(--navy);
 }
 .quarterly .yoy {
   display: inline-block;
-  font-size: 12px;
+  font-size: 13px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-variant-numeric: tabular-nums;
-  margin-top: 4px;
-  font-weight: 500;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 600;
 }
-.quarterly .yoy.positive { color: var(--positive); }
-.quarterly .yoy.negative { color: var(--negative); }
-.quarterly .yoy.null { color: var(--muted); }
+.quarterly .yoy.positive { background: rgba(39,174,96,0.10); color: var(--positive); }
+.quarterly .yoy.negative { background: rgba(192,57,43,0.10); color: var(--negative); }
+.quarterly .yoy.null { background: var(--tint); color: var(--muted); font-weight: 500; }
 
-/* --- Annual YoY line charts (the user's "连线点图") --- */
+/* --- Annual YoY line charts --- */
 .annual {
-  margin-bottom: 22px;
-  padding-bottom: 4px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 14px 18px;
+  margin-bottom: 24px;
 }
 .annual-title {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted);
   margin-bottom: 10px;
+  font-weight: 600;
 }
 .chart-row {
   display: grid;
   grid-template-columns: 90px 1fr;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  padding: 6px 0;
+  padding: 8px 0;
+}
+.chart-row + .chart-row {
+  border-top: 1px solid var(--rule);
+  margin-top: 4px;
+  padding-top: 12px;
 }
 .chart-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--ink);
-  letter-spacing: 0.04em;
+  color: var(--navy);
+  letter-spacing: 0.02em;
 }
-.chart-svg { width: 100%; height: 70px; display: block; }
+.chart-svg { width: 100%; height: 76px; display: block; }
 
 /* --- Prose sections (LLM output) — main reading area --- */
 .prose h3 {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  margin: 18px 0 6px;
-  padding-bottom: 2px;
-  border-bottom: 1px solid var(--rule);
-  letter-spacing: 0.02em;
+  margin: 22px 0 8px;
+  color: var(--navy);
+  border-left: 4px solid var(--navy);
+  padding: 2px 0 2px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 .prose h3.emph {
-  border-bottom: 2px solid var(--ink);
-  margin-top: 22px;
+  border-left-width: 5px;
+  background: var(--tint);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 17px;
 }
-.prose h3.emph::before {
-  content: "● ";
-  color: var(--ink);
-  font-size: 10px;
-  vertical-align: 1px;
-  margin-right: 2px;
-}
-.prose p {
-  margin: 0 0 8px;
-}
-.prose ul, .prose ol {
-  padding-left: 1.4em;
-  margin: 4px 0 8px;
-}
-.prose li { margin: 2px 0; }
+.prose p { margin: 0 0 10px; }
+.prose ul, .prose ol { padding-left: 1.5em; margin: 4px 0 10px; }
+.prose li { margin: 3px 0; }
 .prose strong { font-weight: 700; color: var(--ink); }
 .prose em { font-style: italic; color: var(--ink-soft); }
 
 /* --- Truncated tail --- */
 .truncated {
   margin-top: 48px;
-  padding-top: 14px;
-  border-top: 1px solid var(--rule-strong);
+  padding-top: 16px;
+  border-top: 2px solid var(--navy);
 }
 .truncated h2 {
-  font-size: 12px;
+  font-size: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 0 0 10px;
+  color: var(--navy);
+  font-weight: 700;
 }
 .truncated .lst {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 2px 12px;
-  font-size: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 4px 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.truncated .lst span { color: var(--muted); font-size: 10px; margin-left: 4px; }
+.truncated .lst span {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 
 /* --- Failure / placeholder --- */
 .failure {
-  padding: 8px 12px;
-  border: 1px solid var(--rule-strong);
-  background: var(--bg);
-  font-size: 12px;
+  padding: 10px 14px;
+  border: 1px dashed var(--negative);
+  background: var(--card);
+  font-size: 13px;
   color: var(--negative);
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  border-radius: 3px;
 }
 
 /* Print */
 @media print {
-  body { padding: 0; font-size: 10pt; }
+  body { padding: 0; font-size: 11pt; background: #FFFFFF; }
   .ticker { page-break-inside: avoid; margin-bottom: 28px; }
   .index { display: none; }
+  .ticker-head { background: #2C3E50 !important; -webkit-print-color-adjust: exact;
+    print-color-adjust: exact; }
 }
 
 /* Narrow screens */
 @media (max-width: 720px) {
-  body { padding: 16px 12px 48px; }
-  .quarterly { grid-template-columns: 1fr; gap: 10px; }
+  body { padding: 18px 12px 48px; font-size: 14px; }
+  .sheet { padding: 0; }
+  .quarterly { grid-template-columns: 1fr; gap: 12px; }
   .chart-row { grid-template-columns: 70px 1fr; gap: 8px; }
+  .ticker-meta { margin-left: 0; flex-basis: 100%; }
 }
 """
 
@@ -458,43 +509,62 @@ _bar_chart_svg = _line_chart_svg
 
 def _render_ticker_header(idx: int, data: dict[str, Any]) -> str:
     ticker = data.get("ticker") or "?"
-    company = _short_company(data.get("company_name"))
-    exchange = data.get("exchange") or ""
     group = data.get("group") or ""
-    sector = data.get("sector") or ""
-    industry = data.get("industry") or ""
-    meta_bits = [bit for bit in (exchange, group, sector, industry) if bit]
-    meta_html = '<span class="sep">·</span>'.join(
-        f'<span>{b}</span>' for b in meta_bits
+    company = _short_company(data.get("company_name"), max_len=42)
+    company_html = (
+        f'<span class="ticker-company">· {company}</span>' if company else ""
     )
     return (
         f'<header class="ticker-head">'
         f'<span class="ticker-num">{idx:02d}</span>'
         f'<span class="ticker-symbol">{ticker}</span>'
-        f'<span class="ticker-company">{company}</span>'
-        f'<span class="ticker-meta">{meta_html}</span>'
+        f'<span class="ticker-group">({group})</span>'
+        f"{company_html}"
         f"</header>"
     )
 
 
 def _render_snapshot(data: dict[str, Any]) -> str:
-    fields: list[tuple[str, str, str]] = []
-    fields.append(("Cap", _fmt_money(data.get("market_cap")), ""))
-    fields.append(("Price", _fmt_money(data.get("last_price")), ""))
+    """Vertical 2-column Snapshot table (指标 | 数值, zebra-striped) — same
+    shape as the markdown-emitted table the user liked, but with deterministic
+    Python-formatted numbers and per-row CSS classes for sign coloring."""
+    rows: list[tuple[str, str, str]] = []
+    sector = data.get("sector") or ""
+    industry = data.get("industry") or ""
+    sector_str = " / ".join(filter(None, [sector, industry])) or "—"
+    rows.append(("Sector / Industry", sector_str, ""))
     gap = data.get("gap_pct")
-    fields.append(("Gap", _fmt_pct(gap), _yoy_class(gap) if gap is not None else ""))
+    if gap is None:
+        gap_val = "—"
+    else:
+        prev = data.get("prev_close")
+        last = data.get("last_price")
+        if isinstance(prev, (int, float)) and isinstance(last, (int, float)):
+            gap_val = f"{_fmt_pct(gap)}  (prev close ${prev:,.2f} → ${last:,.2f})"
+        else:
+            gap_val = _fmt_pct(gap)
+    rows.append(("Gap (today)", gap_val, _yoy_class(gap) if gap is not None else ""))
     rs = data.get("rs_percentile")
-    fields.append(("RS", str(rs) if rs is not None else "—", ""))
+    rows.append(("RS Percentile", str(rs) if rs is not None else "—", ""))
     inst = data.get("institutional_holdings_pct")
     inst_str = f"{inst:.1f}%" if isinstance(inst, (int, float)) else "—"
-    fields.append(("Inst.", inst_str, ""))
-    fields.append(("Earnings", _fmt_date(data.get("latest_earnings_date")), ""))
-    parts = [
-        f'<span class="field"><span class="label">{lab}</span>'
-        f'<span class="value{(" " + cls) if cls else ""}">{val}</span></span>'
-        for lab, val, cls in fields
-    ]
-    return f'<section class="snapshot">{"".join(parts)}</section>'
+    rows.append(("Inst. Hold", inst_str, ""))
+    rows.append(("Latest earnings date",
+                 _fmt_date(data.get("latest_earnings_date")), ""))
+
+    body_html = "".join(
+        f'<tr><td class="snap-label">{lab}</td>'
+        f'<td class="snap-value{(" " + cls) if cls else ""}">{val}</td></tr>'
+        for lab, val, cls in rows
+    )
+    return (
+        '<section class="snapshot">'
+        '<table class="snapshot-table">'
+        '<thead><tr><th>指标</th><th>数值</th></tr></thead>'
+        f'<tbody>{body_html}</tbody>'
+        '</table>'
+        '</section>'
+    )
 
 
 def _render_quarterly(data: dict[str, Any]) -> str:
@@ -587,10 +657,12 @@ def _render_ticker_block(idx: int, data: dict[str, Any], prose_md: str) -> str:
     return (
         f'<article class="ticker" id="t-{ticker}">'
         f'{_render_ticker_header(idx, data)}'
+        f'<div class="ticker-body">'
         f'{_render_snapshot(data)}'
         f'{_render_quarterly(data)}'
         f'{_render_annual_yoy(data)}'
         f'{_render_prose(prose_md)}'
+        f"</div>"
         f"</article>"
     )
 
