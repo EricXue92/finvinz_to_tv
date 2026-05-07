@@ -159,11 +159,14 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
     semaphore = asyncio.Semaphore(5)
-    coroutines = [
-        analyst.analyze_ticker(client, system_prompt, data, semaphore)
-        for data in enriched
-    ]
-    sections = await asyncio.gather(*coroutines)
+    try:
+        coroutines = [
+            analyst.analyze_ticker(client, system_prompt, data, semaphore)
+            for data in enriched
+        ]
+        sections = await asyncio.gather(*coroutines)
+    finally:
+        await client.close()
 
     md_text = renderer.render_markdown(
         market=market,
