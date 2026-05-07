@@ -39,10 +39,21 @@ def _split_exchange_ticker(qualified: str) -> tuple[str, str]:
 
 
 def _yf_ticker(symbol: str, market: str) -> str:
-    """yfinance expects bare US tickers and `<5-digit>.HK` for Hong Kong."""
+    """yfinance expects bare US tickers and `<4-digit>.HK` for Hong Kong (NB: differs from Futu's 5-digit `HK.<5-digit>` format)."""
     if market == "hk":
         return f"{symbol.lstrip('0').zfill(4)}.HK"
     return symbol
+
+
+def _normalize_rs_key(raw_symbol: str, market: str) -> str:
+    """Canonicalize an RS-table ticker key to match the yfinance form used at lookup time.
+    US: uppercase symbol. HK: 'HK.00700' → '0700.HK'."""
+    sym = raw_symbol.strip().upper()
+    if market == "hk" and sym.startswith("HK."):
+        sym = sym[3:]
+        sym = sym.lstrip("0") or "0"
+        sym = f"{sym.zfill(4)}.HK"
+    return sym
 
 
 def _load_rs_lookup(market: str, date_stem: str):
@@ -68,13 +79,20 @@ def _load_rs_lookup(market: str, date_stem: str):
             with path.open(encoding="utf-8") as fh:
                 reader = csv.DictReader(fh)
                 for row in reader:
-                    sym = row.get("ticker") or row.get("Ticker")
-                    pct = row.get("percentile") or row.get("rs_percentile")
-                    if sym and pct:
-                        try:
-                            table[sym.upper()] = int(float(pct))
-                        except ValueError:
-                            continue
+                    sym = row.get("ticker") or row.get("Ticker") or row.get("code")
+                    pct = (
+                        row.get("percentile")
+                        or row.get("Percentile")
+                        or row.get("rs_percentile")
+                    )
+                    if not (sym and pct):
+                        continue
+                    try:
+                        score = int(float(pct))
+                    except ValueError:
+                        continue
+                    key = _normalize_rs_key(sym, market)
+                    table[key] = score
             break
         except Exception as e:
             logger.warning(f"[report] failed to read RS cache {path}: {e}")
