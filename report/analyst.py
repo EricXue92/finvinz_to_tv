@@ -10,11 +10,13 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-4-7"
+MODEL = "claude-sonnet-4-6"
+# Sonnet 4.6: $3/M input, $15/M output (5× cheaper than Opus 4.7's $15/$75).
+# Per-ticker cost ≈ $0.04 (was ~$0.21 on Opus). Daily cap drops from $25
+# to ~$5/market.
 # 8 sections × ~250 Chinese tokens each + Snapshot table + headings ≈ 2300 output
-# tokens. 1500 was empirically truncating 12/14 reports mid-section. 2800 leaves
-# headroom without uncapping cost. Cost per ticker ≈ $0.21 output (was $0.11);
-# daily cap stays under spec's $25/market.
+# tokens. 1500 was empirically truncating 12/14 reports mid-section; 2800 leaves
+# headroom.
 MAX_TOKENS = 2800
 WEB_SEARCH_MAX_USES = 3
 RETRY_BACKOFF_SECONDS = 5.0
