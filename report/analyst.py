@@ -14,10 +14,9 @@ MODEL = "claude-sonnet-4-6"
 # Sonnet 4.6: $3/M input, $15/M output (5× cheaper than Opus 4.7's $15/$75).
 # Per-ticker cost ≈ $0.04 (was ~$0.21 on Opus). Daily cap drops from $25
 # to ~$5/market.
-# 8 sections × ~250 Chinese tokens each + Snapshot table + headings ≈ 2300 output
-# tokens. 1500 was empirically truncating 12/14 reports mid-section; 2800 leaves
-# headroom.
-MAX_TOKENS = 2800
+# 8 sections × ~250 Chinese tokens each + 19-row Snapshot table + headings
+# ≈ 3000 output tokens. 1500 → 2800 → 3500 as the template grew.
+MAX_TOKENS = 3500
 WEB_SEARCH_MAX_USES = 3
 RETRY_BACKOFF_SECONDS = 5.0
 # Sonnet 4.6 + web_search (≤3 calls) + 8-section Chinese output runs 30–90s

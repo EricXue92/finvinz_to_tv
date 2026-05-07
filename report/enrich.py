@@ -108,6 +108,29 @@ def fetch_ticker_data(
         "annual_revenue_yoy_3y": [None, None, None],
         "latest_earnings_date": None,
         "rs_percentile": None,
+        # Extended Yahoo Finance fields — populated even for unprofitable / new
+        # tickers where trailing PE / annual YoY are typically null.
+        "forward_pe": None,
+        "ps_ratio": None,
+        "profit_margin_pct": None,
+        "operating_margin_pct": None,
+        "gross_margin_pct": None,
+        "revenue_growth_yoy_pct": None,
+        "earnings_growth_yoy_pct": None,
+        "debt_to_equity": None,
+        "ev_to_revenue": None,
+        "ev_to_ebitda": None,
+        "target_mean_price": None,
+        "target_high_price": None,
+        "target_low_price": None,
+        "num_analysts": None,
+        "recommendation_mean": None,  # 1=strong buy … 5=sell
+        "recommendation_key": None,   # "buy" / "hold" / "underperform" / etc.
+        "fifty_two_week_high": None,
+        "fifty_two_week_low": None,
+        "short_pct_of_float": None,
+        "sector": None,
+        "industry": None,
     }
     try:
         t = yf.Ticker(ticker)
@@ -142,6 +165,33 @@ def fetch_ticker_data(
             pass
         if data["latest_earnings_date"] is None:
             data["latest_earnings_date"] = info.get("mostRecentQuarter")
+        # Extended fundamentals — fill the gaps when trailing PE/YoY are null.
+        data["forward_pe"] = info.get("forwardPE")
+        data["ps_ratio"] = info.get("priceToSalesTrailing12Months")
+        for src_key, dst_key in (
+            ("profitMargins", "profit_margin_pct"),
+            ("operatingMargins", "operating_margin_pct"),
+            ("grossMargins", "gross_margin_pct"),
+            ("revenueGrowth", "revenue_growth_yoy_pct"),
+            ("earningsGrowth", "earnings_growth_yoy_pct"),
+            ("shortPercentOfFloat", "short_pct_of_float"),
+        ):
+            v = info.get(src_key)
+            if isinstance(v, (int, float)):
+                data[dst_key] = v * 100.0
+        data["debt_to_equity"] = info.get("debtToEquity")
+        data["ev_to_revenue"] = info.get("enterpriseToRevenue")
+        data["ev_to_ebitda"] = info.get("enterpriseToEbitda")
+        data["target_mean_price"] = info.get("targetMeanPrice")
+        data["target_high_price"] = info.get("targetHighPrice")
+        data["target_low_price"] = info.get("targetLowPrice")
+        data["num_analysts"] = info.get("numberOfAnalystOpinions")
+        data["recommendation_mean"] = info.get("recommendationMean")
+        data["recommendation_key"] = info.get("recommendationKey")
+        data["fifty_two_week_high"] = info.get("fiftyTwoWeekHigh")
+        data["fifty_two_week_low"] = info.get("fiftyTwoWeekLow")
+        data["sector"] = info.get("sector")
+        data["industry"] = info.get("industry")
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: info access failed: {e}")
 

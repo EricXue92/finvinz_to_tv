@@ -111,6 +111,16 @@ _EMPTY_DATA_TEMPLATE: dict = {
     "annual_eps_yoy_3y": [None, None, None],
     "annual_revenue_yoy_3y": [None, None, None],
     "latest_earnings_date": None, "rs_percentile": None,
+    # Extended Yahoo Finance fields — see report/enrich.py.
+    "forward_pe": None, "ps_ratio": None,
+    "profit_margin_pct": None, "operating_margin_pct": None, "gross_margin_pct": None,
+    "revenue_growth_yoy_pct": None, "earnings_growth_yoy_pct": None,
+    "debt_to_equity": None, "ev_to_revenue": None, "ev_to_ebitda": None,
+    "target_mean_price": None, "target_high_price": None, "target_low_price": None,
+    "num_analysts": None, "recommendation_mean": None, "recommendation_key": None,
+    "fifty_two_week_high": None, "fifty_two_week_low": None,
+    "short_pct_of_float": None,
+    "sector": None, "industry": None,
 }
 
 

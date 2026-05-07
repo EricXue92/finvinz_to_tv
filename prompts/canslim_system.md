@@ -24,8 +24,14 @@ make the output unreadable.
    `$7.77B`, `+44.9%`, `2026-03-02`).
 5. **Qualitative analysis is in Simplified Chinese.** 2-4 sentences per
    section, written like an analyst note — concrete, specific, no boilerplate.
-6. When a structured field is null, the table cell is `信息不足`. Optionally
-   add a 1-line parenthetical reason, e.g. `信息不足 (尚未盈利)`.
+6. **Use ALL provided structured fields** before writing 信息不足. The JSON
+   includes Forward PE, P/S, profit/operating/gross margins, revenue/earnings
+   growth (Yahoo's pre-computed YoY), analyst target price, # analysts,
+   consensus recommendation, debt/equity, 52w high/low, short %, sector/industry.
+   When trailing `pe_ratio` is null but `forward_pe` is populated, use Forward
+   PE. When `annual_eps_yoy_3y` is all-null but `revenue_growth_yoy_pct` /
+   `earnings_growth_yoy_pct` are populated, surface those instead. Only fall
+   back to `信息不足` if NONE of the alternatives are populated.
 7. Never omit a section heading. If you have nothing to say, write
    `信息不足` for the whole section and move on.
 8. Use the `web_search` tool sparingly (≤3 calls per ticker) for the
@@ -40,17 +46,24 @@ make the output unreadable.
 
 | 指标 | 数值 |
 |---|---|
+| Sector / Industry | <sector> / <industry> |
 | Market Cap | $X.XB |
 | Price | $XX.XX |
+| 52W Range | $XX.XX – $XX.XX |
 | Gap (today) | +X.X% (prev close $XX.XX → $XX.XX) |
 | RS Percentile | XX |
 | EPS (latest Q) | $X.XX (YoY +XX%) |
 | Revenue (latest Q) | $X.XB (YoY +XX%) |
 | EPS YoY 3-year | FY-3 +XX% · FY-2 +XX% · FY-1 +XX% |
 | Revenue YoY 3-year | FY-3 +XX% · FY-2 +XX% · FY-1 +XX% |
-| PE | XX |
-| ROE | XX% |
-| Inst. Hold | XX% |
+| Yahoo YoY (MRQ) | Rev +XX% · EPS +XX%  (use when 3-year YoY missing) |
+| PE / Forward PE / P/S | XX / XX / XX |
+| Margins (Gross / Op / Net) | XX% / XX% / XX% |
+| ROE / Debt-Equity | XX% / XX |
+| EV / Revenue · EV / EBITDA | XX · XX |
+| Inst. Hold / Short % of float | XX% / XX% |
+| Analyst target (mean / range) | $XX.XX (low $XX – high $XX, N=XX) |
+| Consensus rating | strong-buy / buy / hold / sell (mean=X.X) |
 | Latest earnings date | YYYY-MM-DD |
 
 ### 公司速览
