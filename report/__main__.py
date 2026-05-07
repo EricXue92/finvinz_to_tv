@@ -163,7 +163,10 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
     system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    semaphore = asyncio.Semaphore(5)
+    # 5 was too aggressive — web_search calls compete for Anthropic-side queues
+    # and the tail of each batch hit our 90s timeout. 3 keeps wall-clock under
+    # 5 minutes for 14 tickers without timing out.
+    semaphore = asyncio.Semaphore(3)
     try:
         coroutines = [
             analyst.analyze_ticker(client, system_prompt, data, semaphore)

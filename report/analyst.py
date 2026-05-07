@@ -20,7 +20,11 @@ MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 2800
 WEB_SEARCH_MAX_USES = 3
 RETRY_BACKOFF_SECONDS = 5.0
-PER_CALL_TIMEOUT_SECONDS = 90.0
+# Sonnet 4.6 + web_search (≤3 calls) + 8-section Chinese output runs 30–90s
+# typical, with a long tail when Anthropic queues a 5xx auto-retry inside the
+# SDK (which is inside our wait_for). 180s gives the tail room without making
+# the wrapper feel hung.
+PER_CALL_TIMEOUT_SECONDS = 180.0
 
 
 def build_user_message(data: dict[str, Any]) -> str:
