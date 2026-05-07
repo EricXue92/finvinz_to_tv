@@ -82,6 +82,6 @@ def write_report_files(
     out_dir.mkdir(parents=True, exist_ok=True)
     md_path = out_dir / f"{date_stem}_{market}.md"
     html_path = out_dir / f"{date_stem}_{market}.html"
-    md_path.write_text(markdown_text)
-    html_path.write_text(markdown_to_html(markdown_text, page_title))
+    md_path.write_text(markdown_text, encoding="utf-8")
+    html_path.write_text(markdown_to_html(markdown_text, page_title), encoding="utf-8")
     return md_path, html_path
