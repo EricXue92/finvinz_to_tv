@@ -2,11 +2,11 @@
 
 **Status:** Draft
 **Date:** 2026-05-07
-**Scope:** After every long-side EOD run, analyze the day's newly-detected tickers (US + HK long-side groups + IPO sidecars) with Claude Opus 4.7 and email a CANSLIM-style fundamentals + outlook report to the user.
+**Scope:** After every long-side EOD run, analyze the day's newly-detected tickers (US + HK long-side groups + IPO sidecars) with Claude Opus 4.7 and write a CANSLIM-style fundamentals + outlook report to disk in both Markdown and standalone HTML.
 
 ## Goal
 
-Turn the daily `.txt` watchlist hits into a same-day research brief. For each ticker that crosses the cross-day master dedup gate (i.e., genuinely new for that ticker in that market's long-side universe), produce a structured CANSLIM-flavored writeup covering snapshot fundamentals, recent earnings, competitive position, government/policy support, new products & catalysts, key risks, and a bottom-line take. Bundle all writeups into a single Markdown file per market per day, and email it to the user. The `.txt` files remain the primary artifact; the report is a **soft-fail side effect** (mirrors the existing Futu sync contract).
+Turn the daily `.txt` watchlist hits into a same-day research brief. For each ticker that crosses the cross-day master dedup gate (i.e., genuinely new for that ticker in that market's long-side universe), produce a structured CANSLIM-flavored writeup covering snapshot fundamentals, recent earnings, competitive position, government/policy support, new products & catalysts, key risks, and a bottom-line take. Bundle all writeups into one Markdown file and one self-contained HTML file per market per day, both saved under `output/Reports/`. The `.txt` files remain the primary EOD artifact; the report is a **soft-fail side effect** (mirrors the existing Futu sync contract). No email, no network delivery — the user opens the local files.
 
 ## In Scope
 
@@ -95,11 +95,16 @@ Take the first 50. The remaining tickers (if any) are recorded in a "Truncated" 
 
 ## Output
 
-### Markdown file
+Two files per market per day, both written to `output/Reports/`:
 
-Path: `output/Reports/<date>_{us,hk}.md`
+| Path | Purpose |
+|---|---|
+| `output/Reports/<date>_{us,hk}.md` | Source-of-truth Markdown. Easy to grep, diff, and re-render. |
+| `output/Reports/<date>_{us,hk}.html` | Self-contained standalone HTML — single file, inline CSS, no external assets. Double-click to open in any browser. |
 
-Top-level structure:
+The HTML file is rendered from the Markdown via the `markdown` Python package (extensions: `tables`, `fenced_code`, `sane_lists`) and wrapped in a minimal HTML5 template with inline CSS (system font, max-width 900px, dark-text-on-white, slightly larger code/snapshot blocks). The template lives in `report/renderer.py` as a Python string constant — no Jinja, no external CSS file, intentionally trivial.
+
+### Markdown structure
 
 ```markdown
 # Scan Report — YYYY-MM-DD ({US,HK})
@@ -146,27 +151,30 @@ Top-level structure:
 
 The system prompt enforces this template strictly so all sections present even when data is partial (LLM writes "信息不足" for empty quals rather than omitting headers).
 
-### Email delivery (Gmail SMTP)
+### HTML rendering
 
-**Why SMTP, not Gmail MCP:** the Gmail MCP tool (`mcp__claude_ai_Gmail__create_draft`) is only callable inside a Claude Code session. `main.py --mode report` is a launchd-driven Python script with no MCP runtime, so it must call Gmail directly. Standard path: `smtplib.SMTP_SSL("smtp.gmail.com", 465)` with a Gmail **App Password** (not the account password — Google blocks plain-password SMTP since 2022).
+The `.html` file is generated from the same in-memory Markdown string via:
 
-**Setup (one-time, by user):**
-1. Enable 2-Step Verification on the Google account (xuelong0208@gmail.com)
-2. Generate an App Password at https://myaccount.google.com/apppasswords (16 chars, no spaces)
-3. Add to `scripts/run_eod.sh` and `scripts/run_hk_eod.sh`:
-   ```bash
-   export ANTHROPIC_API_KEY="sk-ant-..."
-   export SMTP_PASSWORD="xxxxxxxxxxxxxxxx"
-   ```
+```python
+import markdown
+html_body = markdown.markdown(md_text, extensions=["tables", "fenced_code", "sane_lists"])
+```
 
-**Email contents:**
-- From / To: `xuelong0208@gmail.com` (sending to self)
-- Subject: `[Scan Report] YYYY-MM-DD US — M analyzed` (or `HK`); where M is the post-cap analyzed count
-- HTML body: rendered from the Markdown file via `markdown` Python package (added as a `uv` dependency); GitHub-flavored extension for tables and fenced blocks
-- Plain-text body: the raw Markdown (multipart/alternative; clients without HTML get the .md)
-- No attachment — the Markdown file lives on disk; if the user wants it elsewhere they grab it from `output/Reports/`
+…then wrapped in a static HTML5 shell:
 
-**Failure mode:** SMTP errors logged as warnings, do not raise. The .md file is already on disk; missing email is a soft failure.
+```html
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Scan Report — {date} {market}</title>
+  <style>{INLINE_CSS}</style>
+</head>
+<body>{html_body}</body>
+</html>
+```
+
+`INLINE_CSS` is a ~30-line constant: system font stack, max-width 900px centered, slightly muted background for `<code>`/`<pre>`, table borders, headings spaced. No JavaScript, no external requests — the file is self-contained and can be archived or shared as one file.
 
 ## Module Layout
 
@@ -178,8 +186,7 @@ report/
   ranker.py                  # read dated .txt → priority sort → cap 50 → list[(ticker, group)]
   enrich.py                  # yfinance fetch + RS table lookup → dict per ticker
   analyst.py                 # async Anthropic + web_search + retry → markdown section per ticker
-  renderer.py                # list of sections → full markdown document
-  mailer.py                  # markdown → HTML (markdown pkg) → smtplib send
+  renderer.py                # sections → full markdown doc → standalone HTML doc (writes both files)
   state.py                   # paths, env-var reading, soft-fail helpers
 prompts/
   canslim_system.md          # static system prompt (cached)
@@ -192,17 +199,17 @@ docs/superpowers/specs/
 
 ### Dependencies (added to `pyproject.toml`)
 
-- `anthropic[web_search]` — official Anthropic SDK with web_search tool support (already may be aliased)
-- `markdown` — Markdown → HTML for the email body
+- `anthropic` — official Anthropic Python SDK (web_search is built-in to the API; no extras needed at the package level)
+- `markdown` — Markdown → HTML conversion for the `.html` output
 
-(yfinance, smtplib are already available — smtplib is stdlib.)
+(yfinance is already a dependency.)
 
 ## CLAUDE.md Updates
 
 After implementation, append a new section under "Architecture" describing:
-- The 14th group of artifacts: per-day Markdown reports under `output/Reports/`
+- The new artifact pair: per-day Markdown + standalone HTML reports under `output/Reports/`
 - The `--mode report` flag and its wrapper-script integration
-- The `ANTHROPIC_API_KEY` and `SMTP_PASSWORD` env var contract
+- The `ANTHROPIC_API_KEY` env var contract (only env var needed)
 - The "report is soft-fail like Futu sync" guarantee
 - The 50-ticker per-market cap and its priority order
 
@@ -216,39 +223,38 @@ The 50-ticker cap and priority order are hardcoded in `report/ranker.py` as modu
 
 Pure-logic units (no network):
 - `report.ranker.rank_and_cap()` — given a `dict[group_name, list[ticker]]`, returns the correct prioritized truncated list. Test with empty inputs, single-group, cross-group dedup, over-cap truncation.
-- `report.renderer.render_document()` — given mock section markdowns, produces the full document with header/separators/truncation block.
+- `report.renderer.render_markdown()` — given mock section markdowns, produces the full document with header/separators/truncation block.
+- `report.renderer.markdown_to_html()` — given a markdown string, produces a self-contained HTML document containing the expected `<style>` block and `<body>` content (no external links).
 
 Network-dependent units mocked at the boundary:
 - `report.enrich.fetch_ticker_data()` — patch `yfinance.Ticker` with a fixture, assert dict shape and YoY computation correctness (especially the FY-3/FY-2/FY-1 math).
 - `report.analyst.analyze_ticker()` — patch `anthropic.AsyncAnthropic`, verify retry logic, missing-key short-circuit, timeout handling.
 
-End-to-end: `uv run main.py --mode report --market us --date 2026-05-07 --dry-run` reads existing dated .txt files, runs the full pipeline EXCEPT the SMTP send (writes the .md but skips email). Useful for verifying a report after-the-fact.
+End-to-end: `uv run main.py --mode report --market us --date 2026-05-07` re-reads the dated `.txt` files for the given date and writes both `.md` and `.html`. Useful for back-filling a missed day or iterating on the system prompt.
 
 ## Operational Notes
 
 - The report runs **after** the EOD pipeline finishes and after Futu sync. Total wall clock per market: 2–4 minutes (5-way concurrency over ~20–40 tickers, each ~30–60s with 2 web_search calls).
-- US EOD slot at 10:00 HKT → report likely emails by 10:08 HKT.
-- HK EOD slot at 20:00 HKT → report likely emails by 20:08 HKT.
-- The Markdown file is the source of truth; if email is lost (spam filter, SMTP quota), `output/Reports/<date>_{us,hk}.md` is always there.
-- Gmail's daily SMTP send limit for personal accounts is 500/day. We send 2/day. Non-issue.
+- US EOD slot at 10:00 HKT → both files on disk by ~10:08 HKT.
+- HK EOD slot at 20:00 HKT → both files on disk by ~20:08 HKT.
+- The user opens `output/Reports/<date>_{us,hk}.html` directly in a browser, or reads the `.md` in a text editor. Sharing a single day's report = send one self-contained `.html` file.
 
 ## Risks & Mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Anthropic API outage during EOD slot | Soft-fail: warning logged, .txt artifacts unaffected, no email that day |
+| Anthropic API outage during EOD slot | Soft-fail: warning logged, `.txt` artifacts unaffected, no report files that day |
 | yfinance schema drift breaks enrichment | Per-ticker `try/except` in `enrich.py`; missing fields → `null`, LLM handles gracefully |
 | Opus 4.7 model rename / deprecation | Constant in `analyst.py`; one-line change |
 | Cost spike from runaway web_search use | `max_uses=3` per call enforced by Anthropic API |
 | HK ticker coverage gaps in yfinance | Already a known limitation; the dict will have nulls; LLM is told to focus on what's available |
-| App Password leaked via shell history | Stored only in launchd wrapper scripts which are git-ignored; documented in CLAUDE.md not to commit |
-| Email goes to spam | First-send: user adds self-from-self filter to never spam; not a code issue |
+| `markdown` package output diverges from expected HTML | Renderer test compares against snapshot; failures are loud at unit-test time, not runtime |
 
 ## Migration / Rollout
 
 1. Implement modules + tests on a feature branch.
-2. Manual end-to-end test: `--dry-run` against a recent day's `.txt` files.
-3. Verify `.md` content quality on a known-fresh day.
-4. Add `SMTP_PASSWORD` to wrapper scripts; trigger a real email send on a sample.
-5. Merge; next EOD slot starts mailing.
-6. Watch first 3 days' reports; tune system prompt if a section consistently underdelivers.
+2. Manual end-to-end test: `uv run main.py --mode report --market us --date <recent>` against a recent day's `.txt` files; visually inspect both the `.md` and the `.html`.
+3. Verify content quality on a known-fresh day across a handful of tickers.
+4. Add `ANTHROPIC_API_KEY` to wrapper scripts.
+5. Merge; next EOD slot starts producing reports.
+6. Watch first 3 days' reports; tune the system prompt if a section consistently underdelivers.
