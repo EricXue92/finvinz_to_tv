@@ -1,9 +1,10 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from report import analyst
+from report.llm import _extract_text
 
 
 @pytest.fixture
@@ -40,61 +41,54 @@ def test_build_user_message_includes_ticker_and_data(fake_data):
     assert "16.67" in msg or "16.7" in msg
 
 
-def _make_anthropic_response(text: str):
-    """Mock the SDK response shape: response.content[*].text."""
-    block = MagicMock()
-    block.type = "text"
-    block.text = text
-    response = MagicMock()
-    response.content = [block]
-    response.stop_reason = "end_turn"
-    return response
+def _fake_backend(analyze_mock: AsyncMock) -> MagicMock:
+    """Build a minimal LLMBackend stand-in. Only `analyze` is exercised by the
+    retry path — `name`/`aclose` are inert."""
+    backend = MagicMock()
+    backend.name = "fake"
+    backend.analyze = analyze_mock
+    return backend
 
 
 async def test_analyze_ticker_success(fake_data):
-    fake_client = MagicMock()
-    fake_client.messages.create = AsyncMock(
-        return_value=_make_anthropic_response("## AAPL\n\n**Snapshot**...")
-    )
+    backend = _fake_backend(AsyncMock(return_value="## AAPL\n\n**Snapshot**..."))
     section = await analyst.analyze_ticker(
-        client=fake_client,
+        backend=backend,
         system_prompt="<system prompt>",
         data=fake_data,
         semaphore=asyncio.Semaphore(1),
     )
     assert "## AAPL" in section
-    fake_client.messages.create.assert_awaited_once()
+    backend.analyze.assert_awaited_once()
 
 
 async def test_analyze_ticker_retries_on_5xx(fake_data):
     import anthropic
-    fake_client = MagicMock()
     failure = anthropic.APIStatusError(
         message="server error",
         response=MagicMock(status_code=503),
         body=None,
     )
     failure.status_code = 503
-    fake_client.messages.create = AsyncMock(
-        side_effect=[failure, _make_anthropic_response("## AAPL\nfine")]
+    backend = _fake_backend(
+        AsyncMock(side_effect=[failure, "## AAPL\nfine"])
     )
     section = await analyst.analyze_ticker(
-        client=fake_client,
+        backend=backend,
         system_prompt="<sp>",
         data=fake_data,
         semaphore=asyncio.Semaphore(1),
     )
     assert "## AAPL" in section
-    assert fake_client.messages.create.await_count == 2
+    assert backend.analyze.await_count == 2
 
 
 async def test_analyze_ticker_returns_failure_section_after_retry_exhausted(fake_data):
     import anthropic
-    fake_client = MagicMock()
     failure = anthropic.APIConnectionError(request=MagicMock())
-    fake_client.messages.create = AsyncMock(side_effect=[failure, failure])
+    backend = _fake_backend(AsyncMock(side_effect=[failure, failure]))
     section = await analyst.analyze_ticker(
-        client=fake_client,
+        backend=backend,
         system_prompt="<sp>",
         data=fake_data,
         semaphore=asyncio.Semaphore(1),
@@ -106,17 +100,15 @@ async def test_analyze_ticker_returns_failure_section_after_retry_exhausted(fake
 async def test_analyze_ticker_does_not_retry_on_4xx(fake_data):
     """4xx (e.g. 401 bad API key) must fail fast — single attempt, distinct placeholder."""
     import anthropic
-    fake_client = MagicMock()
     failure = anthropic.APIStatusError(
         message="invalid x-api-key",
         response=MagicMock(status_code=401),
         body=None,
     )
-    # Patch status_code attribute since SDK reads it from response
     failure.status_code = 401
-    fake_client.messages.create = AsyncMock(side_effect=failure)
+    backend = _fake_backend(AsyncMock(side_effect=failure))
     section = await analyst.analyze_ticker(
-        client=fake_client,
+        backend=backend,
         system_prompt="<sp>",
         data=fake_data,
         semaphore=asyncio.Semaphore(1),
@@ -125,30 +117,29 @@ async def test_analyze_ticker_does_not_retry_on_4xx(fake_data):
     assert "配置错误" in section
     assert "401" in section
     # Must NOT have retried
-    assert fake_client.messages.create.await_count == 1
+    assert backend.analyze.await_count == 1
 
 
 async def test_analyze_ticker_retries_on_429_rate_limit(fake_data):
     """429 IS retriable (transient rate limit). Must attempt twice."""
     import anthropic
-    fake_client = MagicMock()
     failure = anthropic.APIStatusError(
         message="rate limited",
         response=MagicMock(status_code=429),
         body=None,
     )
     failure.status_code = 429
-    fake_client.messages.create = AsyncMock(
-        side_effect=[failure, _make_anthropic_response("## AAPL\nfine")]
+    backend = _fake_backend(
+        AsyncMock(side_effect=[failure, "## AAPL\nfine"])
     )
     section = await analyst.analyze_ticker(
-        client=fake_client,
+        backend=backend,
         system_prompt="<sp>",
         data=fake_data,
         semaphore=asyncio.Semaphore(1),
     )
     assert "## AAPL" in section
-    assert fake_client.messages.create.await_count == 2
+    assert backend.analyze.await_count == 2
 
 
 def test_extract_text_handles_mixed_blocks():
@@ -159,7 +150,7 @@ def test_extract_text_handles_mixed_blocks():
     response = MagicMock()
     response.content = [text_block, tool_block, other_text]
     # No "## " heading anywhere → return concatenated text as-is.
-    assert analyst._extract_text(response) == "Hello. World."
+    assert _extract_text(response) == "Hello. World."
 
 
 def test_extract_text_strips_preamble_before_first_h3():
@@ -177,7 +168,7 @@ def test_extract_text_strips_preamble_before_first_h3():
     )
     response = MagicMock()
     response.content = [block]
-    out = analyst._extract_text(response)
+    out = _extract_text(response)
     assert out.startswith("### 公司速览")
     assert "I'll research" not in out
     assert "Let me generate" not in out
@@ -187,7 +178,7 @@ def test_extract_text_keeps_text_when_h3_is_first_line():
     block = MagicMock(type="text", text="### 公司速览\n\nbody")
     response = MagicMock()
     response.content = [block]
-    assert analyst._extract_text(response).startswith("### 公司速览")
+    assert _extract_text(response).startswith("### 公司速览")
 
 
 def test_extract_text_back_compat_strips_preamble_before_h2():
@@ -202,5 +193,5 @@ def test_extract_text_back_compat_strips_preamble_before_h2():
     )
     response = MagicMock()
     response.content = [block]
-    out = analyst._extract_text(response)
+    out = _extract_text(response)
     assert out.startswith("## AAPL")

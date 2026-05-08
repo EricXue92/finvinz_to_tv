@@ -14,16 +14,15 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import anthropic
-
 from report import analyst, enrich, ranker, renderer
+from report.llm import build_backend
 from report.state import (
     MAX_TICKERS_PER_REPORT,
     OUTPUT_REPORTS_DIR,
     PROJECT_ROOT,
-    get_api_key,
     input_dir_for_market,
     load_dotenv,
+    load_report_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,9 +129,11 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
     # wrapper script's `source .env`, so try to fill the gap here. No-op if the
     # env var is already set or .env is absent.
     load_dotenv()
-    api_key = get_api_key()
-    if not api_key:
-        logger.warning("[report] ANTHROPIC_API_KEY not set; skipping report generation")
+    report_cfg = load_report_config()
+    try:
+        backend = build_backend(report_cfg)
+    except (RuntimeError, ValueError) as e:
+        logger.warning(f"[report] backend init failed; skipping: {e}")
         return 0
 
     input_dir = input_dir_for_market(market)
@@ -169,19 +170,19 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
         return 0
     system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
     # 5 was too aggressive — web_search calls compete for Anthropic-side queues
     # and the tail of each batch hit our 90s timeout. 3 keeps wall-clock under
     # 5 minutes for 14 tickers without timing out.
+    logger.info(f"[report] using backend: {backend.name}")
     semaphore = asyncio.Semaphore(3)
     try:
         coroutines = [
-            analyst.analyze_ticker(client, system_prompt, data, semaphore)
+            analyst.analyze_ticker(backend, system_prompt, data, semaphore)
             for data in enriched
         ]
         sections = await asyncio.gather(*coroutines)
     finally:
-        await client.close()
+        await backend.aclose()
 
     md_path, html_path = renderer.write_report_files(
         out_dir=OUTPUT_REPORTS_DIR,

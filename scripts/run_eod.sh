@@ -24,10 +24,11 @@ fi
 
 exec >> "$LOG" 2>&1
 
-# Load secrets (ANTHROPIC_API_KEY for the report step) from the project's
-# .env (gitignored). Launchd does NOT inherit the user's interactive shell
-# environment, so without this the report step would log
-# "ANTHROPIC_API_KEY not set; skipping".
+# Load secrets (ANTHROPIC_API_KEY for the anthropic report backend, or
+# DEEPSEEK_API_KEY + TAVILY_API_KEY for the deepseek backend) from the
+# project's .env (gitignored). Launchd does NOT inherit the user's interactive
+# shell environment, so without this the report step would skip with a
+# "backend init failed" warning.
 ENV_FILE=/Users/xue/finviz_to_tv/.env
 if [[ -f "$ENV_FILE" ]]; then
     set -a

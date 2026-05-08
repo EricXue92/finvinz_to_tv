@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import logging
 import os
+import tomllib
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_REPORTS_DIR = PROJECT_ROOT / "output" / "Reports"
+CONFIG_PATH = PROJECT_ROOT / "config.toml"
 
 PRIORITY_ORDER: list[str] = [
     "EarningsGap",
@@ -54,8 +57,24 @@ def load_dotenv(path: Path | None = None) -> None:
 
 
 def get_api_key() -> str | None:
-    """Return ANTHROPIC_API_KEY env var or None when unset."""
+    """Return ANTHROPIC_API_KEY env var or None when unset.
+    Kept for backwards compatibility — backend-specific keys are read inside
+    `report.llm.build_backend()` from os.environ directly."""
     return os.environ.get("ANTHROPIC_API_KEY")
+
+
+def load_report_config() -> dict[str, Any]:
+    """Return the `[report]` block from config.toml (or {} when absent /
+    unreadable). Backend selection + per-backend tuning lives here."""
+    if not CONFIG_PATH.is_file():
+        return {}
+    try:
+        with CONFIG_PATH.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        logger.warning(f"[state] failed to read {CONFIG_PATH}: {e}")
+        return {}
+    return data.get("report") or {}
 
 
 def input_dir_for_market(market: str) -> Path:

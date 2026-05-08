@@ -19,8 +19,10 @@ def test_priority_order_is_complete():
     ]
 
 
-def test_max_tickers_is_50():
-    assert state.MAX_TICKERS_PER_REPORT == 50
+def test_max_tickers_cap():
+    """Daily cap is intentionally tight (cost vs. signal-quality trade-off);
+    surface any change so a careless bump in state.py shows up in review."""
+    assert state.MAX_TICKERS_PER_REPORT == 30
 
 
 def test_get_api_key_returns_env_value(monkeypatch):

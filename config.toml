@@ -263,3 +263,26 @@ enabled = true
 ntfy_topic = "xue-finviz-morning-gap-9f3k2"
 ntfy_server = "https://ntfy.sh"
 max_tickers_in_body = 10
+
+# --- 报告生成 LLM backend ---
+# 选择哪个大模型生成 CANSLIM 日报。两个 backend 走相同的 Anthropic SDK 协议
+# (DeepSeek 通过 /anthropic 兼容端点),区别在于 web 搜索来源:
+#   anthropic — Anthropic 原生 web_search_20250305 (单次请求,模型自主调用,
+#               质量最好,成本 ~$1-2/天 per market @ 30 tickers)
+#   deepseek  — DeepSeek V4 Flash + 外部 Tavily 搜索 (tool-call 循环,
+#               质量略弱但便宜 ~80%,成本 ~$0.5/天 per market;
+#               需要 DEEPSEEK_API_KEY + TAVILY_API_KEY)
+[report]
+# backend = "anthropic"
+backend = "DeepSeek"
+
+[report.anthropic]
+model = "claude-sonnet-4-6"
+max_tokens = 3500
+web_search_max_uses = 2
+
+[report.deepseek]
+model = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/anthropic"
+max_tokens = 3500
+max_search_calls = 2
