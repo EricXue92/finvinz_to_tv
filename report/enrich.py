@@ -198,6 +198,10 @@ def fetch_ticker_data(
         # Yahoo's pre-computed MRQ YoY — used as fallback when income_stmt is sparse
         "yahoo_revenue_growth_yoy_pct": None,
         "yahoo_earnings_growth_yoy_pct": None,
+        # First public trading date — populated only for `IPO` group, used by
+        # the renderer to print a friendly "**N年**新上市公司" banner instead
+        # of an empty fundamentals table when EDGAR + yfinance both have nothing.
+        "ipo_date": None,
     }
     try:
         t = yf.Ticker(ticker)
@@ -244,6 +248,22 @@ def fetch_ticker_data(
                 data[dst_key] = v * 100.0
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: info access failed: {e}")
+
+    # IPO date for the renderer's "新上市公司" banner. Cheap path is
+    # info["firstTradeDateEpochUtc"]; for many fresh IPOs it's null in info,
+    # so for the `IPO` group only we pay the extra `t.history(period="max")`
+    # call and read its first index. Skipped for non-IPO tickers to keep the
+    # 30-tickers/day report fast.
+    try:
+        epoch = (info or {}).get("firstTradeDateEpochUtc") if isinstance(info, dict) else None
+        if isinstance(epoch, (int, float)):
+            data["ipo_date"] = pd.Timestamp(epoch, unit="s", tz="UTC").date().isoformat()
+        elif group == "IPO":
+            hist = t.history(period="max")
+            if hist is not None and not hist.empty:
+                data["ipo_date"] = hist.index[0].date().isoformat()
+    except Exception as e:
+        logger.warning(f"[enrich] {ticker}: ipo_date lookup failed: {e}")
 
     # --- EDGAR-first fundamentals (US only) -------------------------------
     edgar_data: dict | None = None

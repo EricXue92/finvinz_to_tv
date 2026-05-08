@@ -216,6 +216,66 @@ def test_line_chart_handles_mix_of_signs():
     assert svg.count("<line") >= 2             # baseline + connecting segments
 
 
+# --- Fresh-IPO no-data banner ------------------------------------------------
+
+def _fake_ipo_no_data() -> dict:
+    d = _fake_data("REA", group="IPO")
+    # Strip every fundamental field — fresh IPO with no EDGAR + no yfinance.
+    for k in ("eps_latest_q", "revenue_latest_q",
+              "eps_latest_q_yoy_pct", "revenue_latest_q_yoy_pct",
+              "yahoo_revenue_growth_yoy_pct", "yahoo_earnings_growth_yoy_pct"):
+        d[k] = None
+    d["annual_eps_yoy_5y"] = [None] * 5
+    d["annual_revenue_yoy_5y"] = [None] * 5
+    d["quarterly_eps_yoy_4q"] = [None] * 4
+    d["quarterly_revenue_yoy_4q"] = [None] * 4
+    d["ipo_date"] = "2026-05-05"
+    return d
+
+
+def test_has_no_fundamentals_true_when_all_empty():
+    assert renderer._has_no_fundamentals(_fake_ipo_no_data()) is True
+
+
+def test_has_no_fundamentals_false_when_any_field_present():
+    d = _fake_ipo_no_data()
+    d["revenue_latest_q"] = 1_000_000
+    assert renderer._has_no_fundamentals(d) is False
+
+
+def test_html_ipo_block_renders_banner_and_skips_fundamentals_tables():
+    html = renderer.render_html_document(
+        market="us",
+        date_iso="2026-05-08",
+        enriched=[_fake_ipo_no_data()],
+        prose_sections=["### 公司速览\n\nNew IPO."],
+        truncated=[],
+        generated_at=datetime(2026, 5, 8, 10, 5, 0, tzinfo=HKT),
+    )
+    assert 'class="ipo-no-data"' in html
+    assert "2026 年" in html
+    assert "首日交易 2026-05-05" in html
+    # Fundamentals sections must be suppressed
+    assert "5-Year Annual Earnings Increases" not in html
+    assert "Past 4 Quarters" not in html
+
+
+def test_md_ipo_block_renders_banner_and_skips_fundamentals_tables():
+    md = renderer.render_markdown_document(
+        market="us",
+        date_iso="2026-05-08",
+        enriched=[_fake_ipo_no_data()],
+        prose_sections=["### 公司速览\n\nNew IPO."],
+        truncated=[],
+        generated_at=datetime(2026, 5, 8, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "**2026 年**上市的 IPO 公司" in md
+    assert "首日交易 2026-05-05" in md
+    # No 5y annual table or Latest Quarter line
+    assert "FY−5" not in md
+    assert "Latest Quarter" not in md
+
+
 # --- Legacy shims (keep older callers working) -------------------------------
 
 def test_legacy_render_markdown_still_works():

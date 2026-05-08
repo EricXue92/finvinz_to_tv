@@ -117,6 +117,7 @@ _EMPTY_DATA_TEMPLATE: dict = {
     "latest_earnings_date": None, "rs_percentile": None,
     "yahoo_revenue_growth_yoy_pct": None,
     "yahoo_earnings_growth_yoy_pct": None,
+    "ipo_date": None,
 }
 
 

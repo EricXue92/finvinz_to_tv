@@ -322,6 +322,17 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* --- Fresh-IPO no-fundamentals banner --- */
+.ipo-no-data {
+  padding: 12px 16px;
+  margin: 14px 0 18px;
+  border-left: 3px solid var(--navy-soft);
+  background: var(--tint);
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.ipo-no-data strong { color: var(--navy); font-weight: 600; }
+
 /* --- Failure / placeholder --- */
 .failure {
   padding: 10px 14px;
@@ -702,6 +713,44 @@ def _emphasize_prose_html(html: str) -> str:
     return html
 
 
+def _has_no_fundamentals(d: dict[str, Any]) -> bool:
+    """True when EVERY EDGAR/yfinance fundamentals field is None or all-None.
+    Used to swap the empty Latest-Q + 4q + 5y tables for a friendly banner
+    on fresh-IPO tickers that have no usable financial history yet."""
+    scalars = ("eps_latest_q", "revenue_latest_q",
+               "eps_latest_q_yoy_pct", "revenue_latest_q_yoy_pct",
+               "yahoo_revenue_growth_yoy_pct", "yahoo_earnings_growth_yoy_pct")
+    if any(d.get(k) is not None for k in scalars):
+        return False
+    for k in ("annual_eps_yoy_5y", "annual_revenue_yoy_5y",
+              "quarterly_eps_yoy_4q", "quarterly_revenue_yoy_4q"):
+        arr = d.get(k) or []
+        if any(v is not None for v in arr):
+            return False
+    return True
+
+
+def _render_ipo_no_data_banner(d: dict[str, Any]) -> str:
+    ipo_iso = d.get("ipo_date") or ""
+    year = ipo_iso[:4] if len(ipo_iso) >= 4 and ipo_iso[:4].isdigit() else None
+    when = f"{year} 年" if year else "新"
+    date_suffix = f"(首日交易 {ipo_iso})" if ipo_iso else ""
+    return (
+        f'<section class="ipo-no-data">'
+        f'<strong>{when}上市</strong>的 IPO 公司{date_suffix}, '
+        f'暂无可用的 EPS / Revenue 历史数据.'
+        f'</section>'
+    )
+
+
+def _render_md_ipo_no_data_banner(d: dict[str, Any]) -> str:
+    ipo_iso = d.get("ipo_date") or ""
+    year = ipo_iso[:4] if len(ipo_iso) >= 4 and ipo_iso[:4].isdigit() else None
+    when = f"**{year} 年**" if year else "**新**"
+    date_suffix = f"(首日交易 {ipo_iso})" if ipo_iso else ""
+    return f"{when}上市的 IPO 公司{date_suffix}, 暂无可用的 EPS / Revenue 历史数据.\n\n"
+
+
 def _render_prose(prose_md: str) -> str:
     if not prose_md or not prose_md.strip():
         return '<div class="failure">[no prose returned]</div>'
@@ -717,14 +766,21 @@ def _render_prose(prose_md: str) -> str:
 
 def _render_ticker_block(idx: int, data: dict[str, Any], prose_md: str) -> str:
     ticker = data.get("ticker") or "?"
+    is_ipo_no_data = (data.get("group") == "IPO") and _has_no_fundamentals(data)
+    if is_ipo_no_data:
+        fundamentals_html = _render_ipo_no_data_banner(data)
+    else:
+        fundamentals_html = (
+            f'{_render_quarterly(data)}'
+            f'{_render_quarterly_trend(data)}'
+            f'{_render_annual_yoy(data)}'
+        )
     return (
         f'<article class="ticker" id="t-{ticker}">'
         f'{_render_ticker_header(idx, data)}'
         f'<div class="ticker-body">'
         f'{_render_snapshot(data)}'
-        f'{_render_quarterly(data)}'
-        f'{_render_quarterly_trend(data)}'
-        f'{_render_annual_yoy(data)}'
+        f'{fundamentals_html}'
         f'{_render_prose(prose_md)}'
         f"</div>"
         f"</article>"
@@ -882,6 +938,9 @@ def _render_md_ticker(idx: int, d: dict[str, Any], prose: str) -> str:
         f"| {inst_str} "
         f"| {_fmt_date(d.get('latest_earnings_date'))} |\n\n"
     )
+
+    if d.get("group") == "IPO" and _has_no_fundamentals(d):
+        return head + snap + _render_md_ipo_no_data_banner(d) + (prose.rstrip() + "\n")
 
     eps = d.get("eps_latest_q")
     eps_usable = isinstance(eps, (int, float)) and not (isinstance(eps, float) and math.isnan(eps))
