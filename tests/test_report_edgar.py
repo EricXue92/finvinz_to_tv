@@ -329,3 +329,68 @@ def test_extract_quarterly_yoy_pads_when_short_history():
     yoy, labels = edgar._extract_quarterly_yoy(raw, n_quarters=4)
     assert yoy == [None, None, None, None]
     assert labels[-1] == "Dec'24"
+
+
+def test_latest_quarter_value_returns_newest_quarter():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    val, yoy = edgar._latest_quarter_with_yoy(raw)
+    # Newest after Q4 derivation is FY2025 Q4 (end 2025-09-27)
+    # = 416000M - (124300 + 95400 + 85700)M = 110600M
+    assert val == 110_600_000_000
+    # Q4 YoY: (110600 - 94930) / 94930 ≈ +16.51%
+    assert yoy == pytest.approx(16.51, abs=0.5)
+
+
+def test_latest_quarter_value_returns_none_for_empty():
+    val, yoy = edgar._latest_quarter_with_yoy([])
+    assert val is None and yoy is None
+
+
+def test_fetch_edgar_fundamentals_full_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    edgar._cached_ticker_map = {"AAPL": "0000320193"}
+    cf = _load_fixture("companyfacts_aapl_minimal.json")
+
+    def fake_companyfacts(cik):
+        assert cik == "0000320193"
+        return cf
+
+    monkeypatch.setattr(edgar, "_fetch_companyfacts", fake_companyfacts)
+    out = edgar.fetch_edgar_fundamentals("AAPL")
+    assert out is not None
+    # Latest quarter is derived Q4 FY2025 (end 2025-09-27):
+    # Revenue = 416000M - (124300+95400+85700)M = 110600M
+    assert out["revenue_latest_q"] == 110_600_000_000
+    # EPS Q4 FY2025 = 7.40 - (2.40+1.65+1.55) = 1.80
+    assert out["eps_latest_q"] == pytest.approx(1.80)
+    assert len(out["annual_revenue_yoy_5y"]) == 5
+    assert len(out["quarterly_revenue_yoy_4q"]) == 4
+    assert len(out["quarterly_revenue_yoy_4q_labels"]) == 4
+    assert out["annual_revenue_yoy_5y"][0] == pytest.approx(33.26, rel=0.01)
+
+
+def test_fetch_edgar_fundamentals_returns_none_when_cik_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    edgar._cached_ticker_map = {}   # no tickers known
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: {})  # also empty over network
+    assert edgar.fetch_edgar_fundamentals("ZZZZ") is None
+
+
+def test_fetch_edgar_fundamentals_returns_none_when_companyfacts_404(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    edgar._cached_ticker_map = {"AAPL": "0000320193"}
+    monkeypatch.setattr(edgar, "_fetch_companyfacts", lambda cik: None)
+    assert edgar.fetch_edgar_fundamentals("AAPL") is None
+
+
+def test_fetch_edgar_fundamentals_alt_revenue_concept(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    edgar._cached_ticker_map = {"V": "0001403161"}
+    cf = _load_fixture("companyfacts_v_alt_revenue.json")
+    monkeypatch.setattr(edgar, "_fetch_companyfacts", lambda cik: cf)
+    out = edgar.fetch_edgar_fundamentals("V")
+    assert out is not None
+    # 5 fiscal years → 4 YoY pairs filled, oldest slot None.
+    assert out["annual_revenue_yoy_5y"][0] is None
+    assert out["annual_revenue_yoy_5y"][-1] == pytest.approx(10.02, rel=0.01)

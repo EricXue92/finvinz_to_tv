@@ -356,3 +356,55 @@ def _extract_quarterly_yoy(
         except IndexError:
             labels.append("")
     return yoy, labels
+
+
+def _latest_quarter_with_yoy(
+    facts: list[dict] | None,
+) -> tuple[float | None, float | None]:
+    """Most recent quarterly value + YoY vs same calendar quarter one year prior."""
+    if not facts:
+        return (None, None)
+    quarters = _select_quarterly_facts(facts)
+    if not quarters:
+        return (None, None)
+    latest = quarters[-1]
+    val = latest.get("val")
+    prior_val = quarters[-5].get("val") if len(quarters) >= 5 else None
+    return (val, _compute_yoy(val, prior_val))
+
+
+def fetch_edgar_fundamentals(ticker: str) -> dict | None:
+    """Return EDGAR-sourced fundamentals dict for `ticker`, or None on failure.
+    Caller should fall back to yfinance on None and per-field on partials."""
+    cik = _get_cik(ticker)
+    if cik is None:
+        logger.info(f"[edgar] no CIK for {ticker}; skipping EDGAR")
+        return None
+    cf = _fetch_companyfacts(cik)
+    if cf is None:
+        logger.warning(f"[edgar] companyfacts unavailable for {ticker} (CIK {cik})")
+        return None
+
+    rev_facts = _match_concept_facts(cf, REVENUE_CONCEPTS, USD)
+    eps_facts = _match_concept_facts(cf, EPS_CONCEPTS, USD_PER_SHARE)
+    if rev_facts is None and eps_facts is None:
+        logger.warning(f"[edgar] no matching revenue or EPS concepts for {ticker}")
+        return None
+
+    rev_q_yoy, rev_labels = _extract_quarterly_yoy(rev_facts, 4)
+    eps_q_yoy, eps_labels = _extract_quarterly_yoy(eps_facts, 4)
+    rev_latest, rev_latest_yoy = _latest_quarter_with_yoy(rev_facts)
+    eps_latest, eps_latest_yoy = _latest_quarter_with_yoy(eps_facts)
+
+    return {
+        "eps_latest_q": eps_latest,
+        "eps_latest_q_yoy_pct": eps_latest_yoy,
+        "revenue_latest_q": rev_latest,
+        "revenue_latest_q_yoy_pct": rev_latest_yoy,
+        "annual_eps_yoy_5y": _extract_annual_yoy(eps_facts, 5),
+        "annual_revenue_yoy_5y": _extract_annual_yoy(rev_facts, 5),
+        "quarterly_eps_yoy_4q": eps_q_yoy,
+        "quarterly_eps_yoy_4q_labels": eps_labels,
+        "quarterly_revenue_yoy_4q": rev_q_yoy,
+        "quarterly_revenue_yoy_4q_labels": rev_labels,
+    }
