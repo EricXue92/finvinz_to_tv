@@ -99,7 +99,8 @@ def test_fetch_ticker_data_uses_space_form_yfinance_labels():
         index=acols,
     ).T
     fake_ticker.earnings_dates = None
-    with patch("report.enrich.yf.Ticker", return_value=fake_ticker):
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None):
         data = enrich.fetch_ticker_data("T", "Leaders", "NYSE", rs_lookup=lambda t: 90)
     assert data["revenue_latest_q"] == 110
     assert data["eps_latest_q"] == 1.1
@@ -190,7 +191,8 @@ def test_fetch_ticker_data_handles_missing_yfinance_gracefully():
     fake_ticker.info = {}  # empty
     fake_ticker.quarterly_income_stmt = pd.DataFrame()
     fake_ticker.income_stmt = pd.DataFrame()
-    with patch("report.enrich.yf.Ticker", return_value=fake_ticker):
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None):
         data = enrich.fetch_ticker_data("AAPL", "EarningsGap", "NASDAQ", rs_lookup=lambda t: None)
     assert data["ticker"] == "AAPL"
     assert data["group"] == "EarningsGap"
@@ -213,7 +215,8 @@ def test_fetch_ticker_data_full_path():
     }
     fake_ticker.quarterly_income_stmt = _fake_quarterly_income_stmt()
     fake_ticker.income_stmt = _fake_annual_income_stmt()
-    with patch("report.enrich.yf.Ticker", return_value=fake_ticker):
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None):
         data = enrich.fetch_ticker_data("AAPL", "EarningsGap", "NASDAQ", rs_lookup=lambda t: 95)
     assert data["company_name"] == "Apple Inc."
     assert data["market_cap"] == 3_000_000_000_000
@@ -236,8 +239,116 @@ def test_fetch_ticker_data_gap_pct_handles_zero_prev_close():
     }
     fake_ticker.quarterly_income_stmt = pd.DataFrame()
     fake_ticker.income_stmt = pd.DataFrame()
-    with patch("report.enrich.yf.Ticker", return_value=fake_ticker):
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None):
         data = enrich.fetch_ticker_data("ZERO", "GapUp", "NASDAQ", rs_lookup=lambda t: None)
     assert data["last_price"] == 5.0
     assert data["prev_close"] == 0.0
     assert data["gap_pct"] is None  # not computed because prev_close is not > 0
+
+
+def test_fetch_ticker_data_uses_edgar_when_available():
+    """EDGAR returns a full fundamentals dict → yfinance income_stmt is NOT consulted."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "Apple", "currentPrice": 200, "previousClose": 198}
+    # If yfinance income statement WERE consulted, the values below would
+    # show up; assert they don't.
+    fake_ticker.quarterly_income_stmt = pd.DataFrame(
+        {"Total Revenue": [999], "Diluted EPS": [9.9]},
+        index=pd.to_datetime(["2026-03-31"]),
+    ).T
+    fake_ticker.income_stmt = fake_ticker.quarterly_income_stmt
+    fake_ticker.earnings_dates = None
+    edgar_full = {
+        "eps_latest_q": 1.55,
+        "eps_latest_q_yoy_pct": 5.0,
+        "revenue_latest_q": 85_000_000_000,
+        "revenue_latest_q_yoy_pct": 6.0,
+        "annual_eps_yoy_5y": [10.0, 11.0, 12.0, 13.0, 14.0],
+        "annual_revenue_yoy_5y": [20.0, 21.0, 22.0, 23.0, 24.0],
+        "quarterly_eps_yoy_4q": [1.0, 2.0, 3.0, 4.0],
+        "quarterly_eps_yoy_4q_labels": ["Sep'24", "Dec'24", "Mar'25", "Jun'25"],
+        "quarterly_revenue_yoy_4q": [5.0, 6.0, 7.0, 8.0],
+        "quarterly_revenue_yoy_4q_labels": ["Sep'24", "Dec'24", "Mar'25", "Jun'25"],
+    }
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=edgar_full):
+        data = enrich.fetch_ticker_data("AAPL", "Leaders", "NASDAQ", rs_lookup=lambda t: 95)
+    assert data["revenue_latest_q"] == 85_000_000_000   # from EDGAR, not yfinance 999
+    assert data["eps_latest_q"] == 1.55
+    assert data["annual_revenue_yoy_5y"][-1] == 24.0
+
+
+def test_fetch_ticker_data_falls_back_to_yfinance_when_edgar_returns_none():
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "Penny", "currentPrice": 5, "previousClose": 4.5}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame(
+        {"Total Revenue": [100, 80], "Diluted EPS": [1.0, 0.9]},
+        index=pd.to_datetime(["2026-03-31", "2025-12-31"]),
+    ).T
+    fake_ticker.income_stmt = pd.DataFrame(
+        {"Total Revenue": [400, 360], "Diluted EPS": [4.0, 3.6]},
+        index=pd.to_datetime(["2025-12-31", "2024-12-31"]),
+    ).T
+    fake_ticker.earnings_dates = None
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None):
+        data = enrich.fetch_ticker_data("PENNY", "EarningsGap", "NASDAQ", rs_lookup=lambda t: None)
+    # yfinance fallback ran → latest_q populated.
+    assert data["revenue_latest_q"] == 100
+    assert data["eps_latest_q"] == 1.0
+
+
+def test_fetch_ticker_data_per_field_fallback_when_edgar_partial():
+    """EDGAR returns a dict with revenue but EPS fields all None → yfinance
+    fills the EPS slots without overwriting the EDGAR revenue values."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "Mixed", "currentPrice": 10, "previousClose": 9.5}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame(
+        {"Total Revenue": [500, 450], "Diluted EPS": [2.5, 2.3]},
+        index=pd.to_datetime(["2026-03-31", "2025-12-31"]),
+    ).T
+    fake_ticker.income_stmt = pd.DataFrame(
+        {"Total Revenue": [2000, 1800], "Diluted EPS": [10.0, 9.0]},
+        index=pd.to_datetime(["2025-12-31", "2024-12-31"]),
+    ).T
+    fake_ticker.earnings_dates = None
+    edgar_partial = {
+        "eps_latest_q": None,
+        "eps_latest_q_yoy_pct": None,
+        "revenue_latest_q": 9_999_999,         # distinctive EDGAR value
+        "revenue_latest_q_yoy_pct": 11.0,
+        "annual_eps_yoy_5y": [None] * 5,
+        "annual_revenue_yoy_5y": [None, None, None, 50.0, 60.0],
+        "quarterly_eps_yoy_4q": [None] * 4,
+        "quarterly_eps_yoy_4q_labels": [""] * 4,
+        "quarterly_revenue_yoy_4q": [None, None, 30.0, 40.0],
+        "quarterly_revenue_yoy_4q_labels": ["", "", "Mar'25", "Jun'25"],
+    }
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=edgar_partial):
+        data = enrich.fetch_ticker_data("MIX", "Leaders", "NASDAQ", rs_lookup=lambda t: 92)
+    # EDGAR's revenue values preserved.
+    assert data["revenue_latest_q"] == 9_999_999
+    assert data["annual_revenue_yoy_5y"][-1] == 60.0
+    # EDGAR EPS was None → yfinance fallback filled it.
+    assert data["eps_latest_q"] == 2.5
+
+
+def test_fetch_ticker_data_skips_edgar_for_non_us_exchange():
+    """HK ticker (exchange=HKEX) must not call EDGAR — yfinance is the only source."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "Tencent", "currentPrice": 350, "previousClose": 345}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    fake_ticker.earnings_dates = None
+    edgar_calls = {"n": 0}
+
+    def _track(_):
+        edgar_calls["n"] += 1
+        return None
+
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", side_effect=_track):
+        enrich.fetch_ticker_data("0700.HK", "HKLeaders", "HKEX", rs_lookup=lambda t: 95)
+    assert edgar_calls["n"] == 0

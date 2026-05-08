@@ -7,7 +7,14 @@ from typing import Any, Callable
 import pandas as pd
 import yfinance as yf
 
+from report.edgar import fetch_edgar_fundamentals
+
 logger = logging.getLogger(__name__)
+
+
+# Exchanges for which EDGAR data is available. HK and other foreign listings
+# fall back to yfinance directly.
+US_EXCHANGES: frozenset[str] = frozenset({"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"})
 
 
 def compute_yoy(current: float | None, prior: float | None) -> float | None:
@@ -216,33 +223,56 @@ def fetch_ticker_data(
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: info access failed: {e}")
 
+    # --- EDGAR-first fundamentals (US only) -------------------------------
+    edgar_data: dict | None = None
+    if exchange.upper() in US_EXCHANGES:
+        try:
+            edgar_data = fetch_edgar_fundamentals(ticker)
+        except Exception as e:
+            logger.warning(f"[enrich] {ticker}: EDGAR fetch raised: {e}")
+            edgar_data = None
+    if edgar_data:
+        # Populate any non-None field from EDGAR. Leave Nones for yfinance to fill.
+        for k, v in edgar_data.items():
+            if v is None:
+                continue
+            if isinstance(v, list) and all(x is None or x == "" for x in v):
+                continue
+            data[k] = v
+
     try:
         qdf = t.quarterly_income_stmt
-        eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, DILUTED_EPS_LABELS)
-        if eps_val is None:
-            eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, BASIC_EPS_LABELS)
-        data["eps_latest_q"] = eps_val
-        data["eps_latest_q_yoy_pct"] = eps_yoy
-        rev_val, rev_yoy = latest_quarterly_with_yoy(qdf, REVENUE_LABELS)
-        data["revenue_latest_q"] = rev_val
-        data["revenue_latest_q_yoy_pct"] = rev_yoy
-        eps_q, eps_lbl = extract_quarterly_yoy(qdf, DILUTED_EPS_LABELS, 4)
-        if all(v is None for v in eps_q):
-            eps_q, eps_lbl = extract_quarterly_yoy(qdf, BASIC_EPS_LABELS, 4)
-        data["quarterly_eps_yoy_4q"] = eps_q
-        data["quarterly_eps_yoy_4q_labels"] = eps_lbl
-        rev_q, rev_lbl = extract_quarterly_yoy(qdf, REVENUE_LABELS, 4)
-        data["quarterly_revenue_yoy_4q"] = rev_q
-        data["quarterly_revenue_yoy_4q_labels"] = rev_lbl
+        if data["eps_latest_q"] is None:
+            eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, DILUTED_EPS_LABELS)
+            if eps_val is None:
+                eps_val, eps_yoy = latest_quarterly_with_yoy(qdf, BASIC_EPS_LABELS)
+            data["eps_latest_q"] = eps_val
+            data["eps_latest_q_yoy_pct"] = eps_yoy
+        if data["revenue_latest_q"] is None:
+            rev_val, rev_yoy = latest_quarterly_with_yoy(qdf, REVENUE_LABELS)
+            data["revenue_latest_q"] = rev_val
+            data["revenue_latest_q_yoy_pct"] = rev_yoy
+        if all(v is None for v in data["quarterly_eps_yoy_4q"]):
+            eps_q, eps_lbl = extract_quarterly_yoy(qdf, DILUTED_EPS_LABELS, 4)
+            if all(v is None for v in eps_q):
+                eps_q, eps_lbl = extract_quarterly_yoy(qdf, BASIC_EPS_LABELS, 4)
+            data["quarterly_eps_yoy_4q"] = eps_q
+            data["quarterly_eps_yoy_4q_labels"] = eps_lbl
+        if all(v is None for v in data["quarterly_revenue_yoy_4q"]):
+            rev_q, rev_lbl = extract_quarterly_yoy(qdf, REVENUE_LABELS, 4)
+            data["quarterly_revenue_yoy_4q"] = rev_q
+            data["quarterly_revenue_yoy_4q_labels"] = rev_lbl
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: quarterly fetch failed: {e}")
 
     try:
         adf = t.income_stmt
-        data["annual_eps_yoy_5y"] = extract_annual_yoy(adf, DILUTED_EPS_LABELS, years_back=5)
         if all(v is None for v in data["annual_eps_yoy_5y"]):
-            data["annual_eps_yoy_5y"] = extract_annual_yoy(adf, BASIC_EPS_LABELS, years_back=5)
-        data["annual_revenue_yoy_5y"] = extract_annual_yoy(adf, REVENUE_LABELS, years_back=5)
+            data["annual_eps_yoy_5y"] = extract_annual_yoy(adf, DILUTED_EPS_LABELS, years_back=5)
+            if all(v is None for v in data["annual_eps_yoy_5y"]):
+                data["annual_eps_yoy_5y"] = extract_annual_yoy(adf, BASIC_EPS_LABELS, years_back=5)
+        if all(v is None for v in data["annual_revenue_yoy_5y"]):
+            data["annual_revenue_yoy_5y"] = extract_annual_yoy(adf, REVENUE_LABELS, years_back=5)
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: annual fetch failed: {e}")
 
