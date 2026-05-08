@@ -99,16 +99,17 @@ def extract_quarterly_yoy(
 def extract_annual_yoy(
     df: pd.DataFrame,
     row_label: str | tuple[str, ...],
-    years_back: int = 3,
+    years_back: int = 5,
 ) -> list[float | None]:
     """Up to `years_back` YoY datapoints in oldest→newest order
-    (e.g. `[FY-3, FY-2, FY-1]`). yfinance annual frames have most-recent
-    fiscal year first, so we reverse before pairing. Pads with None when
-    the frame doesn't have enough fiscal years.
+    (e.g. `[FY-5, FY-4, FY-3, FY-2, FY-1]`). yfinance annual frames have
+    most-recent fiscal year first, so we reverse before pairing. Pads with
+    None when the frame doesn't have enough fiscal years.
 
-    Default 3 because yfinance free tier returns ~4 annual fiscal periods,
-    which only yields 3 YoY values — anything larger leaves chart slots
-    permanently empty."""
+    Default 5 — enough for IBD CANSLIM "A" coverage. yfinance free tier
+    only returns ~4 fiscal years (3 YoY pairs), so the older slots will
+    typically be None when EDGAR isn't available; the EDGAR fast path
+    fills them in. See report/edgar.py."""
     values = list(reversed(_row_values(df, row_label)))
     yoy: list[float | None] = []
     for i in range(-years_back, 0):
@@ -156,13 +157,13 @@ def fetch_ticker_data(
         "revenue_latest_q": None,
         "revenue_latest_q_yoy_pct": None,
         # Annual earnings increases — past 5 fiscal years of YoY (CANSLIM "A")
-        "annual_eps_yoy_3y": [None, None, None],
-        "annual_revenue_yoy_3y": [None, None, None],
+        "annual_eps_yoy_5y": [None, None, None, None, None],
+        "annual_revenue_yoy_5y": [None, None, None, None, None],
         # Past 4 quarters of YoY % + period labels (CANSLIM "C" trajectory)
-        "quarterly_eps_yoy_2q": [None, None],
-        "quarterly_eps_yoy_2q_labels": ["", ""],
-        "quarterly_revenue_yoy_2q": [None, None],
-        "quarterly_revenue_yoy_2q_labels": ["", ""],
+        "quarterly_eps_yoy_4q": [None, None, None, None],
+        "quarterly_eps_yoy_4q_labels": ["", "", "", ""],
+        "quarterly_revenue_yoy_4q": [None, None, None, None],
+        "quarterly_revenue_yoy_4q_labels": ["", "", "", ""],
         "latest_earnings_date": None,
         "rs_percentile": None,
         # Yahoo's pre-computed MRQ YoY — used as fallback when income_stmt is sparse
@@ -225,26 +226,23 @@ def fetch_ticker_data(
         rev_val, rev_yoy = latest_quarterly_with_yoy(qdf, REVENUE_LABELS)
         data["revenue_latest_q"] = rev_val
         data["revenue_latest_q_yoy_pct"] = rev_yoy
-        # Past 2 quarters of YoY trajectory. yfinance free tier returns ~6
-        # quarterly periods, which yields at most 2 YoY values once you pair
-        # each quarter with the same calendar quarter a year prior.
-        eps_q, eps_lbl = extract_quarterly_yoy(qdf, DILUTED_EPS_LABELS, 2)
+        eps_q, eps_lbl = extract_quarterly_yoy(qdf, DILUTED_EPS_LABELS, 4)
         if all(v is None for v in eps_q):
-            eps_q, eps_lbl = extract_quarterly_yoy(qdf, BASIC_EPS_LABELS, 2)
-        data["quarterly_eps_yoy_2q"] = eps_q
-        data["quarterly_eps_yoy_2q_labels"] = eps_lbl
-        rev_q, rev_lbl = extract_quarterly_yoy(qdf, REVENUE_LABELS, 2)
-        data["quarterly_revenue_yoy_2q"] = rev_q
-        data["quarterly_revenue_yoy_2q_labels"] = rev_lbl
+            eps_q, eps_lbl = extract_quarterly_yoy(qdf, BASIC_EPS_LABELS, 4)
+        data["quarterly_eps_yoy_4q"] = eps_q
+        data["quarterly_eps_yoy_4q_labels"] = eps_lbl
+        rev_q, rev_lbl = extract_quarterly_yoy(qdf, REVENUE_LABELS, 4)
+        data["quarterly_revenue_yoy_4q"] = rev_q
+        data["quarterly_revenue_yoy_4q_labels"] = rev_lbl
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: quarterly fetch failed: {e}")
 
     try:
         adf = t.income_stmt
-        data["annual_eps_yoy_3y"] = extract_annual_yoy(adf, DILUTED_EPS_LABELS, years_back=3)
-        if all(v is None for v in data["annual_eps_yoy_3y"]):
-            data["annual_eps_yoy_3y"] = extract_annual_yoy(adf, BASIC_EPS_LABELS, years_back=3)
-        data["annual_revenue_yoy_3y"] = extract_annual_yoy(adf, REVENUE_LABELS, years_back=3)
+        data["annual_eps_yoy_5y"] = extract_annual_yoy(adf, DILUTED_EPS_LABELS, years_back=5)
+        if all(v is None for v in data["annual_eps_yoy_5y"]):
+            data["annual_eps_yoy_5y"] = extract_annual_yoy(adf, BASIC_EPS_LABELS, years_back=5)
+        data["annual_revenue_yoy_5y"] = extract_annual_yoy(adf, REVENUE_LABELS, years_back=5)
     except Exception as e:
         logger.warning(f"[enrich] {ticker}: annual fetch failed: {e}")
 

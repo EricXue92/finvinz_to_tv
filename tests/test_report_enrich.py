@@ -18,11 +18,14 @@ def _fake_quarterly_income_stmt() -> pd.DataFrame:
 
 
 def _fake_annual_income_stmt() -> pd.DataFrame:
-    """4 fiscal years (most recent first)."""
-    cols = pd.to_datetime(["2025-12-31", "2024-12-31", "2023-12-31", "2022-12-31"])
+    """6 fiscal years (most recent first) — enough for full 5-YoY extraction."""
+    cols = pd.to_datetime([
+        "2025-12-31", "2024-12-31", "2023-12-31",
+        "2022-12-31", "2021-12-31", "2020-12-31",
+    ])
     data = {
-        "TotalRevenue": [4400, 4000, 3500, 3000],
-        "DilutedEPS":   [4.40, 4.00, 3.50, 3.00],
+        "TotalRevenue": [4400, 4000, 3500, 3000, 2500, 2000],
+        "DilutedEPS":   [4.40, 4.00, 3.50, 3.00, 2.50, 2.00],
     }
     return pd.DataFrame(data, index=cols).T
 
@@ -86,10 +89,13 @@ def test_fetch_ticker_data_uses_space_form_yfinance_labels():
          "Diluted EPS": [1.1, 1.0, 0.95, 0.90, 1.0]},
         index=qcols,
     ).T
-    acols = pd.to_datetime(["2025-12-31", "2024-12-31", "2023-12-31", "2022-12-31"])
+    acols = pd.to_datetime([
+        "2025-12-31", "2024-12-31", "2023-12-31",
+        "2022-12-31", "2021-12-31", "2020-12-31",
+    ])
     fake_ticker.income_stmt = pd.DataFrame(
-        {"Total Revenue": [4400, 4000, 3500, 3000],
-         "Diluted EPS": [4.40, 4.00, 3.50, 3.00]},
+        {"Total Revenue": [4400, 4000, 3500, 3000, 2500, 2000],
+         "Diluted EPS": [4.40, 4.00, 3.50, 3.00, 2.50, 2.00]},
         index=acols,
     ).T
     fake_ticker.earnings_dates = None
@@ -97,11 +103,12 @@ def test_fetch_ticker_data_uses_space_form_yfinance_labels():
         data = enrich.fetch_ticker_data("T", "Leaders", "NYSE", rs_lookup=lambda t: 90)
     assert data["revenue_latest_q"] == 110
     assert data["eps_latest_q"] == 1.1
-    # Frame has 4 fiscal years → 3 YoY datapoints, fitting the 3-slot array.
-    assert data["annual_revenue_yoy_3y"][-1] == pytest.approx(10.0, rel=0.01)
-    assert data["annual_eps_yoy_3y"][-1] == pytest.approx(10.0, rel=0.01)
-    # Oldest-to-newest YoY pairs (3000→3500, 3500→4000, 4000→4400) → FY-3 is +16.67%.
-    assert data["annual_revenue_yoy_3y"][0] == pytest.approx(16.67, rel=0.01)
+    # Frame has 6 fiscal years → 5 YoY datapoints, filling the full 5-slot array.
+    assert data["annual_revenue_yoy_5y"][-1] == pytest.approx(10.0, rel=0.01)
+    assert data["annual_eps_yoy_5y"][-1] == pytest.approx(10.0, rel=0.01)
+    # Oldest-to-newest YoY pairs: 2000→2500 = +25%, then 2500→3000, 3000→3500,
+    # 3500→4000, 4000→4400. So slot [0] is the oldest pair = +25%.
+    assert data["annual_revenue_yoy_5y"][0] == pytest.approx(25.0, rel=0.01)
 
 
 def test_extract_quarterly_yoy_4q_full_history():
@@ -189,7 +196,7 @@ def test_fetch_ticker_data_handles_missing_yfinance_gracefully():
     assert data["group"] == "EarningsGap"
     assert data["exchange"] == "NASDAQ"
     assert data["market_cap"] is None
-    assert data["annual_revenue_yoy_3y"] == [None, None, None]
+    assert data["annual_revenue_yoy_5y"] == [None, None, None, None, None]
     assert data["institutional_holdings_pct"] is None
 
 
@@ -215,8 +222,8 @@ def test_fetch_ticker_data_full_path():
     assert data["rs_percentile"] == 95
     assert data["revenue_latest_q"] == 1100
     assert data["revenue_latest_q_yoy_pct"] == pytest.approx(10.0)
-    assert len(data["annual_revenue_yoy_3y"]) == 3
-    assert data["annual_revenue_yoy_3y"][-1] == pytest.approx(10.0, rel=0.01)
+    assert len(data["annual_revenue_yoy_5y"]) == 5
+    assert data["annual_revenue_yoy_5y"][-1] == pytest.approx(10.0, rel=0.01)
 
 
 def test_fetch_ticker_data_gap_pct_handles_zero_prev_close():
