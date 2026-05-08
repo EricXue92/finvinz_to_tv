@@ -3,8 +3,9 @@
 Aesthetic: editorial financial broadsheet — cream paper, ink-on-paper monochrome
 with two semantic accents (forest green for positive, oxblood for negative).
 Per-ticker block has a numbered header, a snapshot strip, prominent latest-Q
-earnings, mini SVG bar charts for 5-year EPS / Revenue YoY, and the LLM-written
-Chinese prose. Self-contained: all CSS + SVG inline, no external assets.
+earnings, mini SVG line charts for 5-year EPS / Revenue YoY + 4-quarter
+trajectory, and the LLM-written Chinese prose. Self-contained: all CSS +
+SVG inline, no external assets.
 
 The structured data sections (snapshot / quarterly / annual YoY) are rendered
 deterministically in Python — the LLM's output is appended only as prose.
@@ -423,8 +424,8 @@ def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
     if n == 0:
         return ""
 
-    # Compact horizontal footprint — 3 dots no longer get marooned across
-    # 420px the way they did when the chart was sized for 5.
+    # Compact horizontal footprint — sized to read 5 dots (annual) cleanly;
+    # the 4-quarter trajectory chart shares the same canvas.
     width, height = 320, 96
     pad_x = 28
     vlab_h = 18           # value-label band height (top + bottom)
@@ -635,15 +636,13 @@ def _render_quarterly(data: dict[str, Any]) -> str:
 
 
 def _render_quarterly_trend(data: dict[str, Any]) -> str:
-    """Past 2 quarters of YoY growth — shows whether quarterly EPS / Revenue
-    YoY is accelerating, decelerating, or rolling over. Capped at 2 because
-    yfinance free tier only returns ~6 quarterly periods (2 YoYs)."""
-    eps = data.get("quarterly_eps_yoy_2q") or [None] * 2
-    rev = data.get("quarterly_revenue_yoy_2q") or [None] * 2
-    eps_lbl = data.get("quarterly_eps_yoy_2q_labels") or [""] * 2
-    rev_lbl = data.get("quarterly_revenue_yoy_2q_labels") or [""] * 2
-    # Both rows should have identical period labels (same quarterly_income_stmt
-    # columns); fall back to "−Nq" notation if labels are missing.
+    """Past 4 quarters of YoY growth — shows whether quarterly EPS / Revenue
+    YoY is accelerating, decelerating, or rolling over. EDGAR provides up to
+    8 quarterly periods (= 4 YoY pairs); yfinance fallback fills less."""
+    eps = data.get("quarterly_eps_yoy_4q") or [None] * 4
+    rev = data.get("quarterly_revenue_yoy_4q") or [None] * 4
+    eps_lbl = data.get("quarterly_eps_yoy_4q_labels") or [""] * 4
+    rev_lbl = data.get("quarterly_revenue_yoy_4q_labels") or [""] * 4
     labels = []
     for i, l in enumerate(eps_lbl):
         if l:
@@ -655,7 +654,7 @@ def _render_quarterly_trend(data: dict[str, Any]) -> str:
             labels.append("Latest" if n == 0 else f"−{n}Q")
     return (
         f'<section class="annual">'
-        f'<div class="annual-title">Past 2 Quarters — YoY Growth</div>'
+        f'<div class="annual-title">Past 4 Quarters — YoY Growth</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">EPS YoY</div>'
         f'{_line_chart_svg(eps, labels)}</div>'
@@ -667,18 +666,18 @@ def _render_quarterly_trend(data: dict[str, Any]) -> str:
 
 
 def _render_annual_yoy(data: dict[str, Any]) -> str:
-    eps_3y = data.get("annual_eps_yoy_3y") or [None] * 3
-    rev_3y = data.get("annual_revenue_yoy_3y") or [None] * 3
-    labels = ["FY-3", "FY-2", "FY-1"]
+    eps = data.get("annual_eps_yoy_5y") or [None] * 5
+    rev = data.get("annual_revenue_yoy_5y") or [None] * 5
+    labels = ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"]
     return (
         f'<section class="annual">'
-        f'<div class="annual-title">3-Year Annual Earnings Increases (YoY)</div>'
+        f'<div class="annual-title">5-Year Annual Earnings Increases (YoY)</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">EPS YoY</div>'
-        f'{_line_chart_svg(eps_3y, labels)}</div>'
+        f'{_line_chart_svg(eps, labels)}</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">Rev. YoY</div>'
-        f'{_line_chart_svg(rev_3y, labels)}</div>'
+        f'{_line_chart_svg(rev, labels)}</div>'
         f"</section>"
     )
 
@@ -905,13 +904,13 @@ def _render_md_ticker(idx: int, d: dict[str, Any], prose: str) -> str:
         f"·  Revenue {rev_str} (YoY {_fmt_pct(rev_yoy)}{rev_src})\n\n"
     )
 
-    eps_3y = d.get("annual_eps_yoy_3y") or [None] * 3
-    rev_3y = d.get("annual_revenue_yoy_3y") or [None] * 3
+    eps_5y = d.get("annual_eps_yoy_5y") or [None] * 5
+    rev_5y = d.get("annual_revenue_yoy_5y") or [None] * 5
     annual = (
-        "| Year | FY−3 | FY−2 | FY−1 |\n"
-        "|---|---|---|---|\n"
-        f"| EPS YoY | {_fmt_pct(eps_3y[0])} | {_fmt_pct(eps_3y[1])} | {_fmt_pct(eps_3y[2])} |\n"
-        f"| Rev. YoY | {_fmt_pct(rev_3y[0])} | {_fmt_pct(rev_3y[1])} | {_fmt_pct(rev_3y[2])} |\n\n"
+        "| Year | FY−5 | FY−4 | FY−3 | FY−2 | FY−1 |\n"
+        "|---|---|---|---|---|---|\n"
+        f"| EPS YoY | {_fmt_pct(eps_5y[0])} | {_fmt_pct(eps_5y[1])} | {_fmt_pct(eps_5y[2])} | {_fmt_pct(eps_5y[3])} | {_fmt_pct(eps_5y[4])} |\n"
+        f"| Rev. YoY | {_fmt_pct(rev_5y[0])} | {_fmt_pct(rev_5y[1])} | {_fmt_pct(rev_5y[2])} | {_fmt_pct(rev_5y[3])} | {_fmt_pct(rev_5y[4])} |\n\n"
     )
 
     return head + snap + qtr + annual + (prose.rstrip() + "\n")
