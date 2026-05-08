@@ -215,3 +215,57 @@ def test_match_concept_handles_missing_unit():
     facts = _load_fixture("companyfacts_aapl_minimal.json")
     # Revenues exists but only with USD unit; asking for EUR returns None.
     assert edgar._match_concept_facts(facts, ("Revenues",), "EUR") is None
+
+
+def test_select_annual_facts_filters_to_10k_fy_and_sorts():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    annual = edgar._select_annual_facts(raw)
+    # 6 fiscal years, oldest first
+    assert len(annual) == 6
+    assert annual[0]["fy"] == 2020
+    assert annual[-1]["fy"] == 2025
+
+
+def test_select_annual_facts_dedupes_amendments(tmp_path):
+    raw = [
+        {"end": "2024-09-28", "val": 100, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+        {"end": "2024-09-28", "val": 105, "fy": 2024, "fp": "FY", "form": "10-K/A", "filed": "2025-02-01"},
+    ]
+    out = edgar._select_annual_facts(raw)
+    assert len(out) == 1
+    # Latest filed wins (the amendment).
+    assert out[0]["val"] == 105
+
+
+def test_extract_annual_yoy_5y_full_history():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    yoy = edgar._extract_annual_yoy(raw, years_back=5)
+    assert len(yoy) == 5
+    # Oldest first: FY2021 vs FY2020 = (365817 - 274515) / 274515 = +33.26%
+    assert yoy[0] == pytest.approx(33.26, rel=0.01)
+    # Newest: FY2025 vs FY2024 = (416000 - 391035) / 391035 = +6.38%
+    assert yoy[-1] == pytest.approx(6.38, rel=0.01)
+
+
+def test_extract_annual_yoy_pads_with_none_when_history_short():
+    raw = [
+        {"end": "2024-09-28", "val": 100, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+        {"end": "2025-09-27", "val": 110, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
+    ]
+    yoy = edgar._extract_annual_yoy(raw, years_back=5)
+    assert yoy == [None, None, None, None, pytest.approx(10.0, rel=0.01)]
+
+
+def test_extract_annual_yoy_skips_bad_prior():
+    raw = [
+        {"end": "2023-09-30", "val": -10, "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-11-03"},
+        {"end": "2024-09-28", "val":  20, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+        {"end": "2025-09-27", "val":  30, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
+    ]
+    yoy = edgar._extract_annual_yoy(raw, years_back=5)
+    # FY24 vs FY23: prior was -10 (negative) → None
+    # FY25 vs FY24: 20 → 30 = +50%
+    assert yoy[-2] is None
+    assert yoy[-1] == pytest.approx(50.0, rel=0.01)

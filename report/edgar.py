@@ -203,3 +203,53 @@ def _match_concept_facts(
         if facts:
             return facts
     return None
+
+
+# --- Annual fact selection + YoY extraction ----------------------------------
+
+def _compute_yoy(current: float | None, prior: float | None) -> float | None:
+    """Mirror of enrich.compute_yoy: None if either is None or prior <= 0."""
+    if current is None or prior is None:
+        return None
+    if prior <= 0:
+        return None
+    return (current - prior) / prior * 100.0
+
+
+def _select_annual_facts(facts: list[dict]) -> list[dict]:
+    """Return only 10-K/10-K/A FY filings, deduped by `end` date (latest filed
+    wins so amendments override originals), sorted oldest→newest by `end`."""
+    by_end: dict[str, dict] = {}
+    for f in facts:
+        if f.get("fp") != "FY":
+            continue
+        if not str(f.get("form", "")).startswith("10-K"):
+            continue
+        end = f.get("end")
+        if not end:
+            continue
+        existing = by_end.get(end)
+        if existing is None or str(f.get("filed", "")) > str(existing.get("filed", "")):
+            by_end[end] = f
+    return sorted(by_end.values(), key=lambda f: f["end"])
+
+
+def _extract_annual_yoy(facts: list[dict] | None, years_back: int = 5) -> list[float | None]:
+    """Up to `years_back` YoY % datapoints in oldest→newest order. Pads
+    leading slots with None when history is short."""
+    if not facts:
+        return [None] * years_back
+    annual = _select_annual_facts(facts)
+    values = [f.get("val") for f in annual]
+    out: list[float | None] = []
+    # We want the most recent `years_back + 1` values to compute `years_back` YoY.
+    needed_pairs = years_back
+    for i in range(-needed_pairs, 0):
+        try:
+            current = values[i]
+            prior = values[i - 1]
+        except IndexError:
+            out.append(None)
+            continue
+        out.append(_compute_yoy(current, prior))
+    return out
