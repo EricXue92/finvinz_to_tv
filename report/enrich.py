@@ -1,4 +1,10 @@
-"""Per-ticker yfinance fetch and 3-year YoY computation."""
+"""Per-ticker enrichment: SEC EDGAR-first fundamentals (US) with yfinance fallback,
+plus yfinance for snapshot fields (info, market cap, price, earnings date) and HK.
+
+Output schema: 5-year annual YoY + 4-quarter YoY trajectory. EDGAR is consulted only
+for tickers on US exchanges (`US_EXCHANGES`); per-field guards in `fetch_ticker_data`
+ensure yfinance fills any slot EDGAR returned as None without overwriting EDGAR data.
+"""
 from __future__ import annotations
 
 import logging
