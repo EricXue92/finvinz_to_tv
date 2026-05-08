@@ -1,9 +1,12 @@
 """Per-ticker enrichment: SEC EDGAR-first fundamentals (US) with yfinance fallback,
 plus yfinance for snapshot fields (info, market cap, price, earnings date) and HK.
 
-Output schema: 5-year annual YoY + 4-quarter YoY trajectory. EDGAR is consulted only
-for tickers on US exchanges (`US_EXCHANGES`); per-field guards in `fetch_ticker_data`
-ensure yfinance fills any slot EDGAR returned as None without overwriting EDGAR data.
+Output schema: 5-year annual YoY + 4-quarter YoY trajectory. EDGAR is skipped only
+for explicit HK exchange tickers (`HK_EXCHANGES`); empty-string and US exchange
+strings both qualify (US EOD .txt files write bare tickers without an exchange
+prefix, so an empty string from `_split_exchange_ticker` is the common case).
+Per-field guards in `fetch_ticker_data` ensure yfinance fills any slot EDGAR
+returned as None without overwriting EDGAR data.
 """
 from __future__ import annotations
 
@@ -20,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 # Exchanges for which EDGAR data is available. HK and other foreign listings
 # fall back to yfinance directly.
-US_EXCHANGES: frozenset[str] = frozenset({"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"})
+# EDGAR is the US-only data source. We invert the gate (skip-if-HK) rather than
+# allow-list US exchanges because US EOD .txt files write bare tickers (no
+# exchange prefix), so `_split_exchange_ticker` returns "" — an allow-list
+# would silently drop EVERY US ticker. Empty string and any US exchange
+# string both qualify; only explicit HKEX is rejected.
+HK_EXCHANGES: frozenset[str] = frozenset({"HKEX"})
 
 
 def compute_yoy(current: float | None, prior: float | None) -> float | None:
@@ -231,7 +239,7 @@ def fetch_ticker_data(
 
     # --- EDGAR-first fundamentals (US only) -------------------------------
     edgar_data: dict | None = None
-    if exchange.upper() in US_EXCHANGES:
+    if exchange.upper() not in HK_EXCHANGES:
         try:
             edgar_data = fetch_edgar_fundamentals(ticker)
         except Exception as e:

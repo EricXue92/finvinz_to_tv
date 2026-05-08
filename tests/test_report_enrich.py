@@ -352,3 +352,25 @@ def test_fetch_ticker_data_skips_edgar_for_non_us_exchange():
          patch("report.enrich.fetch_edgar_fundamentals", side_effect=_track):
         enrich.fetch_ticker_data("0700.HK", "HKLeaders", "HKEX", rs_lookup=lambda t: 95)
     assert edgar_calls["n"] == 0
+
+
+def test_fetch_ticker_data_calls_edgar_when_exchange_is_empty_string():
+    """US EOD .txt files write bare tickers (no exchange prefix), so the
+    `_split_exchange_ticker` helper returns ("", ticker). EDGAR must still
+    be consulted in that case — otherwise every US-EOD ticker silently
+    falls through to yfinance and the report loses its EDGAR coverage."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "Flex", "currentPrice": 133, "previousClose": 134.5}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    fake_ticker.earnings_dates = None
+    edgar_calls = {"n": 0}
+
+    def _track(_):
+        edgar_calls["n"] += 1
+        return None
+
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", side_effect=_track):
+        enrich.fetch_ticker_data("FLEX", "HighVolume", "", rs_lookup=lambda t: 97)
+    assert edgar_calls["n"] == 1
