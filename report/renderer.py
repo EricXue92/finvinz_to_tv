@@ -11,6 +11,7 @@ deterministically in Python — the LLM's output is appended only as prose.
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -354,7 +355,9 @@ body {
 # --- Number formatting -------------------------------------------------------
 
 def _fmt_money(v: float | None) -> str:
-    if v is None:
+    # NaN slips through here when yfinance returns a float NaN (vs. None);
+    # treat it the same as missing instead of rendering "$nan".
+    if v is None or (isinstance(v, float) and math.isnan(v)):
         return "—"
     a = abs(v)
     if a >= 1e12:
@@ -369,7 +372,7 @@ def _fmt_money(v: float | None) -> str:
 
 
 def _fmt_pct(v: float | None, sign: bool = True) -> str:
-    if v is None:
+    if v is None or (isinstance(v, float) and math.isnan(v)):
         return "—"
     s = "+" if sign and v >= 0 else ""
     return f"{s}{v:.1f}%"
@@ -583,7 +586,8 @@ def _render_quarterly(data: dict[str, Any]) -> str:
     else:
         rev_yoy_src = ""
 
-    eps_str = f"${eps:,.2f}" if isinstance(eps, (int, float)) else "—"
+    eps_usable = isinstance(eps, (int, float)) and not (isinstance(eps, float) and math.isnan(eps))
+    eps_str = f"${eps:,.2f}" if eps_usable else "—"
     rev_str = _fmt_money(rev)
 
     eps_pill = (
@@ -603,12 +607,13 @@ def _render_quarterly(data: dict[str, Any]) -> str:
 
 
 def _render_quarterly_trend(data: dict[str, Any]) -> str:
-    """Past 4 quarters of YoY growth — shows whether quarterly EPS / Revenue
-    YoY is accelerating, decelerating, or rolling over."""
-    eps = data.get("quarterly_eps_yoy_4q") or [None] * 4
-    rev = data.get("quarterly_revenue_yoy_4q") or [None] * 4
-    eps_lbl = data.get("quarterly_eps_yoy_4q_labels") or [""] * 4
-    rev_lbl = data.get("quarterly_revenue_yoy_4q_labels") or [""] * 4
+    """Past 2 quarters of YoY growth — shows whether quarterly EPS / Revenue
+    YoY is accelerating, decelerating, or rolling over. Capped at 2 because
+    yfinance free tier only returns ~6 quarterly periods (2 YoYs)."""
+    eps = data.get("quarterly_eps_yoy_2q") or [None] * 2
+    rev = data.get("quarterly_revenue_yoy_2q") or [None] * 2
+    eps_lbl = data.get("quarterly_eps_yoy_2q_labels") or [""] * 2
+    rev_lbl = data.get("quarterly_revenue_yoy_2q_labels") or [""] * 2
     # Both rows should have identical period labels (same quarterly_income_stmt
     # columns); fall back to "−Nq" notation if labels are missing.
     labels = []
@@ -622,7 +627,7 @@ def _render_quarterly_trend(data: dict[str, Any]) -> str:
             labels.append("Latest" if n == 0 else f"−{n}Q")
     return (
         f'<section class="annual">'
-        f'<div class="annual-title">Past 4 Quarters — YoY Growth</div>'
+        f'<div class="annual-title">Past 2 Quarters — YoY Growth</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">EPS YoY</div>'
         f'{_line_chart_svg(eps, labels)}</div>'
@@ -634,18 +639,18 @@ def _render_quarterly_trend(data: dict[str, Any]) -> str:
 
 
 def _render_annual_yoy(data: dict[str, Any]) -> str:
-    eps_5y = data.get("annual_eps_yoy_5y") or [None] * 5
-    rev_5y = data.get("annual_revenue_yoy_5y") or [None] * 5
-    labels = ["FY-5", "FY-4", "FY-3", "FY-2", "FY-1"]
+    eps_3y = data.get("annual_eps_yoy_3y") or [None] * 3
+    rev_3y = data.get("annual_revenue_yoy_3y") or [None] * 3
+    labels = ["FY-3", "FY-2", "FY-1"]
     return (
         f'<section class="annual">'
-        f'<div class="annual-title">5-Year Annual Earnings Increases (YoY)</div>'
+        f'<div class="annual-title">3-Year Annual Earnings Increases (YoY)</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">EPS YoY</div>'
-        f'{_line_chart_svg(eps_5y, labels)}</div>'
+        f'{_line_chart_svg(eps_3y, labels)}</div>'
         f'<div class="chart-row">'
         f'<div class="chart-name">Rev. YoY</div>'
-        f'{_line_chart_svg(rev_5y, labels)}</div>'
+        f'{_line_chart_svg(rev_3y, labels)}</div>'
         f"</section>"
     )
 
@@ -838,7 +843,8 @@ def _render_md_ticker(idx: int, d: dict[str, Any], prose: str) -> str:
     )
     # Simpler: rebuild snap without the ternary spaghetti
     inst = d.get("institutional_holdings_pct")
-    inst_str = f"{inst:.1f}%" if isinstance(inst, (int, float)) else "—"
+    inst_usable = isinstance(inst, (int, float)) and not (isinstance(inst, float) and math.isnan(inst))
+    inst_str = f"{inst:.1f}%" if inst_usable else "—"
     snap = (
         f"| Market Cap | Price | Gap | RS | Inst. Hold | Earnings Date |\n"
         f"|---|---|---|---|---|---|\n"
@@ -851,7 +857,8 @@ def _render_md_ticker(idx: int, d: dict[str, Any], prose: str) -> str:
     )
 
     eps = d.get("eps_latest_q")
-    eps_str = f"${eps:,.2f}" if isinstance(eps, (int, float)) else "—"
+    eps_usable = isinstance(eps, (int, float)) and not (isinstance(eps, float) and math.isnan(eps))
+    eps_str = f"${eps:,.2f}" if eps_usable else "—"
     rev_str = _fmt_money(d.get("revenue_latest_q"))
     eps_yoy = d.get("eps_latest_q_yoy_pct")
     rev_yoy = d.get("revenue_latest_q_yoy_pct")
@@ -870,15 +877,13 @@ def _render_md_ticker(idx: int, d: dict[str, Any], prose: str) -> str:
         f"·  Revenue {rev_str} (YoY {_fmt_pct(rev_yoy)}{rev_src})\n\n"
     )
 
-    eps_5y = d.get("annual_eps_yoy_5y") or [None] * 5
-    rev_5y = d.get("annual_revenue_yoy_5y") or [None] * 5
+    eps_3y = d.get("annual_eps_yoy_3y") or [None] * 3
+    rev_3y = d.get("annual_revenue_yoy_3y") or [None] * 3
     annual = (
-        "| Year | FY−5 | FY−4 | FY−3 | FY−2 | FY−1 |\n"
-        "|---|---|---|---|---|---|\n"
-        f"| EPS YoY | {_fmt_pct(eps_5y[0])} | {_fmt_pct(eps_5y[1])} "
-        f"| {_fmt_pct(eps_5y[2])} | {_fmt_pct(eps_5y[3])} | {_fmt_pct(eps_5y[4])} |\n"
-        f"| Rev. YoY | {_fmt_pct(rev_5y[0])} | {_fmt_pct(rev_5y[1])} "
-        f"| {_fmt_pct(rev_5y[2])} | {_fmt_pct(rev_5y[3])} | {_fmt_pct(rev_5y[4])} |\n\n"
+        "| Year | FY−3 | FY−2 | FY−1 |\n"
+        "|---|---|---|---|\n"
+        f"| EPS YoY | {_fmt_pct(eps_3y[0])} | {_fmt_pct(eps_3y[1])} | {_fmt_pct(eps_3y[2])} |\n"
+        f"| Rev. YoY | {_fmt_pct(rev_3y[0])} | {_fmt_pct(rev_3y[1])} | {_fmt_pct(rev_3y[2])} |\n\n"
     )
 
     return head + snap + qtr + annual + (prose.rstrip() + "\n")
