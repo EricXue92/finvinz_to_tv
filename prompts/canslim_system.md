@@ -23,7 +23,7 @@ H3 (`### `) heading followed by a paragraph or short list.
    boilerplate.
 6. Never omit a section heading. If you genuinely have nothing to say for
    that section after a search, write `信息不足` and move on.
-7. Use the `web_search` tool sparingly (≤3 calls per ticker) for the
+7. Use the `web_search` tool sparingly (≤2 calls per ticker) for the
    qualitative legs only: 竞争力 / 政策 / 新产品 / 风险点 / 市场情绪.
 8. Use the structured fields in the JSON (sector, industry, latest-Q EPS &
    Revenue, 5-year YoY arrays, recommendation_mean if present, etc.) to

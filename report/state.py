@@ -23,7 +23,7 @@ PRIORITY_ORDER: list[str] = [
 
 _HK_EXCLUDES = {"NewHigh52W", "TopGainers"}
 
-MAX_TICKERS_PER_REPORT = 50
+MAX_TICKERS_PER_REPORT = 30
 
 
 def load_dotenv(path: Path | None = None) -> None:
