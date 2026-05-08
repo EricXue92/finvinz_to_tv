@@ -59,7 +59,11 @@ BASIC_EPS_LABELS = ("Basic EPS", "BasicEPS")
 def _row_values(df: pd.DataFrame, row_label: str | tuple[str, ...]) -> list[float | None]:
     """Return a row of the income statement as floats (most recent first).
     yfinance frames are line-items × periods, so we look up the row by index label.
-    Accepts either a single label or a tuple of fallback candidates (first match wins)."""
+    Accepts either a single label or a tuple of fallback candidates (first match wins).
+
+    NaN sentinels (yfinance pads truncated histories with NaN — e.g. 1138.HK's
+    oldest fiscal year) are normalised to None so downstream YoY math and chart
+    rendering treat them as "missing" rather than letting NaN poison min/max."""
     if df is None or df.empty:
         return []
     candidates = (row_label,) if isinstance(row_label, str) else row_label
@@ -72,6 +76,9 @@ def _row_values(df: pd.DataFrame, row_label: str | tuple[str, ...]) -> list[floa
         return []
     out: list[float | None] = []
     for v in series.tolist():
+        if pd.isna(v):
+            out.append(None)
+            continue
         try:
             out.append(float(v))
         except (TypeError, ValueError):

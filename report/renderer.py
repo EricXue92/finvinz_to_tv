@@ -435,6 +435,11 @@ def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
     if n == 0:
         return ""
 
+    # Treat NaN like None — upstream sources (yfinance, EDGAR fallback) sometimes
+    # return float('nan') for missing periods. Letting NaN through pollutes
+    # min/max/span and renders y="nan" SVG attributes, which break the chart.
+    values = [None if (isinstance(v, float) and math.isnan(v)) else v for v in values]
+
     # Compact horizontal footprint — sized to read 5 dots (annual) cleanly;
     # the 4-quarter trajectory chart shares the same canvas.
     width, height = 320, 96
@@ -654,6 +659,12 @@ def _render_quarterly_trend(data: dict[str, Any]) -> str:
     rev = data.get("quarterly_revenue_yoy_4q") or [None] * 4
     eps_lbl = data.get("quarterly_eps_yoy_4q_labels") or [""] * 4
     rev_lbl = data.get("quarterly_revenue_yoy_4q_labels") or [""] * 4
+    # HK tickers don't go through EDGAR and yfinance's HK quarterly statements
+    # carry < 8 quarters, so 4-quarter YoY is unreachable. Rather than render a
+    # row of empty "n/a" placeholders, drop the section entirely — the latest-
+    # quarter Yahoo YoY box above already covers the quarterly signal.
+    if all(v is None for v in eps) and all(v is None for v in rev):
+        return ""
     labels = []
     for i, l in enumerate(eps_lbl):
         if l:
