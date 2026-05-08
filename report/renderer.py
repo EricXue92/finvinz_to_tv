@@ -406,42 +406,71 @@ def _fmt_date(v: Any) -> str:
 # --- Bar chart SVG -----------------------------------------------------------
 
 def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
-    """Connected-dot line chart for YoY deltas. Black ink on white,
-    one filled dot per period, line connecting non-null neighbors,
-    each dot annotated with its YoY %, period labels along the
-    x-axis below the zero line."""
+    """Connected-dot line chart for YoY deltas.
+
+    Layout uses three horizontal bands so labels never overlap dots:
+
+        y= 0..VLAB_H       value-label band (top)   — for positive values
+        y= VLAB_H..PLOT    plot area                — dots + connecting line
+        y= PLOT..PLOT+VLAB value-label band (bot.)  — for negative values
+        y= PLOT+VLAB..H    period-label band        — FY-3 / FY-2 / FY-1
+
+    Y-axis auto-scales to the actual data range. When all values share a
+    sign the baseline is parked at the relevant edge of the plot so the
+    full plot height encodes magnitude (instead of wasting half the canvas
+    on the empty negative half)."""
     n = len(values)
     if n == 0:
         return ""
-    width, height = 420, 70
-    pad_x, pad_top, pad_bottom = 24, 14, 16
-    plot_h = height - pad_top - pad_bottom
-    baseline = pad_top + plot_h / 2
 
-    nonnull_abs = [abs(v) for v in values if v is not None]
-    max_abs = max(nonnull_abs, default=1.0) or 1.0
-    half = plot_h / 2 - 4  # leave space for labels
+    # Compact horizontal footprint — 3 dots no longer get marooned across
+    # 420px the way they did when the chart was sized for 5.
+    width, height = 320, 96
+    pad_x = 28
+    vlab_h = 18           # value-label band height (top + bottom)
+    period_h = 14         # period label band at bottom
+    plot_top = vlab_h
+    plot_bot = height - vlab_h - period_h
+    plot_h = plot_bot - plot_top
+
+    nonnull = [v for v in values if v is not None]
+    if nonnull:
+        v_max = max(max(nonnull), 0.0)
+        v_min = min(min(nonnull), 0.0)
+    else:
+        v_max, v_min = 1.0, 0.0
+    span = v_max - v_min or 1.0
+
+    # Baseline (zero line) y-position — auto-fit to data sign distribution.
+    if v_min >= 0:
+        baseline = plot_bot                       # all non-negative → zero at bottom
+    elif v_max <= 0:
+        baseline = plot_top                       # all non-positive → zero at top
+    else:
+        baseline = plot_top + (v_max / span) * plot_h
 
     def x_for(i: int) -> float:
         if n == 1:
             return width / 2
         return pad_x + i * ((width - 2 * pad_x) / (n - 1))
 
-    def y_for(v: float | None) -> float:
-        if v is None:
-            return baseline
-        return baseline - (v / max_abs) * half
+    def y_for(v: float) -> float:
+        # Linear scale; clamps to plot band defensively.
+        return plot_top + ((v_max - v) / span) * plot_h
 
     parts: list[str] = []
 
-    # Zero baseline (subtle)
+    # Zero baseline (subtle dashed when not at an edge, solid when at edge).
+    is_edge = baseline <= plot_top + 0.5 or baseline >= plot_bot - 0.5
+    base_stroke = "#D8D8D8" if is_edge else "#CCCCCC"
+    base_dash = "" if is_edge else ' stroke-dasharray="3 3"'
     parts.append(
-        f'<line x1="0" y1="{baseline:.1f}" x2="{width}" y2="{baseline:.1f}" '
-        'stroke="#E0E0E0" stroke-width="0.6"/>'
+        f'<line x1="{pad_x - 6:.1f}" y1="{baseline:.1f}" '
+        f'x2="{width - pad_x + 6:.1f}" y2="{baseline:.1f}" '
+        f'stroke="{base_stroke}" stroke-width="0.7"{base_dash}/>'
     )
 
     # Connecting polyline through consecutive non-null points only.
-    segments: list[tuple[float, float, float, float]] = []
     last_xy: tuple[float, float] | None = None
     for i, v in enumerate(values):
         if v is None:
@@ -450,50 +479,49 @@ def _line_chart_svg(values: list[float | None], labels: list[str]) -> str:
         x = x_for(i)
         y = y_for(v)
         if last_xy is not None:
-            segments.append((last_xy[0], last_xy[1], x, y))
+            parts.append(
+                f'<line x1="{last_xy[0]:.1f}" y1="{last_xy[1]:.1f}" '
+                f'x2="{x:.1f}" y2="{y:.1f}" '
+                'stroke="#111111" stroke-width="1.6" stroke-linecap="round"/>'
+            )
         last_xy = (x, y)
-    for x1, y1, x2, y2 in segments:
-        parts.append(
-            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-            'stroke="#111111" stroke-width="1"/>'
-        )
 
-    # Dots + labels
+    # Dots + value labels + period labels
+    period_y = height - 3
+    top_label_y = vlab_h - 5         # baseline of top value-label band (text)
+    bot_label_y = plot_bot + vlab_h - 4  # baseline of bottom value-label band
     for i, v in enumerate(values):
         x = x_for(i)
-        # Period label (FY-5..FY-1) below the zero line, near the bottom edge
+        # Period label (FY-3 / FY-2 / FY-1) at the bottom edge.
         parts.append(
-            f'<text x="{x:.1f}" y="{height - 3:.1f}" font-size="9" '
+            f'<text x="{x:.1f}" y="{period_y:.1f}" font-size="10" '
             f'font-family="SF Mono,Menlo,monospace" fill="#777777" '
             f'text-anchor="middle">{labels[i]}</text>'
         )
         if v is None:
-            # Hollow gray ring on baseline + em-dash above
+            # Hollow gray ring on baseline + "n/a" in the bottom label band.
             parts.append(
-                f'<circle cx="{x:.1f}" cy="{baseline:.1f}" r="2.5" '
-                'fill="#FFFFFF" stroke="#AAAAAA" stroke-width="1"/>'
+                f'<circle cx="{x:.1f}" cy="{baseline:.1f}" r="2.6" '
+                'fill="#FFFFFF" stroke="#B5B5B5" stroke-width="1"/>'
             )
             parts.append(
-                f'<text x="{x:.1f}" y="{baseline - 6:.1f}" font-size="10" '
-                f'font-family="SF Mono,Menlo,monospace" fill="#888888" '
-                f'text-anchor="middle">—</text>'
+                f'<text x="{x:.1f}" y="{bot_label_y:.1f}" font-size="10" '
+                f'font-family="SF Mono,Menlo,monospace" fill="#999999" '
+                f'text-anchor="middle">n/a</text>'
             )
             continue
         y = y_for(v)
-        # Filled black dot
+        # Filled black dot — slightly larger than before so it reads at a glance.
         parts.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="#111111"/>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.4" fill="#111111"/>'
         )
-        # YoY% label — above the dot for positive, below for negative
+        # Value label always sits in a dedicated band, never on the dot:
+        # positive → top band, negative → bottom band, zero → bottom band.
         sign = "+" if v >= 0 else ""
-        if v >= 0:
-            label_y = max(y - 6, pad_top + 4)
-        else:
-            label_y = min(y + 13, height - pad_bottom - 1)
-        # Bold black label, with red tint when strongly negative for emphasis.
+        label_y = top_label_y if v > 0 else bot_label_y
         color = "#0A0A0A" if v >= 0 else "#A02828"
         parts.append(
-            f'<text x="{x:.1f}" y="{label_y:.1f}" font-size="11" '
+            f'<text x="{x:.1f}" y="{label_y:.1f}" font-size="11.5" '
             f'font-family="SF Mono,Menlo,monospace" fill="{color}" '
             f'text-anchor="middle" font-weight="700">{sign}{v:.1f}%</text>'
         )
