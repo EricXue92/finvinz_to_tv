@@ -167,3 +167,39 @@ def _fetch_companyfacts(cik: str) -> dict | None:
         logger.info(f"[edgar] using stale companyfacts for CIK {cik}")
         return cached
     return None
+
+
+# --- XBRL concept constants -------------------------------------------------
+
+REVENUE_CONCEPTS = (
+    "Revenues",
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+    "SalesRevenueNet",
+    "RevenueFromContractWithCustomerIncludingAssessedTax",
+)
+EPS_CONCEPTS = (
+    "EarningsPerShareDiluted",
+    "EarningsPerShareBasic",
+)
+USD = "USD"
+USD_PER_SHARE = "USD/shares"
+
+
+def _match_concept_facts(
+    companyfacts: dict, candidates: tuple[str, ...], unit: str
+) -> list[dict] | None:
+    """Walk `candidates` in order; return the first concept's `units[unit]`
+    fact list. None if no concept matches or matching concept lacks the unit."""
+    try:
+        gaap = companyfacts["facts"]["us-gaap"]
+    except (KeyError, TypeError):
+        return None
+    for name in candidates:
+        concept = gaap.get(name)
+        if not concept:
+            continue
+        units = concept.get("units") or {}
+        facts = units.get(unit)
+        if facts:
+            return facts
+    return None

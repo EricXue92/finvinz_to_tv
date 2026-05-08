@@ -181,3 +181,37 @@ def test_fetch_companyfacts_returns_none_when_404(tmp_path, monkeypatch):
     monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(edgar, "_http_get_json", lambda url: None)
     assert edgar._fetch_companyfacts("0000000001") is None
+
+
+def _load_fixture(name: str) -> dict:
+    return json.loads((FIXTURES / name).read_text())
+
+
+def test_match_concept_returns_first_match(monkeypatch):
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    out = edgar._match_concept_facts(
+        facts, ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"), "USD"
+    )
+    assert out is not None
+    assert any(f["fy"] == 2024 and f["fp"] == "FY" for f in out)
+
+
+def test_match_concept_falls_back_when_first_missing():
+    facts = _load_fixture("companyfacts_v_alt_revenue.json")
+    out = edgar._match_concept_facts(
+        facts, ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"), "USD"
+    )
+    assert out is not None
+    # Should have used the alt concept.
+    assert any(f["fy"] == 2024 and f["fp"] == "FY" for f in out)
+
+
+def test_match_concept_returns_none_when_no_match():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    assert edgar._match_concept_facts(facts, ("NoSuchConcept",), "USD") is None
+
+
+def test_match_concept_handles_missing_unit():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    # Revenues exists but only with USD unit; asking for EUR returns None.
+    assert edgar._match_concept_facts(facts, ("Revenues",), "EUR") is None
