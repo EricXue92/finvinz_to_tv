@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import date as _date
 from pathlib import Path
 
 import httpx
@@ -253,3 +254,105 @@ def _extract_annual_yoy(facts: list[dict] | None, years_back: int = 5) -> list[f
             continue
         out.append(_compute_yoy(current, prior))
     return out
+
+
+# --- Quarterly fact selection + YoY extraction --------------------------------
+
+def _parse_iso_date(s: str) -> _date | None:
+    try:
+        return _date.fromisoformat(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _period_label(end_date_iso: str) -> str:
+    """'2024-12-30' -> \"Dec'24\". Empty string on parse failure."""
+    d = _parse_iso_date(end_date_iso)
+    if d is None:
+        return ""
+    return d.strftime("%b'%y")
+
+
+def _select_quarterly_facts(facts: list[dict]) -> list[dict]:
+    """Combine 10-Q reported quarters (Q1/Q2/Q3) with derived Q4
+    (= FY value − sum of same-FY Q1+Q2+Q3). Q4 derivation skipped
+    when any component is missing. Returned list sorted oldest→newest by `end`."""
+    # Group by (fy, fp) for Q4 derivation; dedupe with latest-filed-wins.
+    by_key: dict[tuple[int, str], dict] = {}
+    for f in facts:
+        fp = f.get("fp")
+        form = str(f.get("form", ""))
+        if fp not in ("Q1", "Q2", "Q3", "FY"):
+            continue
+        if fp in ("Q1", "Q2", "Q3") and not form.startswith("10-Q"):
+            continue
+        if fp == "FY" and not form.startswith("10-K"):
+            continue
+        try:
+            fy = int(f["fy"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        key = (fy, fp)
+        existing = by_key.get(key)
+        if existing is None or str(f.get("filed", "")) > str(existing.get("filed", "")):
+            by_key[key] = f
+
+    out: list[dict] = []
+    # Emit Q1/Q2/Q3 directly.
+    for (fy, fp), f in by_key.items():
+        if fp in ("Q1", "Q2", "Q3"):
+            out.append(f)
+    # Derive Q4 per fiscal year.
+    fy_set = {fy for (fy, fp) in by_key if fp == "FY"}
+    for fy in fy_set:
+        fy_fact = by_key.get((fy, "FY"))
+        q1 = by_key.get((fy, "Q1"))
+        q2 = by_key.get((fy, "Q2"))
+        q3 = by_key.get((fy, "Q3"))
+        if not (fy_fact and q1 and q2 and q3):
+            continue
+        try:
+            q4_val = float(fy_fact["val"]) - (
+                float(q1["val"]) + float(q2["val"]) + float(q3["val"])
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        # Use FY's `end` for the Q4 period (typically the fiscal year end).
+        out.append({
+            "end": fy_fact["end"],
+            "val": q4_val,
+            "fy": fy,
+            "fp": "Q4",
+            "form": "derived",
+            "filed": fy_fact.get("filed", ""),
+        })
+    out.sort(key=lambda f: f.get("end") or "")
+    return out
+
+
+def _extract_quarterly_yoy(
+    facts: list[dict] | None, n_quarters: int = 4
+) -> tuple[list[float | None], list[str]]:
+    """Return (yoy_pct list, labels list), each length `n_quarters`,
+    oldest→newest. Each YoY pairs each quarter with the same calendar
+    quarter one year prior (4 quarters back in the chronological list).
+    Leading slots are None when history is too short."""
+    quarters = _select_quarterly_facts(facts) if facts else []
+    values = [q.get("val") for q in quarters]
+    ends = [q.get("end") or "" for q in quarters]
+
+    yoy: list[float | None] = []
+    labels: list[str] = []
+    for i in range(-n_quarters, 0):
+        try:
+            current = values[i]
+            prior = values[i - 4]
+        except IndexError:
+            yoy.append(None)
+        else:
+            yoy.append(_compute_yoy(current, prior))
+        try:
+            labels.append(_period_label(ends[i]))
+        except IndexError:
+            labels.append("")
+    return yoy, labels

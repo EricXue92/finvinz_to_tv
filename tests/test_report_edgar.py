@@ -269,3 +269,63 @@ def test_extract_annual_yoy_skips_bad_prior():
     # FY25 vs FY24: 20 → 30 = +50%
     assert yoy[-2] is None
     assert yoy[-1] == pytest.approx(50.0, rel=0.01)
+
+
+def test_select_quarterly_facts_uses_10q_directly_for_q1_q2_q3():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    quarters = edgar._select_quarterly_facts(raw)
+    # Should include Apple's Q1 2024 = 119575000000
+    found = [q for q in quarters if q["end"] == "2023-12-30"]
+    assert len(found) == 1
+    assert found[0]["val"] == 119575000000
+
+
+def test_select_quarterly_facts_derives_q4_from_fy_minus_q1q2q3():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    quarters = edgar._select_quarterly_facts(raw)
+    # FY2024 Q4 = 391035 - (119575 + 90753 + 85777) = 94930 (in millions: 94930000000)
+    fy24_q4 = [q for q in quarters if q.get("fy") == 2024 and q.get("fp") == "Q4"]
+    assert len(fy24_q4) == 1
+    assert fy24_q4[0]["val"] == 391035000000 - (119575000000 + 90753000000 + 85777000000)
+
+
+def test_select_quarterly_facts_skips_q4_when_a_component_missing():
+    facts = _load_fixture("companyfacts_q2_gap.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    quarters = edgar._select_quarterly_facts(raw)
+    # FY2024 Q2 missing → no FY2024 Q4 emitted.
+    fy24_q4 = [q for q in quarters if q.get("fy") == 2024 and q.get("fp") == "Q4"]
+    assert fy24_q4 == []
+    # FY2023 Q4 should still be present (220 + 240 + 260 = 720; FY=1000; Q4=280).
+    fy23_q4 = [q for q in quarters if q.get("fy") == 2023 and q.get("fp") == "Q4"]
+    assert len(fy23_q4) == 1
+    assert fy23_q4[0]["val"] == 280
+
+
+def test_extract_quarterly_yoy_4q_with_full_history():
+    facts = _load_fixture("companyfacts_aapl_minimal.json")
+    raw = edgar._match_concept_facts(facts, ("Revenues",), "USD")
+    yoy, labels = edgar._extract_quarterly_yoy(raw, n_quarters=4)
+    assert len(yoy) == 4
+    assert len(labels) == 4
+    # Fixture has FY2025 10-K → Q4 FY2025 is derived (110.6B vs Q4 FY2024 94.93B ≈ +16.5%).
+    # The last 4 quarters chronologically: Q1/Q2/Q3 FY2025 + derived Q4 FY2025.
+    # Q3 FY2025 (Jun'25): 85.7B vs Q3 FY2024 (Jun'24): 85.777B ≈ -0.09%
+    assert yoy[-2] == pytest.approx(-0.09, abs=0.5)
+    # Q4 FY2025 (Sep'25): derived 110.6B vs Q4 FY2024 94.93B ≈ +16.5%
+    assert yoy[-1] == pytest.approx(16.5, abs=0.5)
+    # Each label is "Mon'YY"
+    for lbl in labels:
+        assert len(lbl) == 6
+        assert lbl[3] == "'"
+
+
+def test_extract_quarterly_yoy_pads_when_short_history():
+    raw = [
+        {"start": "2024-10-01", "end": "2024-12-31", "val": 100, "fy": 2025, "fp": "Q1", "form": "10-Q", "filed": "2025-02-01"},
+    ]
+    yoy, labels = edgar._extract_quarterly_yoy(raw, n_quarters=4)
+    assert yoy == [None, None, None, None]
+    assert labels[-1] == "Dec'24"
