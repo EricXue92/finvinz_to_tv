@@ -155,3 +155,29 @@ def test_get_cik_returns_none_when_network_and_cache_both_fail(tmp_path, monkeyp
     monkeypatch.setattr(edgar, "_http_get_json", lambda url: None)
     edgar._cached_ticker_map = None
     assert edgar._get_cik("AAPL") is None
+
+
+def test_fetch_companyfacts_uses_cache_when_fresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    cik = "0000320193"
+    cache_path = tmp_path / f"CIK{cik}.json"
+    cache_path.write_text('{"facts": {"us-gaap": {}}}')
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: pytest.fail("network hit"))
+    assert edgar._fetch_companyfacts(cik) == {"facts": {"us-gaap": {}}}
+
+
+def test_fetch_companyfacts_fetches_when_no_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    cik = "0000320193"
+    payload = {"facts": {"us-gaap": {"Revenues": {}}}}
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: payload)
+    got = edgar._fetch_companyfacts(cik)
+    assert got == payload
+    # Cache should now exist.
+    assert (tmp_path / f"CIK{cik}.json").is_file()
+
+
+def test_fetch_companyfacts_returns_none_when_404(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: None)
+    assert edgar._fetch_companyfacts("0000000001") is None

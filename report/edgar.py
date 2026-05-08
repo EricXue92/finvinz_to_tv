@@ -145,3 +145,25 @@ def _get_cik(ticker: str) -> str | None:
     if _cached_ticker_map is None:
         return None
     return _cached_ticker_map.get(ticker.upper())
+
+
+# --- companyfacts fetch -----------------------------------------------------
+
+def _fetch_companyfacts(cik: str) -> dict | None:
+    """Return the parsed companyfacts JSON for `cik` (10-digit string).
+    Uses the 7-day TTL cache; on cache miss, fetches and writes the cache.
+    Returns None if both cache and network fail."""
+    cache_path = CACHE_DIR / f"CIK{cik}.json"
+    if _is_fresh(cache_path, COMPANYFACTS_TTL):
+        cached = _load_json_cache(cache_path)
+        if cached:
+            return cached
+    fresh = _http_get_json(COMPANYFACTS_URL.format(cik=cik))
+    if fresh:
+        _save_json_cache(cache_path, fresh)
+        return fresh
+    cached = _load_json_cache(cache_path)
+    if cached:
+        logger.info(f"[edgar] using stale companyfacts for CIK {cik}")
+        return cached
+    return None
