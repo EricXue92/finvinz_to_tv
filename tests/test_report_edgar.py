@@ -109,3 +109,49 @@ def test_http_get_json_returns_none_on_404_no_retry(monkeypatch):
     monkeypatch.setattr(edgar.httpx, "get", fake_get)
     assert edgar._http_get_json("https://x") is None
     assert calls["n"] == 1   # 404 = "company not in EDGAR", do not retry
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "edgar"
+
+
+def test_parse_ticker_cik_map_zero_pads_cik():
+    raw = json.loads((FIXTURES / "company_tickers.json").read_text())
+    table = edgar._parse_ticker_cik_map(raw)
+    assert table["AAPL"] == "0000320193"
+    assert table["V"] == "0001403161"
+    assert table["GOOGL"] == "0000001652044"[-10:]   # 10-digit zero-padded
+
+
+def test_parse_ticker_cik_map_uppercases_ticker():
+    raw = {"0": {"cik_str": 1, "ticker": "tsla", "title": "Tesla"}}
+    table = edgar._parse_ticker_cik_map(raw)
+    assert "TSLA" in table
+
+
+def test_get_cik_uses_cache_when_fresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    cache_path = tmp_path / "company_tickers.json"
+    cache_path.write_text(
+        (FIXTURES / "company_tickers.json").read_text()
+    )
+    # _get_cik should not hit the network when cache is fresh
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: pytest.fail("network hit"))
+    edgar._cached_ticker_map = None    # reset module-level memo
+    assert edgar._get_cik("AAPL") == "0000320193"
+
+
+def test_get_cik_returns_none_for_unknown_ticker(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    (tmp_path / "company_tickers.json").write_text(
+        (FIXTURES / "company_tickers.json").read_text()
+    )
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: None)
+    edgar._cached_ticker_map = None
+    assert edgar._get_cik("ZZZZ") is None
+
+
+def test_get_cik_returns_none_when_network_and_cache_both_fail(tmp_path, monkeypatch):
+    monkeypatch.setattr(edgar, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(edgar, "_http_get_json", lambda url: None)
+    edgar._cached_ticker_map = None
+    assert edgar._get_cik("AAPL") is None

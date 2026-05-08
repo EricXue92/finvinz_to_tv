@@ -97,3 +97,51 @@ def _http_get_json(url: str) -> dict | None:
             logger.warning(f"[edgar] {type(e).__name__} from {url}, giving up: {e}")
             return None
     return None
+
+
+# --- Ticker → CIK lookup ----------------------------------------------------
+
+# In-memory memo across calls within one process (rebuilt on first miss).
+_cached_ticker_map: dict[str, str] | None = None
+
+
+def _parse_ticker_cik_map(raw: dict) -> dict[str, str]:
+    """Convert SEC's int-keyed dict to {TICKER: 10-digit CIK string}."""
+    out: dict[str, str] = {}
+    for entry in raw.values():
+        try:
+            ticker = str(entry["ticker"]).upper()
+            cik = f"{int(entry['cik_str']):010d}"
+        except (KeyError, TypeError, ValueError):
+            continue
+        out[ticker] = cik
+    return out
+
+
+def _refresh_ticker_cik_map() -> dict[str, str] | None:
+    """Read cache → if stale or missing, fetch from SEC → write cache → parse."""
+    cache_path = CACHE_DIR / "company_tickers.json"
+    if _is_fresh(cache_path, COMPANY_TICKERS_TTL):
+        cached = _load_json_cache(cache_path)
+        if cached:
+            return _parse_ticker_cik_map(cached)
+    fresh = _http_get_json(COMPANY_TICKERS_URL)
+    if fresh:
+        _save_json_cache(cache_path, fresh)
+        return _parse_ticker_cik_map(fresh)
+    # Fall back to stale cache rather than nothing.
+    cached = _load_json_cache(cache_path)
+    if cached:
+        logger.info("[edgar] using stale company_tickers.json (network failed)")
+        return _parse_ticker_cik_map(cached)
+    return None
+
+
+def _get_cik(ticker: str) -> str | None:
+    """Resolve `ticker` to a 10-digit CIK string; None if not found."""
+    global _cached_ticker_map
+    if _cached_ticker_map is None:
+        _cached_ticker_map = _refresh_ticker_cik_map()
+    if _cached_ticker_map is None:
+        return None
+    return _cached_ticker_map.get(ticker.upper())
