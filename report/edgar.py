@@ -172,11 +172,15 @@ def _fetch_companyfacts(cik: str) -> dict | None:
 
 # --- XBRL concept constants -------------------------------------------------
 
+# Order matters: Apple/most large issuers expose only sparse segment-level
+# entries under `Revenues` (~11 facts) while the consolidated number lives in
+# `RevenueFromContractWithCustomerExcludingAssessedTax` (~100+ facts post-ASC 606).
+# Tried `Revenues`-first during smoke-test on AAPL → garbage YoY% (>+400%).
 REVENUE_CONCEPTS = (
-    "Revenues",
     "RevenueFromContractWithCustomerExcludingAssessedTax",
-    "SalesRevenueNet",
     "RevenueFromContractWithCustomerIncludingAssessedTax",
+    "SalesRevenueNet",
+    "Revenues",
 )
 EPS_CONCEPTS = (
     "EarningsPerShareDiluted",
@@ -217,14 +221,62 @@ def _compute_yoy(current: float | None, prior: float | None) -> float | None:
     return (current - prior) / prior * 100.0
 
 
+def _parse_iso_date(s: str) -> _date | None:
+    try:
+        return _date.fromisoformat(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _period_label(end_date_iso: str) -> str:
+    """'2024-12-30' -> \"Dec'24\". Empty string on parse failure."""
+    d = _parse_iso_date(end_date_iso)
+    if d is None:
+        return ""
+    return d.strftime("%b'%y")
+
+
+def _period_days(f: dict) -> int | None:
+    """Length in days of an XBRL fact's reporting period, or None if unparseable.
+    XBRL files often expose multiple period lengths under the same `fp`
+    (e.g. Apple files BOTH a 90-day Q2 and a 181-day H1 with `fp=Q2`).
+    Callers filter by length to keep the right one (3-month for Q1/Q2/Q3,
+    12-month for FY)."""
+    s = _parse_iso_date(f.get("start", ""))
+    e = _parse_iso_date(f.get("end", ""))
+    if s is None or e is None:
+        return None
+    return (e - s).days
+
+
+# Period-length windows tolerate the ±5 day fiscal-quarter wobble that hits
+# 4-4-5 / 4-5-4 / 5-4-4 / 52-53-week calendars in practice.
+QUARTER_DAYS_RANGE = (80, 100)
+ANNUAL_DAYS_RANGE = (350, 380)
+
+
+def _is_quarter_period(f: dict) -> bool:
+    days = _period_days(f)
+    return days is not None and QUARTER_DAYS_RANGE[0] <= days <= QUARTER_DAYS_RANGE[1]
+
+
+def _is_annual_period(f: dict) -> bool:
+    days = _period_days(f)
+    return days is not None and ANNUAL_DAYS_RANGE[0] <= days <= ANNUAL_DAYS_RANGE[1]
+
+
 def _select_annual_facts(facts: list[dict]) -> list[dict]:
-    """Return only 10-K/10-K/A FY filings, deduped by `end` date (latest filed
-    wins so amendments override originals), sorted oldest→newest by `end`."""
+    """Return only 10-K/10-K/A FY filings with a 12-month reporting period,
+    deduped by `end` date (latest filed wins so amendments override originals),
+    sorted oldest→newest by `end`. The period filter rejects partial-year
+    transition reports and the occasional accidentally-tagged shorter period."""
     by_end: dict[str, dict] = {}
     for f in facts:
         if f.get("fp") != "FY":
             continue
         if not str(f.get("form", "")).startswith("10-K"):
+            continue
+        if not _is_annual_period(f):
             continue
         end = f.get("end")
         if not end:
@@ -258,25 +310,16 @@ def _extract_annual_yoy(facts: list[dict] | None, years_back: int = 5) -> list[f
 
 # --- Quarterly fact selection + YoY extraction --------------------------------
 
-def _parse_iso_date(s: str) -> _date | None:
-    try:
-        return _date.fromisoformat(s)
-    except (TypeError, ValueError):
-        return None
-
-
-def _period_label(end_date_iso: str) -> str:
-    """'2024-12-30' -> \"Dec'24\". Empty string on parse failure."""
-    d = _parse_iso_date(end_date_iso)
-    if d is None:
-        return ""
-    return d.strftime("%b'%y")
-
-
 def _select_quarterly_facts(facts: list[dict]) -> list[dict]:
     """Combine 10-Q reported quarters (Q1/Q2/Q3) with derived Q4
     (= FY value − sum of same-FY Q1+Q2+Q3). Q4 derivation skipped
-    when any component is missing. Returned list sorted oldest→newest by `end`."""
+    when any component is missing. Returned list sorted oldest→newest by `end`.
+
+    Period-length filter: Q1/Q2/Q3 must report a 3-month window and FY must
+    report a 12-month window. XBRL files multiple period lengths under the
+    same `fp` tag — e.g. Apple files BOTH a 90-day Q2 and a 181-day H1 with
+    `fp=Q2`. Without this filter the latest-filed-wins dedup arbitrarily
+    picks one and inflates derived values."""
     # Group by (fy, fp) for Q4 derivation; dedupe with latest-filed-wins.
     by_key: dict[tuple[int, str], dict] = {}
     for f in facts:
@@ -284,10 +327,12 @@ def _select_quarterly_facts(facts: list[dict]) -> list[dict]:
         form = str(f.get("form", ""))
         if fp not in ("Q1", "Q2", "Q3", "FY"):
             continue
-        if fp in ("Q1", "Q2", "Q3") and not form.startswith("10-Q"):
-            continue
-        if fp == "FY" and not form.startswith("10-K"):
-            continue
+        if fp in ("Q1", "Q2", "Q3"):
+            if not form.startswith("10-Q") or not _is_quarter_period(f):
+                continue
+        if fp == "FY":
+            if not form.startswith("10-K") or not _is_annual_period(f):
+                continue
         try:
             fy = int(f["fy"])
         except (KeyError, TypeError, ValueError):

@@ -229,8 +229,8 @@ def test_select_annual_facts_filters_to_10k_fy_and_sorts():
 
 def test_select_annual_facts_dedupes_amendments(tmp_path):
     raw = [
-        {"end": "2024-09-28", "val": 100, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
-        {"end": "2024-09-28", "val": 105, "fy": 2024, "fp": "FY", "form": "10-K/A", "filed": "2025-02-01"},
+        {"start": "2023-10-01", "end": "2024-09-28", "val": 100, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+        {"start": "2023-10-01", "end": "2024-09-28", "val": 105, "fy": 2024, "fp": "FY", "form": "10-K/A", "filed": "2025-02-01"},
     ]
     out = edgar._select_annual_facts(raw)
     assert len(out) == 1
@@ -251,8 +251,8 @@ def test_extract_annual_yoy_5y_full_history():
 
 def test_extract_annual_yoy_pads_with_none_when_history_short():
     raw = [
-        {"end": "2024-09-28", "val": 100, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
-        {"end": "2025-09-27", "val": 110, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
+        {"start": "2023-10-01", "end": "2024-09-28", "val": 100, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+        {"start": "2024-09-29", "end": "2025-09-27", "val": 110, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
     ]
     yoy = edgar._extract_annual_yoy(raw, years_back=5)
     assert yoy == [None, None, None, None, pytest.approx(10.0, rel=0.01)]
@@ -260,15 +260,29 @@ def test_extract_annual_yoy_pads_with_none_when_history_short():
 
 def test_extract_annual_yoy_skips_bad_prior():
     raw = [
-        {"end": "2023-09-30", "val": -10, "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-11-03"},
-        {"end": "2024-09-28", "val":  20, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
-        {"end": "2025-09-27", "val":  30, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
+        {"start": "2022-10-02", "end": "2023-09-30", "val": -10, "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-11-03"},
+        {"start": "2023-10-01", "end": "2024-09-28", "val":  20, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+        {"start": "2024-09-29", "end": "2025-09-27", "val":  30, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
     ]
     yoy = edgar._extract_annual_yoy(raw, years_back=5)
     # FY24 vs FY23: prior was -10 (negative) → None
     # FY25 vs FY24: 20 → 30 = +50%
     assert yoy[-2] is None
     assert yoy[-1] == pytest.approx(50.0, rel=0.01)
+
+
+def test_select_quarterly_facts_rejects_ytd_periods_under_q_tag():
+    """Apple files BOTH 90-day Q2 (the actual quarter) AND 181-day Q2 (H1 YTD)
+    under fp=Q2. Without a period-length filter, dedup-by-(fy,fp) picks one
+    arbitrarily and the YTD value inflates derived Q4. Verify only the
+    3-month period survives."""
+    raw = [
+        {"start": "2023-12-31", "end": "2024-03-30", "val": 90, "fy": 2024, "fp": "Q2", "form": "10-Q", "filed": "2024-05-02"},  # 90 days, real quarter
+        {"start": "2023-09-30", "end": "2024-03-30", "val": 200, "fy": 2024, "fp": "Q2", "form": "10-Q", "filed": "2024-05-02"},  # 182 days, H1 YTD
+    ]
+    quarters = edgar._select_quarterly_facts(raw)
+    assert len(quarters) == 1
+    assert quarters[0]["val"] == 90
 
 
 def test_select_quarterly_facts_uses_10q_directly_for_q1_q2_q3():
