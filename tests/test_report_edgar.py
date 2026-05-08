@@ -258,16 +258,16 @@ def test_extract_annual_yoy_pads_with_none_when_history_short():
     assert yoy == [None, None, None, None, pytest.approx(10.0, rel=0.01)]
 
 
-def test_extract_annual_yoy_skips_bad_prior():
+def test_extract_annual_yoy_handles_negative_prior_via_abs_denominator():
     raw = [
         {"start": "2022-10-02", "end": "2023-09-30", "val": -10, "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-11-03"},
         {"start": "2023-10-01", "end": "2024-09-28", "val":  20, "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
         {"start": "2024-09-29", "end": "2025-09-27", "val":  30, "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-11-01"},
     ]
     yoy = edgar._extract_annual_yoy(raw, years_back=5)
-    # FY24 vs FY23: prior was -10 (negative) → None
+    # FY24 vs FY23: loss -10 → profit +20 = (20 - -10)/abs(-10) = +300% (turned positive)
+    assert yoy[-2] == pytest.approx(300.0, rel=0.01)
     # FY25 vs FY24: 20 → 30 = +50%
-    assert yoy[-2] is None
     assert yoy[-1] == pytest.approx(50.0, rel=0.01)
 
 

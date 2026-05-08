@@ -34,8 +34,18 @@ def test_compute_yoy_basic():
     assert enrich.compute_yoy(110, 100) == pytest.approx(10.0)
 
 
-def test_compute_yoy_negative_prior_returns_none():
-    assert enrich.compute_yoy(50, -10) is None
+def test_compute_yoy_negative_prior_uses_abs_denominator():
+    # Loss → profit: prior -10, current +5 → (5 - -10)/abs(-10) = +150% (big improvement)
+    assert enrich.compute_yoy(5, -10) == pytest.approx(150.0)
+    # Loss narrowing: prior -10, current -5 → +50% (got better)
+    assert enrich.compute_yoy(-5, -10) == pytest.approx(50.0)
+    # Loss widening: prior -10, current -20 → -100% (got worse)
+    assert enrich.compute_yoy(-20, -10) == pytest.approx(-100.0)
+
+
+def test_compute_yoy_profit_to_loss_negative():
+    # prior +10, current -5 → -150% (sign-flip into loss, big swing)
+    assert enrich.compute_yoy(-5, 10) == pytest.approx(-150.0)
 
 
 def test_compute_yoy_zero_prior_returns_none():

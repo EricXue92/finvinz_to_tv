@@ -32,13 +32,21 @@ HK_EXCHANGES: frozenset[str] = frozenset({"HKEX"})
 
 
 def compute_yoy(current: float | None, prior: float | None) -> float | None:
-    """Year-over-year percentage change. Returns None when prior is missing,
-    zero, or negative (signs flip → meaningless)."""
+    """Year-over-year percentage change using `abs(prior)` as the denominator
+    (Bloomberg / FactSet convention). This handles loss-bearing companies
+    correctly without sign-flip noise:
+      - prior +10 → current +5  =  -50%   (profit shrank)
+      - prior -10 → current -5  =  +50%   (loss narrowed, improved)
+      - prior -10 → current -20 = -100%   (loss widened, worsened)
+      - prior -10 → current +5  = +150%   (loss → profit, big swing)
+      - prior +10 → current -5  = -150%   (profit → loss, big swing)
+    Returns None only when an input is missing or `prior == 0`
+    (division by zero — undefined, not "loss")."""
     if current is None or prior is None:
         return None
-    if prior <= 0:
+    if prior == 0:
         return None
-    return (current - prior) / prior * 100.0
+    return (current - prior) / abs(prior) * 100.0
 
 
 # yfinance row labels in the wild use spaces ("Total Revenue", "Diluted EPS").

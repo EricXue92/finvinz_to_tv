@@ -213,12 +213,14 @@ def _match_concept_facts(
 # --- Annual fact selection + YoY extraction ----------------------------------
 
 def _compute_yoy(current: float | None, prior: float | None) -> float | None:
-    """Mirror of enrich.compute_yoy: None if either is None or prior <= 0."""
+    """Mirror of enrich.compute_yoy. Uses `abs(prior)` so loss-bearing
+    companies show meaningful improvement/worsening % without sign-flip noise.
+    Returns None only on missing input or `prior == 0`."""
     if current is None or prior is None:
         return None
-    if prior <= 0:
+    if prior == 0:
         return None
-    return (current - prior) / prior * 100.0
+    return (current - prior) / abs(prior) * 100.0
 
 
 def _parse_iso_date(s: str) -> _date | None:
