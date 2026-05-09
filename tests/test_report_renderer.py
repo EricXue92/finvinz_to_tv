@@ -622,9 +622,10 @@ def test_html_footnote_absent_when_no_ticker_shows_dual_eps():
 # --- Cover page --------------------------------------------------------------
 
 def test_html_cover_hero_leads_with_methodology_not_date():
-    """Hero is the curated stock count + methodology authors; date is
-    demoted to the eyebrow strip (small) and the colophon timestamp.
-    Person names and CANSLIM stay English; framework copy is Chinese."""
+    """Hero is the methodology statement (single line); the count was
+    removed because it read as visually clumsy. Date is demoted to the
+    eyebrow strip and colophon timestamp. Person names and CANSLIM stay
+    English; framework copy is Chinese."""
     enriched = [
         _fake_data("AKAM", "HighVolume"),
         _fake_data("FLEX", "HighVolume"),
@@ -638,24 +639,27 @@ def test_html_cover_hero_leads_with_methodology_not_date():
         generated_at=datetime(2026, 5, 9, 16, 30, 0, tzinfo=HKT),
         model_label="Anthropic Claude Sonnet 4.6",
     )
-    # Eyebrow: Chinese label · 美股 + No.N + dotted-date
+    # Eyebrow: label · 美股 + No.N + dotted-date — no bottom border
+    # ("页面上面多了一条横线" was removed at user request).
     assert 'class="cover"' in html
     assert "每日股票精选 · 美股" in html
     assert "第 129 期" in html              # day-of-year for May 9 in 2026
     assert "2026.05.09 · 周六" in html
 
-    # Hero: count goes BIG; methodology subtitle below; English author names
-    # remain unaltered inside Chinese line.
-    assert "3 支股票" in html
-    assert "依 Oliver Kell + Kristjan Kullamägi 法精选" in html
+    # Hero is the methodology statement — count removed entirely.
+    assert "按照 Oliver Kell + Kristjan Kullamägi 的选股策略" in html
+    assert "3 支股票" not in html  # large count headline removed
 
-    # Strap: full author names + model attribution + CANSLIM all surface
+    # Strap names both methodology authors with their respective
+    # descriptors (Kullamägi: 1-6 个月强势 + 抛物线), the model, and CANSLIM.
     assert "Oliver Kell" in html
     assert "Kristjan Kullamägi" in html
+    assert "1-6 个月强势表现股票" in html
+    assert "抛物线做空策略" in html
     assert "Anthropic Claude Sonnet 4.6" in html
     assert "CANSLIM" in html
 
-    # Ticker plate: each ticker rendered as anchor link, mono-styled
+    # Ticker plate
     assert 'class="cover-plate-ticker"' in html
     assert 'href="#t-AKAM"' in html and 'href="#t-DDOG"' in html
 
@@ -664,6 +668,13 @@ def test_html_cover_hero_leads_with_methodology_not_date():
     assert "选股方法" in html
     assert "SEC EDGAR" in html
     assert "William O" in html  # third methodology row
+    # Updated Kullamägi colophon line includes the new descriptor.
+    assert "1-6 个月的强势增长股票 Leaders" in html
+
+    # Legal disclaimer — small print bottom-right
+    assert 'class="cover-disclaimer"' in html
+    assert "不构成任何投资建议" in html
+    assert "股市有风险" in html
 
 
 def test_html_cover_groups_tickers_by_category_in_first_seen_order():
@@ -695,12 +706,14 @@ def test_html_cover_groups_tickers_by_category_in_first_seen_order():
     assert pos_eg < pos_hv < pos_ld < pos_nh
     # Tickers within a category list separated by ' · ' (middle dot)
     assert "AKAM · FLEX" in breakdown
-    # Category counts use Chinese measure word
-    assert "02 支" in breakdown
+    # Category counts use Chinese measure word, no zero-padding
+    assert "2 个" in breakdown
 
 
 def test_html_cover_handles_empty_enriched():
-    """Cover still renders structurally with the no-stocks fallback copy."""
+    """Cover still renders structurally with the no-stocks fallback copy.
+    Headline is methodology-statement (always shown); plate area carries
+    the empty messaging."""
     html = renderer.render_html_document(
         market="us", date_iso="2026-05-09",
         enriched=[], prose_sections=[], truncated=[],
@@ -708,7 +721,7 @@ def test_html_cover_handles_empty_enriched():
         model_label="Anthropic Claude Sonnet 4.6",
     )
     assert 'class="cover"' in html
-    assert "本期暂无入选" in html
+    assert "按照 Oliver Kell + Kristjan Kullamägi 的选股策略" in html
     assert "本期暂无符合条件的股票" in html
 
 

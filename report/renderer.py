@@ -23,16 +23,16 @@ import markdown as md_lib
 
 INLINE_CSS = """
 :root {
-  --bg:           #FAFAFA;
+  --bg:           #F7F2E8;     /* warm linen / book-paper, same as cover */
   --card:         #FFFFFF;
   --ink:          #0A0A0A;     /* near-black */
   --ink-soft:     #222222;     /* deeper than before */
   --muted:        #555555;     /* darker secondary text */
   --faint:        #888888;
-  --rule:         #D0D0D0;
+  --rule:         #C9C2B5;     /* warm rule, harmonised with paper */
   --navy:         #1F2D3D;     /* deeper navy */
   --navy-soft:    #2C3E50;
-  --tint:         #F1F4F7;
+  --tint:         #EFE9DC;     /* zebra-stripe band, warmer than --bg */
   --positive:     #1E7E34;     /* deeper green */
   --negative:     #A02828;     /* deeper red */
 }
@@ -378,9 +378,9 @@ body {
   width: 210mm;
   min-height: 297mm;
   max-width: 100%;
-  margin: 8px auto 56px;
+  margin: 8px auto 32mm;
   padding: 20mm 22mm;
-  background: #F7F2E8;
+  background: var(--bg);
   position: relative;
   font-feature-settings: "kern", "liga", "onum";
   font-size: 11pt;
@@ -388,16 +388,14 @@ body {
   color: var(--ink);
   display: flex;
   flex-direction: column;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.04),
-    0 14px 36px rgba(0, 0, 0, 0.10);
 }
 .cover-inner {
   display: flex;
   flex-direction: column;
   flex: 1;
 }
-/* MICRO (8pt) — eyebrow strip */
+/* MICRO (8pt) — eyebrow strip. No bottom rule: whitespace alone separates
+   the metadata strip from the hero, keeping the upper page calm. */
 .cover-eyebrow {
   display: flex;
   align-items: center;
@@ -406,9 +404,7 @@ body {
   letter-spacing: 0.18em;
   color: var(--navy);
   font-weight: 700;
-  padding-bottom: 4mm;
-  border-bottom: 0.75px solid var(--navy);
-  margin-bottom: 14mm;
+  margin-bottom: 18mm;
 }
 .cover-eyebrow-rule {
   flex: 1;
@@ -421,30 +417,19 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* DISPLAY (48pt) + SECONDARY (18pt) — hero block */
+/* HEADLINE (28pt) — single-line methodology statement, the value prop */
 .cover-hero { margin-bottom: 14mm; }
 .cover-headline {
   font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
     "Hoefler Text", Georgia,
     "Songti SC", "STSong", "PingFang SC", "Hiragino Sans GB", serif;
   margin: 0;
-  line-height: 1.05;
-  display: flex;
-  flex-direction: column;
-  gap: 3mm;
-}
-.cover-headline-line:first-child {
-  font-size: 48pt;
+  font-size: 28pt;
   font-weight: 500;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
   color: var(--ink);
-}
-.cover-headline-sub {
-  font-size: 18pt;
-  font-weight: 400;
-  color: var(--muted);
-  letter-spacing: 0;
-  line-height: 1.3;
+  max-width: 165mm;
 }
 .cover-strap {
   margin: 6mm 0 0;
@@ -609,6 +594,26 @@ body {
 }
 .cover-colophon-val { flex: 1; }
 
+/* Legal disclaimer — small italic, right-aligned at the very bottom */
+.cover-disclaimer {
+  margin: 6mm 0 0;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia,
+    "Songti SC", "PingFang SC", serif;
+  font-size: 7.5pt;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--faint);
+  text-align: right;
+  letter-spacing: 0.01em;
+  max-width: 165mm;
+  margin-left: auto;
+}
+.cover-disclaimer strong {
+  color: var(--muted);
+  font-weight: 600;
+  font-style: italic;
+}
+
 /* Narrow screens — cover loses A4 framing, becomes fluid */
 @media (max-width: 720px) {
   body { padding: 18px 12px 48px; font-size: 14px; }
@@ -628,9 +633,9 @@ body {
     flex-wrap: wrap;
     margin-bottom: 10mm;
   }
-  .cover-headline-line:first-child { font-size: 32pt; }
-  .cover-headline-sub { font-size: 14pt; }
+  .cover-headline { font-size: 20pt; }
   .cover-strap { font-size: 10.5pt; }
+  .cover-disclaimer { font-size: 7pt; max-width: none; }
   .cover-plate {
     grid-template-columns: repeat(3, 1fr);
     gap: 1mm 4mm;
@@ -1291,12 +1296,7 @@ def _render_cover(
     cats_count = len(breakdown)
     sec_count = len(enriched)
 
-    if sec_count == 0:
-        headline_main = "本期暂无入选"
-        headline_sub = f"{report_date.year} 年 {report_date.month} 月 {report_date.day} 日"
-    else:
-        headline_main = f"{sec_count} 支股票"
-        headline_sub = "依 Oliver Kell + Kristjan Kullamägi 法精选"
+    headline = "按照 Oliver Kell + Kristjan Kullamägi 的选股策略"
 
     # The actual selling point gets a dedicated visual plate — large
     # monospace tickers, click-to-anchor into the per-ticker section.
@@ -1316,7 +1316,7 @@ def _render_cover(
         f'<div class="cover-cat-head">'
         f'<span class="cover-cat-name">{label}</span>'
         f'<span class="cover-cat-rule"></span>'
-        f'<span class="cover-cat-count">{len(tickers):02d} 支</span>'
+        f'<span class="cover-cat-count">{len(tickers)} 个</span>'
         f'</div>'
         f'<div class="cover-cat-tickers">{" · ".join(tickers)}</div>'
         f'</div>'
@@ -1332,14 +1332,15 @@ def _render_cover(
     if model_label:
         strap = (
             "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
-            "<strong>Kristjan Kullamägi</strong> 抛物线做空策略筛选，"
+            "<strong>Kristjan Kullamägi</strong> 1-6 个月强势表现股票 "
+            "+ 抛物线做空策略筛选，"
             f"由 <strong>{model_label}</strong> 撰写 CANSLIM 基本面简报。"
         )
     else:
         strap = (
             "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
-            "<strong>Kristjan Kullamägi</strong> 抛物线做空策略筛选，"
-            "逐支生成 CANSLIM 基本面简报。"
+            "<strong>Kristjan Kullamägi</strong> 1-6 个月强势表现股票 "
+            "+ 抛物线做空策略筛选，逐个生成 CANSLIM 基本面简报。"
         )
 
     return (
@@ -1352,14 +1353,12 @@ def _render_cover(
         '<span class="cover-eyebrow-rule"></span>'
         f'<span class="cover-eyebrow-issue">第 {issue_no:03d} 期 · {eyebrow_date}</span>'
         '</header>'
-        # --- hero: count + methodology attribution. The big serif line
-        #     is the product (N stocks selected), the secondary line
-        #     names the methodology authors.
+        # --- hero: methodology headline + descriptive strap. The
+        #     headline names the two methodology authors (this is the
+        #     value prop); the strap expands with full descriptors and
+        #     the LLM model attribution.
         '<div class="cover-hero">'
-        '<h1 class="cover-headline">'
-        f'<span class="cover-headline-line">{headline_main}</span>'
-        f'<span class="cover-headline-line cover-headline-sub">{headline_sub}</span>'
-        '</h1>'
+        f'<h1 class="cover-headline">{headline}</h1>'
         f'<p class="cover-strap">{strap}</p>'
         '</div>'
         # --- ticker plate: the actual deliverable, foregrounded as the
@@ -1371,7 +1370,7 @@ def _render_cover(
         '<header class="cover-section-head">'
         '<span class="cover-section-label">本期清单</span>'
         '<span class="cover-section-rule"></span>'
-        f'<span class="cover-section-meta">{sec_count} 支 · {cats_count} 类</span>'
+        f'<span class="cover-section-meta">{sec_count} 个 · {cats_count} 类</span>'
         '</header>'
         f'<div class="cover-breakdown">{breakdown_html}</div>'
         '</section>'
@@ -1387,9 +1386,10 @@ def _render_cover(
         '（Earnings Gap、High Volume、Gap Up、52-Week High、Top Gainers），'
         '叠加弱市 RS 领涨股扫描。</div>'
         '<div><span class="cover-meth-author">Kristjan Kullamägi</span> · '
-        '抛物线 blow-off 做空规则，应用于 Shorts 类别。</div>'
+        '1-6 个月的强势增长股票 Leaders + 抛物线 blow-off 做空规则，'
+        '应用于 Shorts 类别。</div>'
         '<div><span class="cover-meth-author">William O&apos;Neil</span> · '
-        'CANSLIM 成长股框架，驱动每支股票的基本面简报。</div>'
+        'CANSLIM 成长股框架，驱动每个股票的基本面简报。</div>'
         '</div>'
         '</div>'
         '<div class="cover-colophon-meta">'
@@ -1408,6 +1408,13 @@ def _render_cover(
         '</div>'
         '</div>'
         '</footer>'
+        # --- legal disclaimer (small italic, bottom-right).
+        '<p class="cover-disclaimer">'
+        '本报告由算法与 AI 模型自动生成，内容仅供研究与参考，'
+        '<strong>不构成任何投资建议或要约</strong>。'
+        '股市有风险，决策需谨慎；读者应自行承担投资决策的全部责任，'
+        '本作者不对因使用本内容而产生的任何损失负责。'
+        '</p>'
         '</div>'
         '</section>'
     )
