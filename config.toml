@@ -282,7 +282,7 @@ max_tokens = 3500
 web_search_max_uses = 2
 
 [report.deepseek]
-model = "deepseek-v4-flash"  # DeepSeek-V4-Pro
+model = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/anthropic"
 max_tokens = 3500
 max_search_calls = 2
