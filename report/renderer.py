@@ -653,6 +653,56 @@ def _render_snapshot(data: dict[str, Any]) -> str:
     )
 
 
+EPS_DUAL_DIFF_THRESHOLD = 0.05  # show both GAAP and Adj when relative diff > 5%
+EPS_DUAL_GAAP_FLOOR = 0.01      # avoid div-by-near-zero when GAAP ≈ 0
+
+
+def _eps_usable(v: float | None) -> bool:
+    return isinstance(v, (int, float)) and not (
+        isinstance(v, float) and math.isnan(v)
+    )
+
+
+def _format_eps_dual(
+    gaap: float | None,
+    gaap_yoy: float | None,
+    adj: float | None,
+    adj_yoy: float | None,
+) -> tuple[str, str]:
+    """Return (value_str, yoy_str) for the Latest Quarter EPS row.
+
+    Branching:
+      - both usable + materially different → "$G GAAP / $A Adj" + "YoY GAAP X / Adj Y"
+      - both usable + close                → "$G" + "YoY X"  (no GAAP/Adj suffix)
+      - only GAAP                          → "$G" + "YoY X"  (no suffix — status quo)
+      - only Adj                           → "$A Adj" + "YoY X (Adj)"
+      - neither                            → "—" + "YoY —"
+    """
+    g_ok, a_ok = _eps_usable(gaap), _eps_usable(adj)
+    if not g_ok and not a_ok:
+        return ("—", "YoY —")
+    if g_ok and not a_ok:
+        return (f"${gaap:,.2f}", f"YoY {_fmt_pct(gaap_yoy)}")
+    if a_ok and not g_ok:
+        return (f"${adj:,.2f} Adj", f"YoY {_fmt_pct(adj_yoy)} (Adj)")
+    denom = max(abs(gaap), EPS_DUAL_GAAP_FLOOR)
+    if abs(adj - gaap) / denom <= EPS_DUAL_DIFF_THRESHOLD:
+        return (f"${gaap:,.2f}", f"YoY {_fmt_pct(gaap_yoy)}")
+    val_str = f"${gaap:,.2f} GAAP / ${adj:,.2f} Adj"
+    yoy_str = f"YoY GAAP {_fmt_pct(gaap_yoy)} / Adj {_fmt_pct(adj_yoy)}"
+    return (val_str, yoy_str)
+
+
+def _is_eps_dual(d: dict[str, Any]) -> bool:
+    """True iff this ticker's data would render as the dual GAAP / Adj form."""
+    g = d.get("eps_latest_q")
+    a = d.get("eps_latest_q_adj")
+    if not _eps_usable(g) or not _eps_usable(a):
+        return False
+    denom = max(abs(g), EPS_DUAL_GAAP_FLOOR)
+    return abs(a - g) / denom > EPS_DUAL_DIFF_THRESHOLD
+
+
 def _render_quarterly(data: dict[str, Any]) -> str:
     eps = data.get("eps_latest_q")
     eps_yoy = data.get("eps_latest_q_yoy_pct")

@@ -470,3 +470,59 @@ def test_legacy_markdown_to_html_still_works():
     html = renderer.markdown_to_html("# x", page_title="Test")
     assert html.startswith("<!doctype html>")
     assert "<h1>x</h1>" in html
+
+
+def test_format_eps_dual_shows_both_when_materially_different():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=0.71, gaap_yoy=-13.41, adj=1.61, adj_yoy=-5.29,
+    )
+    assert val_str == "$0.71 GAAP / $1.61 Adj"
+    assert yoy_str == "YoY GAAP -13.4% / Adj -5.3%"
+
+
+def test_format_eps_dual_collapses_when_close():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=0.42, gaap_yoy=90.91, adj=0.42, adj_yoy=90.91,
+    )
+    assert val_str == "$0.42"
+    assert yoy_str == "YoY +90.9%"
+
+
+def test_format_eps_dual_only_gaap():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=0.42, gaap_yoy=10.0, adj=None, adj_yoy=None,
+    )
+    assert val_str == "$0.42"
+    assert yoy_str == "YoY +10.0%"
+
+
+def test_format_eps_dual_only_adj():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=None, gaap_yoy=None, adj=1.61, adj_yoy=-5.29,
+    )
+    assert val_str == "$1.61 Adj"
+    assert yoy_str == "YoY -5.3% (Adj)"
+
+
+def test_format_eps_dual_neither_returns_em_dash():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=None, gaap_yoy=None, adj=None, adj_yoy=None,
+    )
+    assert val_str == "—"
+    assert yoy_str == "YoY —"
+
+
+def test_format_eps_dual_near_zero_gaap_does_not_blow_up():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=-0.07, gaap_yoy=56.3, adj=0.27, adj_yoy=22.73,
+    )
+    assert val_str == "$-0.07 GAAP / $0.27 Adj"
+    assert yoy_str == "YoY GAAP +56.3% / Adj +22.7%"
+
+
+def test_format_eps_dual_dual_with_one_yoy_missing():
+    val_str, yoy_str = renderer._format_eps_dual(
+        gaap=0.71, gaap_yoy=-13.41, adj=1.61, adj_yoy=None,
+    )
+    assert val_str == "$0.71 GAAP / $1.61 Adj"
+    assert yoy_str == "YoY GAAP -13.4% / Adj —"
