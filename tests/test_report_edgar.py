@@ -271,6 +271,32 @@ def test_extract_annual_yoy_handles_negative_prior_via_abs_denominator():
     assert yoy[-1] == pytest.approx(50.0, rel=0.01)
 
 
+def test_select_quarterly_facts_keeps_current_quarter_when_comparative_shares_fy():
+    """Reproduces the INOD 2026-Q1 bug: when a 10-Q is filed, XBRL embeds
+    the prior-year comparative period under the SAME fy (the FILING's fy,
+    not the period's fy) and SAME fp as the current period. Both rows have
+    identical `filed`. The old `(fy, fp)` dedup key collided and silently
+    picked the comparative — i.e. the report froze on last year's Q1 even
+    though this year's Q1 was already in EDGAR. Dedup must key on `end`."""
+    raw = [
+        # Comparative period (last year Q1) embedded in this year's 10-Q
+        {"start": "2025-01-01", "end": "2025-03-31", "val": 0.22,
+         "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2026-05-07"},
+        # Actual current period (this year Q1)
+        {"start": "2026-01-01", "end": "2026-03-31", "val": 0.42,
+         "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2026-05-07"},
+    ]
+    quarters = edgar._select_quarterly_facts(raw)
+    # Both quarters should survive — different `end` dates uniquely identify them.
+    assert len(quarters) == 2
+    by_end = {q["end"]: q["val"] for q in quarters}
+    assert by_end["2025-03-31"] == 0.22
+    assert by_end["2026-03-31"] == 0.42
+    # Latest-quarter helper should return the newer one.
+    val, _ = edgar._latest_quarter_with_yoy(raw)
+    assert val == 0.42
+
+
 def test_select_quarterly_facts_rejects_ytd_periods_under_q_tag():
     """Apple files BOTH 90-day Q2 (the actual quarter) AND 181-day Q2 (H1 YTD)
     under fp=Q2. Without a period-length filter, dedup-by-(fy,fp) picks one

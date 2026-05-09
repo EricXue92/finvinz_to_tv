@@ -321,54 +321,63 @@ def _select_quarterly_facts(facts: list[dict]) -> list[dict]:
     report a 12-month window. XBRL files multiple period lengths under the
     same `fp` tag — e.g. Apple files BOTH a 90-day Q2 and a 181-day H1 with
     `fp=Q2`. Without this filter the latest-filed-wins dedup arbitrarily
-    picks one and inflates derived values."""
-    # Group by (fy, fp) for Q4 derivation; dedupe with latest-filed-wins.
-    by_key: dict[tuple[int, str], dict] = {}
+    picks one and inflates derived values.
+
+    Dedup key is `end` (the period end date), NOT `(fy, fp)`. The XBRL `fy`
+    field is the FILING's fiscal year, not the data point's fiscal year — when
+    a 10-Q includes the prior-year comparative period, BOTH that comparative
+    fact and the current-period fact carry the same `fy` and `fp`, so
+    `(fy, fp)` collides and silently drops the newer quarter (verified against
+    INOD's 2026 Q1 10-Q where last-year Q1 ended up beating current Q1)."""
+    quarterly_by_end: dict[str, dict] = {}
+    annual_by_end: dict[str, dict] = {}
     for f in facts:
         fp = f.get("fp")
         form = str(f.get("form", ""))
-        if fp not in ("Q1", "Q2", "Q3", "FY"):
+        end = f.get("end")
+        if not end:
             continue
         if fp in ("Q1", "Q2", "Q3"):
             if not form.startswith("10-Q") or not _is_quarter_period(f):
                 continue
-        if fp == "FY":
+            existing = quarterly_by_end.get(end)
+            if existing is None or str(f.get("filed", "")) > str(existing.get("filed", "")):
+                quarterly_by_end[end] = f
+        elif fp == "FY":
             if not form.startswith("10-K") or not _is_annual_period(f):
                 continue
-        try:
-            fy = int(f["fy"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        key = (fy, fp)
-        existing = by_key.get(key)
-        if existing is None or str(f.get("filed", "")) > str(existing.get("filed", "")):
-            by_key[key] = f
+            existing = annual_by_end.get(end)
+            if existing is None or str(f.get("filed", "")) > str(existing.get("filed", "")):
+                annual_by_end[end] = f
 
-    out: list[dict] = []
-    # Emit Q1/Q2/Q3 directly.
-    for (fy, fp), f in by_key.items():
-        if fp in ("Q1", "Q2", "Q3"):
-            out.append(f)
-    # Derive Q4 per fiscal year.
-    fy_set = {fy for (fy, fp) in by_key if fp == "FY"}
-    for fy in fy_set:
-        fy_fact = by_key.get((fy, "FY"))
-        q1 = by_key.get((fy, "Q1"))
-        q2 = by_key.get((fy, "Q2"))
-        q3 = by_key.get((fy, "Q3"))
-        if not (fy_fact and q1 and q2 and q3):
+    out: list[dict] = list(quarterly_by_end.values())
+
+    # Derive Q4 per fiscal year. Match the FY fact to its component quarters
+    # via the FY fact's [start, end] range (handles non-calendar fiscal years
+    # like Apple's Sep year-end without trusting the `fy` field).
+    for fy_end, fy_fact in annual_by_end.items():
+        fy_start = fy_fact.get("start")
+        if not fy_start:
+            continue
+        components = {
+            q["fp"]: q
+            for q in quarterly_by_end.values()
+            if q.get("fp") in ("Q1", "Q2", "Q3")
+            and q.get("end")
+            and fy_start <= q["end"] <= fy_end
+        }
+        if set(components) != {"Q1", "Q2", "Q3"}:
             continue
         try:
-            q4_val = float(fy_fact["val"]) - (
-                float(q1["val"]) + float(q2["val"]) + float(q3["val"])
+            q4_val = float(fy_fact["val"]) - sum(
+                float(c["val"]) for c in components.values()
             )
         except (KeyError, TypeError, ValueError):
             continue
-        # Use FY's `end` for the Q4 period (typically the fiscal year end).
         out.append({
-            "end": fy_fact["end"],
+            "end": fy_end,
             "val": q4_val,
-            "fy": fy,
+            "fy": fy_fact.get("fy"),
             "fp": "Q4",
             "form": "derived",
             "filed": fy_fact.get("filed", ""),
