@@ -463,7 +463,7 @@ body {
   color: var(--ink-soft);
 }
 .cover-strap strong {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
 }
 
