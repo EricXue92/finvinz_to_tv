@@ -637,7 +637,7 @@ def test_html_cover_renders_date_hero_and_stats():
     )
     # Editorial framing
     assert 'class="cover"' in html
-    assert "FINVIZ → TV" in html
+    assert "FINVIZ" not in html  # legacy mark removed from cover
     assert "Daily Equities Scan" in html
     # Vol. YYYY · No. day-of-year (129 for May 9 in 2026)
     assert "Vol. 2026 · No. 129" in html
@@ -701,7 +701,7 @@ def test_html_cover_handles_empty_enriched():
     )
     assert 'class="cover"' in html
     assert ">00</div>" in html  # securities count
-    assert "No qualifying securities" in html
+    assert "No qualifying stocks" in html
 
 
 def test_html_cover_market_label_handles_hk():

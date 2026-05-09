@@ -1286,7 +1286,7 @@ def _render_cover(
         f'<div class="cover-cat-head">'
         f'<span class="cover-cat-name">{label}</span>'
         f'<span class="cover-cat-rule"></span>'
-        f'<span class="cover-cat-count">{len(tickers):02d} {("security" if len(tickers) == 1 else "securities")}</span>'
+        f'<span class="cover-cat-count">{len(tickers):02d} {("stock" if len(tickers) == 1 else "stocks")}</span>'
         f'</div>'
         f'<div class="cover-cat-tickers">{", ".join(tickers)}</div>'
         f'</div>'
@@ -1295,7 +1295,7 @@ def _render_cover(
     if not breakdown_html:
         breakdown_html = (
             '<div class="cover-cat-tickers" style="color:var(--muted)">'
-            'No qualifying securities for this run.</div>'
+            'No qualifying stocks for this run.</div>'
         )
 
     gen_time_str = generated_at.strftime("%Y-%m-%d %H:%M %Z")
@@ -1309,9 +1309,8 @@ def _render_cover(
         '<div class="cover-inner">'
         # --- top eyebrow ---
         '<header class="cover-eyebrow">'
-        '<span class="cover-mark">FINVIZ → TV</span>'
-        '<span class="cover-eyebrow-rule"></span>'
         '<span class="cover-eyebrow-label">Daily Equities Scan</span>'
+        '<span class="cover-eyebrow-rule"></span>'
         f'<span class="cover-issue">Vol. {year} · No. {issue_no:03d}</span>'
         '</header>'
         # --- hero ---
@@ -1331,7 +1330,7 @@ def _render_cover(
         '<div class="cover-stats">'
         '<div class="cover-stat">'
         f'<div class="cover-stat-value">{sec_count:02d}</div>'
-        '<div class="cover-stat-label">Securities<br>analyzed</div>'
+        '<div class="cover-stat-label">Stocks<br>analyzed</div>'
         '</div>'
         '<div class="cover-stat">'
         f'<div class="cover-stat-value">{cats_count:02d}</div>'
@@ -1347,7 +1346,7 @@ def _render_cover(
         '<header class="cover-section-head">'
         '<span class="cover-section-label">In this issue</span>'
         '<span class="cover-section-rule"></span>'
-        f'<span class="cover-section-meta">{sec_count} securities · '
+        f'<span class="cover-section-meta">{sec_count} stocks · '
         f'{cats_count} categories</span>'
         '</header>'
         f'<div class="cover-breakdown">{breakdown_html}</div>'
