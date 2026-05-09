@@ -457,10 +457,11 @@ body {
   font-weight: 500;
 }
 .cover-headline-sub {
-  font-size: 30px;
+  font-size: 26px;
   letter-spacing: 0.005em;
   color: var(--muted);
   font-weight: 400;
+  line-height: 1.25;
 }
 .cover-strap {
   margin: 36px 0 0;
@@ -657,7 +658,7 @@ body {
     font-size: 10.5px;
   }
   .cover-headline-line:first-child { font-size: 52px; }
-  .cover-headline-sub { font-size: 22px; }
+  .cover-headline-sub { font-size: 19px; }
   .cover-strap { font-size: 15.5px; }
   .cover-plate {
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -1324,7 +1325,7 @@ def _render_cover(
         headline_sub = f"{report_date.year} 年 {report_date.month} 月 {report_date.day} 日"
     else:
         headline_main = f"{sec_count} 支股票"
-        headline_sub = "依 Kell + Kullamägi 法精选"
+        headline_sub = "依 Oliver Kell + Kristjan Kullamägi 法精选"
 
     # The actual selling point gets a dedicated visual plate — large
     # monospace tickers, click-to-anchor into the per-ticker section.

@@ -647,7 +647,7 @@ def test_html_cover_hero_leads_with_methodology_not_date():
     # Hero: count goes BIG; methodology subtitle below; English author names
     # remain unaltered inside Chinese line.
     assert "3 支股票" in html
-    assert "依 Kell + Kullamägi 法精选" in html
+    assert "依 Oliver Kell + Kristjan Kullamägi 法精选" in html
 
     # Strap: full author names + model attribution + CANSLIM all surface
     assert "Oliver Kell" in html
