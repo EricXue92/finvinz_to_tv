@@ -621,7 +621,10 @@ def test_html_footnote_absent_when_no_ticker_shows_dual_eps():
 
 # --- Cover page --------------------------------------------------------------
 
-def test_html_cover_renders_date_hero_and_stats():
+def test_html_cover_hero_leads_with_methodology_not_date():
+    """Hero is the curated stock count + methodology authors; date is
+    demoted to the eyebrow strip (small) and the colophon timestamp.
+    Person names and CANSLIM stay English; framework copy is Chinese."""
     enriched = [
         _fake_data("AKAM", "HighVolume"),
         _fake_data("FLEX", "HighVolume"),
@@ -635,31 +638,37 @@ def test_html_cover_renders_date_hero_and_stats():
         generated_at=datetime(2026, 5, 9, 16, 30, 0, tzinfo=HKT),
         model_label="Anthropic Claude Sonnet 4.6",
     )
-    # Editorial framing
+    # Eyebrow: Chinese label · 美股 + No.N + dotted-date
     assert 'class="cover"' in html
-    assert "FINVIZ" not in html  # legacy mark removed from cover
-    assert "Daily Equities Scan" in html
-    # Vol. YYYY · No. day-of-year (129 for May 9 in 2026)
-    assert "Vol. 2026 · No. 129" in html
-    # Market label
-    assert "United States · Equities" in html
-    # Hero date pieces
-    assert "Saturday" in html
-    assert "May 9" in html
-    assert "2026" in html
-    # Stats band — 3 securities, 2 categories, 1 truncated, all 2-digit zero-padded
-    assert ">03</div>" in html  # securities
-    assert ">02</div>" in html  # categories
-    assert ">01</div>" in html  # truncated
-    # Colophon
+    assert "每日股票精选 · 美股" in html
+    assert "第 129 期" in html              # day-of-year for May 9 in 2026
+    assert "2026.05.09 · 周六" in html
+
+    # Hero: count goes BIG; methodology subtitle below; English author names
+    # remain unaltered inside Chinese line.
+    assert "3 支股票" in html
+    assert "依 Kell + Kullamägi 法精选" in html
+
+    # Strap: full author names + model attribution + CANSLIM all surface
+    assert "Oliver Kell" in html
+    assert "Kristjan Kullamägi" in html
     assert "Anthropic Claude Sonnet 4.6" in html
-    assert "SEC EDGAR" in html
     assert "CANSLIM" in html
+
+    # Ticker plate: each ticker rendered as anchor link, mono-styled
+    assert 'class="cover-plate-ticker"' in html
+    assert 'href="#t-AKAM"' in html and 'href="#t-DDOG"' in html
+
+    # Colophon
+    assert "数据来源" in html
+    assert "选股方法" in html
+    assert "SEC EDGAR" in html
+    assert "William O" in html  # third methodology row
 
 
 def test_html_cover_groups_tickers_by_category_in_first_seen_order():
     """Per-category breakdown must follow ranker's first-seen order, not
-    alphabetical or insertion-into-dict-by-Python-version."""
+    alphabetical or Python dict insertion-order quirks."""
     enriched = [
         _fake_data("CORZ", "EarningsGap"),
         _fake_data("AKAM", "HighVolume"),
@@ -675,24 +684,23 @@ def test_html_cover_groups_tickers_by_category_in_first_seen_order():
         generated_at=datetime(2026, 5, 9, 16, 30, 0, tzinfo=HKT),
         model_label="Anthropic Claude Sonnet 4.6",
     )
-    # Find the cover breakdown area; categories should appear in the
-    # ranker-given order (EarningsGap → HighVolume → Leaders → NewHigh52W).
     cover_start = html.find('class="cover-breakdown"')
     cover_end = html.find('class="cover-colophon"', cover_start)
     breakdown = html[cover_start:cover_end]
-    # Category labels appear in this order:
     pos_eg = breakdown.find("Earnings Gap")
     pos_hv = breakdown.find("High Volume")
     pos_ld = breakdown.find("Leaders")
     pos_nh = breakdown.find("52-Week High")
     assert pos_eg != -1 and pos_hv != -1 and pos_ld != -1 and pos_nh != -1
     assert pos_eg < pos_hv < pos_ld < pos_nh
-    # HighVolume row groups its two tickers together, comma-separated
-    assert "AKAM, FLEX" in breakdown
+    # Tickers within a category list separated by ' · ' (middle dot)
+    assert "AKAM · FLEX" in breakdown
+    # Category counts use Chinese measure word
+    assert "02 支" in breakdown
 
 
 def test_html_cover_handles_empty_enriched():
-    """Cover still renders structurally (no crash) when no securities pass."""
+    """Cover still renders structurally with the no-stocks fallback copy."""
     html = renderer.render_html_document(
         market="us", date_iso="2026-05-09",
         enriched=[], prose_sections=[], truncated=[],
@@ -700,8 +708,8 @@ def test_html_cover_handles_empty_enriched():
         model_label="Anthropic Claude Sonnet 4.6",
     )
     assert 'class="cover"' in html
-    assert ">00</div>" in html  # securities count
-    assert "No qualifying stocks" in html
+    assert "本期暂无入选" in html
+    assert "本期暂无符合条件的股票" in html
 
 
 def test_html_cover_market_label_handles_hk():
@@ -712,6 +720,6 @@ def test_html_cover_market_label_handles_hk():
         generated_at=datetime(2026, 5, 9, 20, 30, 0, tzinfo=HKT),
         model_label="DeepSeek V4 Pro",
     )
-    assert "Hong Kong · Equities" in html
-    # HK group label translates the same as US Leaders
+    assert "每日股票精选 · 港股" in html
+    # HK group label still reads as "Leaders" in English
     assert "Leaders" in html

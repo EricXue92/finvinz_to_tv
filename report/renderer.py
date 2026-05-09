@@ -368,9 +368,10 @@ body {
     print-color-adjust: exact; }
 }
 
-/* --- Cover (editorial publication front matter) ----------------------------
-   Sits flush against the viewport edges (negative margin undoes body padding).
-   Cream linen background, native serif display type, hairline rules.
+/* --- Cover (editorial trader's tearsheet, Chinese with English proper nouns)
+   Hero is the methodology + curated stock count, not the date.
+   Cream linen ground, navy ink, oxblood accent on the issue stamp.
+   Native serif stack with Songti SC fallback for Chinese glyph coverage.
    ------------------------------------------------------------------------ */
 .cover {
   background: #F7F2E8;
@@ -382,156 +383,151 @@ body {
   font-feature-settings: "kern", "liga", "onum";
 }
 .cover-inner {
-  max-width: 880px;
+  max-width: 920px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 220px);
 }
-/* Decorative corner mark — a thin navy bracket that anchors the page */
-.cover::before {
+.cover::before, .cover::after {
   content: "";
   position: absolute;
-  top: 28px;
-  left: 28px;
   width: 48px;
   height: 48px;
+  pointer-events: none;
+}
+.cover::before {
+  top: 28px; left: 28px;
   border-top: 2px solid var(--navy);
   border-left: 2px solid var(--navy);
-  pointer-events: none;
 }
 .cover::after {
-  content: "";
-  position: absolute;
-  bottom: 28px;
-  right: 28px;
-  width: 48px;
-  height: 48px;
+  bottom: 28px; right: 28px;
   border-bottom: 2px solid var(--navy);
   border-right: 2px solid var(--navy);
-  pointer-events: none;
 }
 
-/* Top eyebrow strip */
+/* Top eyebrow strip — section label · hairline · issue + date */
 .cover-eyebrow {
   display: flex;
   align-items: center;
   gap: 14px;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
   color: var(--navy);
   font-weight: 600;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--navy);
   margin-bottom: 72px;
 }
-.cover-mark {
+.cover-eyebrow-label {
   font-weight: 700;
-  letter-spacing: 0.2em;
-  font-variant-numeric: tabular-nums;
 }
 .cover-eyebrow-rule {
-  flex: 0 0 28px;
+  flex: 1;
   height: 1px;
   background: var(--navy);
 }
-.cover-eyebrow-label { flex: 1; }
-.cover-issue {
-  letter-spacing: 0.18em;
+.cover-eyebrow-issue {
+  letter-spacing: 0.14em;
   color: #6B1A1F;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
 
-/* Hero — market label + huge serif date + tagline */
-.cover-hero { margin-bottom: 56px; }
-.cover-market {
-  font-size: 11px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-weight: 700;
-  margin-bottom: 24px;
-}
-.cover-date {
+/* Hero — '11 支股票' + '依 Kell + Kullamägi 法精选' + strap line */
+.cover-hero { margin-bottom: 32px; }
+.cover-headline {
   font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
-    "Hoefler Text", Georgia, "Times New Roman", serif;
-  font-weight: 400;
+    "Hoefler Text", Georgia,
+    "Songti SC", "STSong", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", serif;
+  font-weight: 500;
   margin: 0;
-  line-height: 0.96;
-  color: var(--ink);
+  line-height: 1.05;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
 }
-.cover-weekday {
-  font-style: italic;
-  font-size: 32px;
-  color: var(--muted);
-  font-weight: 400;
-  letter-spacing: 0.005em;
-}
-.cover-monthday {
-  font-size: 86px;
-  letter-spacing: -0.025em;
+.cover-headline-line { display: block; }
+.cover-headline-line:first-child {
+  font-size: 88px;
+  letter-spacing: -0.022em;
+  color: var(--ink);
   font-weight: 500;
-  color: var(--navy);
 }
-.cover-year {
-  font-style: italic;
+.cover-headline-sub {
+  font-size: 30px;
+  letter-spacing: 0.005em;
   color: var(--muted);
   font-weight: 400;
 }
-.cover-tagline {
-  margin-top: 28px;
-  max-width: 540px;
-  font-size: 16.5px;
-  line-height: 1.55;
+.cover-strap {
+  margin: 36px 0 0;
+  max-width: 620px;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia,
+    "Songti SC", "STSong", "PingFang SC", serif;
+  font-size: 17px;
+  line-height: 1.65;
   color: var(--ink-soft);
-  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+}
+.cover-strap strong {
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.005em;
 }
 
-/* Stats band */
-.cover-stats {
+/* Section dividers — single hairline, no extra ornament */
+.cover-divider {
+  height: 1px;
+  background: var(--rule);
+  margin: 36px 0;
+}
+
+/* Ticker plate — the actual deliverable foregrounded as visual hero #2.
+   Each cell is large monospace, click-to-anchor link into the body. */
+.cover-plate {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 32px;
-  border-top: 1px solid var(--navy);
-  border-bottom: 1px solid var(--navy);
-  padding: 22px 0;
-  margin-bottom: 52px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px 18px;
+  padding: 8px 0;
 }
-.cover-stat { display: flex; align-items: baseline; gap: 14px; }
-.cover-stat-value {
-  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
-  font-size: 46px;
-  font-weight: 500;
-  line-height: 1;
-  color: var(--navy);
-  font-variant-numeric: tabular-nums;
-}
-.cover-stat-label {
-  font-size: 10.5px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
+.cover-plate-ticker {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 28px;
   font-weight: 700;
-  line-height: 1.4;
+  letter-spacing: 0.015em;
+  color: var(--navy);
+  text-decoration: none;
+  padding: 10px 2px;
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.18s ease, color 0.18s ease;
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+}
+.cover-plate-ticker:hover {
+  color: #6B1A1F;
+  border-bottom-color: #6B1A1F;
+}
+.cover-plate-empty {
+  font-style: italic;
+  color: var(--muted);
+  font-size: 16px;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia,
+    "Songti SC", serif;
 }
 
 /* In-this-issue section */
-.cover-section { margin-bottom: 52px; }
+.cover-section { margin: 0; }
 .cover-section-head {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 26px;
+  margin-bottom: 22px;
 }
 .cover-section-label {
-  font-size: 10.5px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  letter-spacing: 0.22em;
   color: var(--navy);
   font-weight: 700;
 }
@@ -541,7 +537,7 @@ body {
   background: var(--rule);
 }
 .cover-section-meta {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--muted);
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
@@ -549,21 +545,21 @@ body {
 .cover-breakdown {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 20px;
+  gap: 18px;
 }
 .cover-cat { page-break-inside: avoid; }
 .cover-cat-head {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 .cover-cat-name {
   font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
-  font-size: 19px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--ink);
-  letter-spacing: -0.005em;
+  letter-spacing: 0.005em;
 }
 .cover-cat-rule {
   flex: 1;
@@ -573,10 +569,10 @@ body {
 }
 .cover-cat-count {
   font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 .cover-cat-tickers {
   font-family: "SF Mono", Menlo, Consolas, monospace;
@@ -587,29 +583,56 @@ body {
   padding-left: 2px;
 }
 
-/* Colophon */
+/* Colophon — methodology block (left, prose) + meta rows (right) */
 .cover-colophon {
   margin-top: auto;
   padding-top: 32px;
   border-top: 1px solid var(--navy);
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 32px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 20px 56px;
 }
-.cover-colophon-row {
+.cover-colophon-key {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.cover-colophon-meth .cover-colophon-key {
+  display: block;
+  margin-bottom: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", sans-serif;
+}
+.cover-colophon-meth-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia,
+    "Songti SC", "PingFang SC", serif;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.cover-meth-author {
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.cover-colophon-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cover-colophon-meta .cover-colophon-row {
   display: flex;
   gap: 14px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink-soft);
 }
-.cover-colophon-key {
-  flex: 0 0 92px;
-  font-size: 9.5px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-weight: 700;
+.cover-colophon-meta .cover-colophon-key {
+  flex: 0 0 80px;
   padding-top: 2px;
 }
 .cover-colophon-val { flex: 1; }
@@ -627,12 +650,21 @@ body {
     min-height: auto;
   }
   .cover::before, .cover::after { width: 32px; height: 32px; }
-  .cover-eyebrow { gap: 10px; flex-wrap: wrap; margin-bottom: 48px; }
-  .cover-monthday { font-size: 56px; }
-  .cover-weekday { font-size: 22px; }
-  .cover-stats { grid-template-columns: 1fr; gap: 16px; padding: 18px 0; }
-  .cover-stat-value { font-size: 36px; }
-  .cover-colophon { grid-template-columns: 1fr; }
+  .cover-eyebrow {
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 44px;
+    font-size: 10.5px;
+  }
+  .cover-headline-line:first-child { font-size: 52px; }
+  .cover-headline-sub { font-size: 22px; }
+  .cover-strap { font-size: 15.5px; }
+  .cover-plate {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 4px 12px;
+  }
+  .cover-plate-ticker { font-size: 22px; padding: 8px 2px; }
+  .cover-colophon { grid-template-columns: 1fr; gap: 24px; }
 }
 
 @media print {
@@ -1231,9 +1263,12 @@ _GROUP_DISPLAY_LABEL: dict[str, str] = {
 }
 
 _MARKET_FULL_NAME: dict[str, str] = {
-    "us": "United States",
-    "hk": "Hong Kong",
+    "us": "美股",
+    "hk": "港股",
 }
+
+# Map Python weekday() (0=Monday) to single-character Chinese day-of-week.
+_WEEKDAY_CN = "一二三四五六日"
 
 
 def _group_breakdown(
@@ -1260,116 +1295,148 @@ def _render_cover(
     generated_at: datetime,
     model_label: str | None,
 ) -> str:
-    """Editorial cover page: serif date hero, stats band, per-category
-    breakdown, colophon. Sits flush against the viewport edges."""
+    """Editorial cover (Chinese with English proper nouns). Methodology
+    authors and screen category names stay in English; framework and
+    structural copy is in Chinese. Sits flush to the viewport edges.
+
+    Hierarchy: methodology + curated stock count = hero (the actual
+    selling point). Date is demoted to the eyebrow strip + colophon
+    timestamp; it's metadata, not the value proposition.
+    """
     try:
         report_date = datetime.fromisoformat(date_iso).date()
     except (ValueError, TypeError):
         report_date = generated_at.date()
 
-    weekday = report_date.strftime("%A")
-    # Use d.day instead of strftime("%-d") which is platform-specific
-    # (POSIX-only — breaks on Windows).
-    month = report_date.strftime("%B")
-    year = report_date.year
-    issue_no = report_date.timetuple().tm_yday
-
     market_full = _MARKET_FULL_NAME.get(market.lower(), market.upper())
+    issue_no = report_date.timetuple().tm_yday
+    weekday_cn = "周" + _WEEKDAY_CN[report_date.weekday()]
+    eyebrow_date = (
+        f"{report_date.year}.{report_date.month:02d}.{report_date.day:02d} · {weekday_cn}"
+    )
 
     breakdown = _group_breakdown(enriched)
     cats_count = len(breakdown)
     sec_count = len(enriched)
-    trunc_count = len(truncated)
+
+    if sec_count == 0:
+        headline_main = "本期暂无入选"
+        headline_sub = f"{report_date.year} 年 {report_date.month} 月 {report_date.day} 日"
+    else:
+        headline_main = f"{sec_count} 支股票"
+        headline_sub = "依 Kell + Kullamägi 法精选"
+
+    # The actual selling point gets a dedicated visual plate — large
+    # monospace tickers, click-to-anchor into the per-ticker section.
+    plate_items = [d_.get("ticker") or "?" for d_ in enriched]
+    if plate_items:
+        plate_html = "".join(
+            f'<a href="#t-{t}" class="cover-plate-ticker">{t}</a>'
+            for t in plate_items
+        )
+    else:
+        plate_html = (
+            '<span class="cover-plate-empty">本期暂无符合条件的股票</span>'
+        )
 
     breakdown_html = "".join(
         f'<div class="cover-cat">'
         f'<div class="cover-cat-head">'
         f'<span class="cover-cat-name">{label}</span>'
         f'<span class="cover-cat-rule"></span>'
-        f'<span class="cover-cat-count">{len(tickers):02d} {("stock" if len(tickers) == 1 else "stocks")}</span>'
+        f'<span class="cover-cat-count">{len(tickers):02d} 支</span>'
         f'</div>'
-        f'<div class="cover-cat-tickers">{", ".join(tickers)}</div>'
+        f'<div class="cover-cat-tickers">{" · ".join(tickers)}</div>'
         f'</div>'
         for label, tickers in breakdown
     )
     if not breakdown_html:
         breakdown_html = (
-            '<div class="cover-cat-tickers" style="color:var(--muted)">'
-            'No qualifying stocks for this run.</div>'
+            '<div class="cover-cat-tickers" style="color:var(--muted)">—</div>'
         )
 
     gen_time_str = generated_at.strftime("%Y-%m-%d %H:%M %Z")
-    model_line = (
-        f"Generated by {model_label}"
-        if model_label else "Generated by CANSLIM scan engine"
-    )
+    model_line = model_label or "AI 分析模型"
+    if model_label:
+        strap = (
+            "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
+            "<strong>Kristjan Kullamägi</strong> 抛物线做空策略筛选，"
+            f"由 <strong>{model_label}</strong> 撰写 CANSLIM 基本面简报。"
+        )
+    else:
+        strap = (
+            "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
+            "<strong>Kristjan Kullamägi</strong> 抛物线做空策略筛选，"
+            "逐支生成 CANSLIM 基本面简报。"
+        )
 
     return (
         '<section class="cover">'
         '<div class="cover-inner">'
-        # --- top eyebrow ---
+        # --- top eyebrow: small Daily-Equities-Scan label, hairline,
+        #     issue number + date stamp on the right
         '<header class="cover-eyebrow">'
-        '<span class="cover-eyebrow-label">Daily Equities Scan</span>'
+        f'<span class="cover-eyebrow-label">每日股票精选 · {market_full}</span>'
         '<span class="cover-eyebrow-rule"></span>'
-        f'<span class="cover-issue">Vol. {year} · No. {issue_no:03d}</span>'
+        f'<span class="cover-eyebrow-issue">第 {issue_no:03d} 期 · {eyebrow_date}</span>'
         '</header>'
-        # --- hero ---
+        # --- hero: count + methodology attribution. The big serif line
+        #     is the product (N stocks selected), the secondary line
+        #     names the methodology authors.
         '<div class="cover-hero">'
-        f'<div class="cover-market">{market_full} · Equities</div>'
-        '<h1 class="cover-date">'
-        f'<span class="cover-weekday">{weekday}</span>'
-        f'<span class="cover-monthday">{month} {report_date.day}'
-        f'<span class="cover-year">, {year}</span></span>'
+        '<h1 class="cover-headline">'
+        f'<span class="cover-headline-line">{headline_main}</span>'
+        f'<span class="cover-headline-line cover-headline-sub">{headline_sub}</span>'
         '</h1>'
-        '<p class="cover-tagline">'
-        'Daily CANSLIM scan — quantitative screen results paired with '
-        'LLM-augmented fundamentals &amp; outlook briefs.'
-        '</p>'
+        f'<p class="cover-strap">{strap}</p>'
         '</div>'
-        # --- stats band ---
-        '<div class="cover-stats">'
-        '<div class="cover-stat">'
-        f'<div class="cover-stat-value">{sec_count:02d}</div>'
-        '<div class="cover-stat-label">Stocks<br>analyzed</div>'
-        '</div>'
-        '<div class="cover-stat">'
-        f'<div class="cover-stat-value">{cats_count:02d}</div>'
-        '<div class="cover-stat-label">Screen<br>categories</div>'
-        '</div>'
-        '<div class="cover-stat">'
-        f'<div class="cover-stat-value">{trunc_count:02d}</div>'
-        '<div class="cover-stat-label">Truncated<br>(over cap)</div>'
-        '</div>'
-        '</div>'
-        # --- in this issue ---
+        '<div class="cover-divider"></div>'
+        # --- ticker plate: the actual deliverable, foregrounded as the
+        #     visual second hero. Each ticker links to its in-document
+        #     anchor for click-through.
+        f'<div class="cover-plate">{plate_html}</div>'
+        '<div class="cover-divider"></div>'
+        # --- per-category breakdown ---
         '<section class="cover-section">'
         '<header class="cover-section-head">'
-        '<span class="cover-section-label">In this issue</span>'
+        '<span class="cover-section-label">本期清单</span>'
         '<span class="cover-section-rule"></span>'
-        f'<span class="cover-section-meta">{sec_count} stocks · '
-        f'{cats_count} categories</span>'
+        f'<span class="cover-section-meta">{sec_count} 支 · {cats_count} 类</span>'
         '</header>'
         f'<div class="cover-breakdown">{breakdown_html}</div>'
         '</section>'
-        # --- colophon ---
+        '<div class="cover-divider"></div>'
+        # --- colophon: methodology attribution (left, larger) plus
+        #     metadata rows (right, smaller). Reads like a publication
+        #     masthead: gives the buyer the full provenance trail.
         '<footer class="cover-colophon">'
+        '<div class="cover-colophon-meth">'
+        '<div class="cover-colophon-key">选股方法</div>'
+        '<div class="cover-colophon-meth-list">'
+        '<div><span class="cover-meth-author">Oliver Kell</span> · '
+        'Stages of Stock Movement，五种 long-side 形态'
+        '（Earnings Gap、High Volume、Gap Up、52-Week High、Top Gainers），'
+        '叠加弱市 RS 领涨股扫描。</div>'
+        '<div><span class="cover-meth-author">Kristjan Kullamägi</span> · '
+        '抛物线 blow-off 做空规则，应用于 Shorts 类别。</div>'
+        '<div><span class="cover-meth-author">William O&apos;Neil</span> · '
+        'CANSLIM 成长股框架，驱动每支股票的基本面简报。</div>'
+        '</div>'
+        '</div>'
+        '<div class="cover-colophon-meta">'
         '<div class="cover-colophon-row">'
-        '<span class="cover-colophon-key">Generated</span>'
+        '<span class="cover-colophon-key">数据来源</span>'
+        '<span class="cover-colophon-val">SEC EDGAR · yfinance · '
+        'IBD RS · Futu OpenAPI</span>'
+        '</div>'
+        '<div class="cover-colophon-row">'
+        '<span class="cover-colophon-key">生成模型</span>'
         f'<span class="cover-colophon-val">{model_line}</span>'
         '</div>'
         '<div class="cover-colophon-row">'
-        '<span class="cover-colophon-key">Timestamp</span>'
+        '<span class="cover-colophon-key">生成时间</span>'
         f'<span class="cover-colophon-val">{gen_time_str}</span>'
         '</div>'
-        '<div class="cover-colophon-row">'
-        '<span class="cover-colophon-key">Data</span>'
-        '<span class="cover-colophon-val">SEC EDGAR · yfinance · '
-        'IBD RS Rating · Futu OpenAPI</span>'
-        '</div>'
-        '<div class="cover-colophon-row">'
-        '<span class="cover-colophon-key">Methodology</span>'
-        '<span class="cover-colophon-val">CANSLIM (W. O&apos;Neil) · '
-        'Oliver Kell · Kristjan Kullamägi</span>'
         '</div>'
         '</footer>'
         '</div>'
