@@ -150,7 +150,7 @@ class DeepSeekBackend:
         *,
         api_key: str,
         tavily_api_key: str,
-        model: str = "deepseek-v4-flash",
+        model: str = "deepseek-v4-pro",
         max_tokens: int = DEFAULT_MAX_TOKENS,
         max_search_calls: int = 2,
         base_url: str = "https://api.deepseek.com/anthropic",
@@ -264,7 +264,7 @@ def build_backend(report_cfg: dict[str, Any] | None) -> LLMBackend:
         return DeepSeekBackend(
             api_key=api_key,
             tavily_api_key=tavily_key,
-            model=sub.get("model", "deepseek-v4-flash"),
+            model=sub.get("model", "deepseek-v4-pro"),
             max_tokens=int(sub.get("max_tokens", DEFAULT_MAX_TOKENS)),
             max_search_calls=int(sub.get("max_search_calls", 2)),
             base_url=sub.get("base_url", "https://api.deepseek.com/anthropic"),
