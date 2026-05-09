@@ -1355,14 +1355,15 @@ def _render_cover(
         strap = (
             "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
             "<strong>Kristjan Kullamägi</strong> 1-6 个月强势表现股票 "
-            "+ 抛物线做空策略筛选，"
+            "+ 抛物线做空策略筛选，<strong>经跨日去重，仅收录首次入选</strong>，"
             f"由 <strong>{model_label}</strong> 撰写 CANSLIM 基本面简报。"
         )
     else:
         strap = (
             "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
             "<strong>Kristjan Kullamägi</strong> 1-6 个月强势表现股票 "
-            "+ 抛物线做空策略筛选，逐个生成 CANSLIM 基本面简报。"
+            "+ 抛物线做空策略筛选，<strong>经跨日去重，仅收录首次入选</strong>，"
+            "逐个生成 CANSLIM 基本面简报。"
         )
 
     return (
