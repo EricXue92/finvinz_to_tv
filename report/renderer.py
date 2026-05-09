@@ -48,7 +48,12 @@ body {
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
 }
-.sheet { max-width: 920px; margin: 0 auto; padding: 0 1.2em; }
+.sheet {
+  width: 210mm;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 22mm;
+}
 
 /* --- Masthead --- */
 .masthead {
@@ -110,6 +115,7 @@ body {
 .ticker {
   margin-bottom: 56px;
   scroll-margin-top: 16px;
+  page-break-inside: avoid;     /* keep one ticker on one printed page */
 }
 .ticker-head {
   background: var(--navy);
@@ -359,13 +365,28 @@ body {
   border-radius: 3px;
 }
 
-/* Print */
+/* Print — true A4 pagination. Cover gets its own sheet (page-break-after);
+   each ticker block is kept whole; cream paper bg flattens to white so
+   ink doesn't waste cartridge on a tinted ground. */
 @media print {
-  body { padding: 0; font-size: 11pt; background: #FFFFFF; }
-  .ticker { page-break-inside: avoid; margin-bottom: 28px; }
+  @page { size: A4; margin: 0; }
+  body { padding: 0; margin: 0; font-size: 11pt; background: #FFFFFF; }
+  .sheet { width: 210mm; padding: 0 22mm; }
+  .cover {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 20mm 22mm;
+    background: #FFFFFF;
+    page-break-after: always;
+  }
+  .ticker { page-break-inside: avoid; margin-bottom: 24px; }
   .index { display: none; }
-  .ticker-head { background: #2C3E50 !important; -webkit-print-color-adjust: exact;
-    print-color-adjust: exact; }
+  .ticker-head {
+    background: #2C3E50 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
 /* --- Cover (A4 paper format, editorial trader's tearsheet) -----------------
