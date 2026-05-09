@@ -40,6 +40,10 @@ class LLMBackend(Protocol):
 
     async def analyze(self, system_prompt: str, user_message: str) -> str: ...
 
+    def model_label(self) -> str:
+        """Human-readable `<model-id> (<vendor>)` for the report footer."""
+        ...
+
     async def aclose(self) -> None: ...
 
 
@@ -85,6 +89,9 @@ class AnthropicBackend:
 
     async def aclose(self) -> None:
         await self._client.close()
+
+    def model_label(self) -> str:
+        return f"{self._model} (Anthropic)"
 
     async def analyze(self, system_prompt: str, user_message: str) -> str:
         response = await self._client.messages.create(
@@ -160,6 +167,9 @@ class DeepSeekBackend:
         if self._tavily_ctx_open:
             await self._tavily.__aexit__(None, None, None)
             self._tavily_ctx_open = False
+
+    def model_label(self) -> str:
+        return f"{self._model} (DeepSeek)"
 
     async def _ensure_tavily(self) -> None:
         if not self._tavily_ctx_open:

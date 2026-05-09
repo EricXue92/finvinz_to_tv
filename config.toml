@@ -277,12 +277,12 @@ max_tickers_in_body = 10
 backend = "DeepSeek"
 
 [report.anthropic]
-model = "claude-sonnet-4-6"
+model = "claude-sonnet-4-6"   # claude-opus-4-7
 max_tokens = 3500
 web_search_max_uses = 2
 
 [report.deepseek]
-model = "deepseek-v4-flash"
+model = "deepseek-v4-flash"  # DeepSeek-V4-Pro
 base_url = "https://api.deepseek.com/anthropic"
 max_tokens = 3500
 max_search_calls = 2

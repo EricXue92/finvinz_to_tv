@@ -106,6 +106,7 @@ _EMPTY_DATA_TEMPLATE: dict = {
     "sector": None, "industry": None,
     "market_cap": None, "last_price": None, "prev_close": None, "gap_pct": None,
     "institutional_holdings_pct": None,
+    "roe_pct": None,
     "eps_latest_q": None, "eps_latest_q_yoy_pct": None,
     "revenue_latest_q": None, "revenue_latest_q_yoy_pct": None,
     "annual_eps_yoy_5y": [None, None, None, None, None],
@@ -194,6 +195,7 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
         truncated=[(q.split(":", 1)[-1], g) for q, g in truncated_entries],
         generated_at=datetime.now(HKT),
         date_iso=date_iso,
+        model_label=backend.model_label(),
     )
     logger.info(f"[report] wrote {md_path}")
     logger.info(f"[report] wrote {html_path}")

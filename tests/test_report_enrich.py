@@ -232,6 +232,7 @@ def test_fetch_ticker_data_full_path():
     assert data["market_cap"] == 3_000_000_000_000
     assert data["last_price"] == 200.0
     assert data["institutional_holdings_pct"] == pytest.approx(60.0)
+    assert data["roe_pct"] == pytest.approx(150.0)  # 1.5 → 150%
     assert data["rs_percentile"] == 95
     assert data["revenue_latest_q"] == 1100
     assert data["revenue_latest_q_yoy_pct"] == pytest.approx(10.0)
@@ -255,6 +256,20 @@ def test_fetch_ticker_data_gap_pct_handles_zero_prev_close():
     assert data["last_price"] == 5.0
     assert data["prev_close"] == 0.0
     assert data["gap_pct"] is None  # not computed because prev_close is not > 0
+
+
+def test_fetch_ticker_data_roe_missing_returns_none():
+    """yfinance can return info dicts where returnOnEquity is absent or NaN
+    (newly-IPO'd, foreign listings without ROE coverage). Should produce
+    `roe_pct = None`, not crash."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "No ROE Co.", "currentPrice": 10.0}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None):
+        data = enrich.fetch_ticker_data("XYZ", "Leaders", "NASDAQ", rs_lookup=lambda t: None)
+    assert data["roe_pct"] is None
 
 
 def test_fetch_ticker_data_uses_edgar_when_available():

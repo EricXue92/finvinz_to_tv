@@ -97,10 +97,12 @@ def test_render_html_includes_svg_bar_chart():
 
 def test_render_html_marks_positive_negative_yoy():
     """Positive YoY gets `positive` class; negative gets `negative` class
-    on the latest-quarter YoY badge."""
+    on the latest-quarter YoY badge. Use values below the CANSLIM "hot"
+    thresholds (Rev>20% / EPS>25%) so the `hot` modifier doesn't trigger
+    and we can observe the base positive/negative class in isolation."""
     d = _fake_data("XYZ")
     d["eps_latest_q_yoy_pct"] = -25.0
-    d["revenue_latest_q_yoy_pct"] = 30.0
+    d["revenue_latest_q_yoy_pct"] = 15.0  # under 20% → positive without hot
     html = renderer.render_html_document(
         market="us",
         date_iso="2026-05-07",
@@ -274,6 +276,178 @@ def test_md_ipo_block_renders_banner_and_skips_fundamentals_tables():
     # No 5y annual table or Latest Quarter line
     assert "FY−5" not in md
     assert "Latest Quarter" not in md
+
+
+# --- CANSLIM enrichments (ROE, hot YoY, model-attribution footer) ------------
+
+def test_html_quarterly_marks_hot_when_revenue_yoy_above_20():
+    """Rev YoY > 20% earns the `hot` modifier on both the value and pill."""
+    d = _fake_data("HOT1")
+    d["revenue_latest_q_yoy_pct"] = 35.0
+    d["eps_latest_q_yoy_pct"] = 5.0  # under 25% threshold — not hot
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    # Revenue side: pill carries `positive hot`; value carries `metric-value hot`.
+    assert 'class="yoy positive hot"' in html
+    assert 'class="metric-value hot"' in html
+    # EPS side stays cold — the pill class is just `positive`, no hot.
+    # Two pills exist; verify exactly one is hot.
+    assert html.count(" hot") >= 2  # one pill + one metric-value
+    assert html.count("positive hot") == 1
+
+
+def test_html_quarterly_no_hot_at_threshold_boundary():
+    """Threshold is strict `>` — a value exactly at the limit must not be hot."""
+    d = _fake_data("EDGE")
+    d["revenue_latest_q_yoy_pct"] = 20.0   # exactly at threshold, not above
+    d["eps_latest_q_yoy_pct"] = 25.0       # exactly at threshold, not above
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "positive hot" not in html
+
+
+def test_html_snapshot_marks_roe_hot_above_17():
+    d = _fake_data("ROE1")
+    d["roe_pct"] = 25.0
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "ROE</td>" in html
+    assert ">25.0%</td>" in html
+    assert "snap-value hot" in html
+
+
+def test_html_snapshot_no_hot_when_roe_low_or_missing():
+    d = _fake_data("ROE2")
+    d["roe_pct"] = 10.0  # below threshold
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "snap-value hot" not in html
+
+    d2 = _fake_data("ROE3")
+    d2["roe_pct"] = None
+    html2 = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d2],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "ROE</td>" in html2
+    assert ">—</td>" in html2  # missing ROE shown as em dash
+
+
+def test_md_latest_quarter_bolds_when_above_thresholds():
+    d = _fake_data("MD1")
+    d["revenue_latest_q_yoy_pct"] = 28.0   # > 20%
+    d["eps_latest_q_yoy_pct"] = 30.0       # > 25%
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    # Both segments wrapped in **...**
+    assert "**EPS $1.25 (YoY +30.0%)**" in md
+    assert "**Revenue $1.20B (YoY +28.0%)**" in md
+
+
+def test_md_latest_quarter_does_not_bold_when_under_threshold():
+    d = _fake_data("MD2")
+    d["revenue_latest_q_yoy_pct"] = 10.0
+    d["eps_latest_q_yoy_pct"] = 5.0
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    # The Latest Quarter prefix is bold but the value segments are not.
+    assert "**EPS $1.25" not in md
+    assert "**Revenue $1.2B" not in md
+
+
+def test_md_snapshot_includes_roe_column_and_bolds_above_17():
+    d = _fake_data("ROE_MD")
+    d["roe_pct"] = 22.5
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "| ROE |" in md
+    assert "**22.5%**" in md  # bold because > 17%
+
+
+def test_md_quarterly_trend_bolds_only_rightmost_when_hot():
+    """4Q YoY table: only the LAST (most-recent) cell gets bolded, even if
+    older cells exceed the threshold. Older quarters are historical context,
+    not the CANSLIM 'C' signal."""
+    d = _fake_data("QTRD")
+    # Older 3 quarters all above EPS hot threshold; only the latest matters.
+    d["quarterly_eps_yoy_4q"] = [40.0, 35.0, 30.0, 28.0]
+    d["quarterly_revenue_yoy_4q"] = [10.0, 12.0, 15.0, 25.0]
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    # EPS 28.0 (latest) > 25% → bolded
+    assert "**+28.0%**" in md
+    # Revenue 25.0 (latest) > 20% → bolded
+    assert "**+25.0%**" in md
+    # Older EPS values like +40.0% must NOT be bolded
+    assert "**+40.0%**" not in md
+    assert "**+35.0%**" not in md
+
+
+def test_md_footer_shows_model_label():
+    d = _fake_data("FOOT")
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+        model_label="claude-sonnet-4-6 (Anthropic)",
+    )
+    assert "*Generated by claude-sonnet-4-6 (Anthropic) · 2026-05-07*" in md
+
+
+def test_html_footer_shows_model_label():
+    d = _fake_data("FOOT")
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+        model_label="deepseek-v4-flash (DeepSeek)",
+    )
+    assert 'class="report-footer"' in html
+    assert "deepseek-v4-flash (DeepSeek)" in html
+
+
+def test_footer_omitted_when_model_label_absent():
+    """Backward-compat: callers that don't pass model_label get no footer."""
+    d = _fake_data("FOOT")
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "Generated by" not in md
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    # CSS rule `.report-footer` is in INLINE_CSS unconditionally; we want
+    # to confirm the <footer class="report-footer"> element is NOT emitted.
+    assert '<footer class="report-footer"' not in html
 
 
 # --- Legacy shims (keep older callers working) -------------------------------

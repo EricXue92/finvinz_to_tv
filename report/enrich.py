@@ -187,6 +187,9 @@ def fetch_ticker_data(
         "prev_close": None,
         "gap_pct": None,
         "institutional_holdings_pct": None,
+        # CANSLIM "L" support — IBD's leadership floor is ROE > 17%.
+        # `info["returnOnEquity"]` is a fraction; we store percent.
+        "roe_pct": None,
         # Latest quarterly earnings (CANSLIM "C")
         "eps_latest_q": None,
         "eps_latest_q_yoy_pct": None,
@@ -234,6 +237,8 @@ def fetch_ticker_data(
         data["institutional_holdings_pct"] = (
             inst * 100.0 if isinstance(inst, (int, float)) else None
         )
+        roe = info.get("returnOnEquity")
+        data["roe_pct"] = roe * 100.0 if isinstance(roe, (int, float)) else None
         try:
             ed = t.earnings_dates
             if ed is not None and not ed.empty:

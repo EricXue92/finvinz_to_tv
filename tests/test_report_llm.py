@@ -52,6 +52,19 @@ def test_build_backend_unknown_raises():
         llm.build_backend({"backend": "gpt-future"})
 
 
+def test_anthropic_backend_model_label(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    backend = llm.build_backend({"anthropic": {"model": "claude-sonnet-4-6"}})
+    assert backend.model_label() == "claude-sonnet-4-6 (Anthropic)"
+
+
+def test_deepseek_backend_model_label(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "dsk-test")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    backend = llm.build_backend({"backend": "deepseek", "deepseek": {"model": "deepseek-v4-flash"}})
+    assert backend.model_label() == "deepseek-v4-flash (DeepSeek)"
+
+
 def _tool_use_response(query: str, tool_use_id: str = "tu_1") -> MagicMock:
     """Minimal SDK response shape with one tool_use block."""
     block = MagicMock()
