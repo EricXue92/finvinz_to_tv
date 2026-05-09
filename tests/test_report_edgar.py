@@ -434,3 +434,99 @@ def test_fetch_edgar_fundamentals_alt_revenue_concept(tmp_path, monkeypatch):
     # 5 fiscal years → 4 YoY pairs filled, oldest slot None.
     assert out["annual_revenue_yoy_5y"][0] is None
     assert out["annual_revenue_yoy_5y"][-1] == pytest.approx(10.02, rel=0.01)
+
+
+def _build_concept(facts: list[dict]) -> dict:
+    return {"units": {"USD": facts}}
+
+
+def test_match_concept_picks_fresher_when_first_priority_concept_is_stale():
+    """SSRM-pattern: company switched XBRL tagging mid-history, so the
+    first-priority concept (RFCWCEAT) has stale quarterly facts and the
+    second-priority concept (Revenues) has the current ones. Selector must
+    pick whichever concept has the more-recent quarterly survivor — not
+    the first-priority concept by default. Verified against SSR Mining
+    where naive priority ordering gave Q4 2023 ($414M) instead of TV's
+    Q1 2026 ($582M)."""
+    stale_facts = [
+        {"end": "2023-06-30", "start": "2023-04-01", "val": 301_000_000,
+         "fy": 2023, "fp": "Q2", "form": "10-Q", "filed": "2023-08-02"},
+        {"end": "2023-09-30", "start": "2023-07-01", "val": 385_000_000,
+         "fy": 2023, "fp": "Q3", "form": "10-Q", "filed": "2023-11-01"},
+    ]
+    fresh_facts = [
+        {"end": "2025-06-30", "start": "2025-04-01", "val": 405_000_000,
+         "fy": 2025, "fp": "Q2", "form": "10-Q", "filed": "2025-08-05"},
+        {"end": "2025-09-30", "start": "2025-07-01", "val": 385_000_000,
+         "fy": 2025, "fp": "Q3", "form": "10-Q", "filed": "2025-11-04"},
+        {"end": "2026-03-31", "start": "2026-01-01", "val": 581_778_000,
+         "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2026-05-05"},
+    ]
+    cf = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": _build_concept(stale_facts),
+        "Revenues": _build_concept(fresh_facts),
+    }}}
+    out = edgar._match_concept_facts(
+        cf,
+        ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"),
+        "USD",
+    )
+    assert out is not None
+    assert any(f["end"] == "2026-03-31" for f in out), \
+        "must pick the concept with the fresh 2026-03-31 fact"
+
+
+def test_match_concept_keeps_first_priority_when_second_has_no_quarterly_survivors():
+    """AAPL-pattern: `Revenues` exists with sparse FY-only / segment facts
+    that don't survive the quarterly period-length filter, while RFCWCEAT
+    has the full quarterly history. The original priority order was set
+    precisely to avoid `Revenues` here — confirm it still wins when
+    `Revenues` has 0 quarterly survivors."""
+    rfc_facts = [
+        {"end": "2026-03-28", "start": "2025-12-29", "val": 111_184_000_000,
+         "fy": 2026, "fp": "Q2", "form": "10-Q", "filed": "2026-05-01"},
+    ]
+    # `Revenues` only has annual / segment-level entries — no 80-100 day
+    # quarterly survivor.
+    sparse_revenues = [
+        {"end": "2024-09-28", "start": "2023-09-30", "val": 391_000_000_000,
+         "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01"},
+    ]
+    cf = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": _build_concept(rfc_facts),
+        "Revenues": _build_concept(sparse_revenues),
+    }}}
+    out = edgar._match_concept_facts(
+        cf,
+        ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"),
+        "USD",
+    )
+    assert out is not None
+    assert any(f["val"] == 111_184_000_000 for f in out), \
+        "must keep RFCWCEAT when Revenues has no quarterly survivors"
+
+
+def test_match_concept_falls_back_to_priority_order_when_no_quarterly_anywhere():
+    """All concepts have only annual / pre-IPO facts. Quarterly-recency rule
+    can't pick a winner — fall back to priority order so older annual code
+    paths still get the first-priority concept."""
+    annual_only_a = [
+        {"end": "2024-12-31", "start": "2024-01-01", "val": 1_000_000_000,
+         "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2025-02-15"},
+    ]
+    annual_only_b = [
+        {"end": "2024-12-31", "start": "2024-01-01", "val": 999_999_999,
+         "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2025-02-15"},
+    ]
+    cf = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": _build_concept(annual_only_a),
+        "Revenues": _build_concept(annual_only_b),
+    }}}
+    out = edgar._match_concept_facts(
+        cf,
+        ("RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"),
+        "USD",
+    )
+    assert out is not None
+    assert any(f["val"] == 1_000_000_000 for f in out), \
+        "first-priority concept wins when neither has quarterly survivors"

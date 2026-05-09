@@ -193,20 +193,65 @@ USD_PER_SHARE = "USD/shares"
 def _match_concept_facts(
     companyfacts: dict, candidates: tuple[str, ...], unit: str
 ) -> list[dict] | None:
-    """Walk `candidates` in order; return the first concept's `units[unit]`
-    fact list. None if no concept matches or matching concept lacks the unit."""
+    """Pick the candidate concept whose latest quarterly fact is most recent.
+
+    Naive priority order (return first concept with any facts) breaks when an
+    issuer switches XBRL tagging mid-history: the abandoned concept still has
+    older facts, so first-priority wins despite being stale. Verified against
+    SSR Mining (SSRM) which migrated from
+    `RevenueFromContractWithCustomerExcludingAssessedTax` to `Revenues` at
+    end of 2024 — naive selection returned Q4 2023 ($414M) instead of the
+    actual Q1 2026 ($582M) that lives under `Revenues`.
+
+    Selection rule:
+    1. For each candidate concept present with `unit`, find its latest
+       quarterly survivor's `end` date (after `_select_quarterly_facts`).
+    2. Pick the concept with the most-recent latest-quarterly. Ties go to
+       the candidate earlier in `candidates` (preserves the original
+       priority intent for cases where AAPL's sparse `Revenues` would
+       otherwise have to coexist with the consolidated RFCWCEAT — sparse
+       `Revenues` produces zero quarterly survivors, so RFCWCEAT wins
+       whenever a real history exists).
+    3. When no candidate has any quarterly survivor (annual-only / pre-IPO
+       data), fall back to the first candidate that has any facts.
+    Returns None if no candidate concept is present with `unit`.
+    """
     try:
         gaap = companyfacts["facts"]["us-gaap"]
     except (KeyError, TypeError):
         return None
+
+    candidate_facts: dict[str, list[dict]] = {}
+    candidate_latest_q: dict[str, str] = {}
     for name in candidates:
         concept = gaap.get(name)
         if not concept:
             continue
         units = concept.get("units") or {}
         facts = units.get(unit)
-        if facts:
-            return facts
+        if not facts:
+            continue
+        candidate_facts[name] = facts
+        quarterly = _select_quarterly_facts(facts)
+        if quarterly:
+            candidate_latest_q[name] = quarterly[-1].get("end") or ""
+
+    if not candidate_facts:
+        return None
+
+    if candidate_latest_q:
+        # max key: (latest_end, -priority_index) so a more-recent end wins
+        # outright, ties broken by lower index in `candidates` (= higher
+        # priority).
+        best = max(
+            candidate_latest_q,
+            key=lambda n: (candidate_latest_q[n], -candidates.index(n)),
+        )
+        return candidate_facts[best]
+
+    for name in candidates:
+        if name in candidate_facts:
+            return candidate_facts[name]
     return None
 
 
