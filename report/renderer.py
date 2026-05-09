@@ -1318,7 +1318,7 @@ def _render_cover(
     cats_count = len(breakdown)
     sec_count = len(enriched)
 
-    headline = "动能加速榜"
+    headline = "新晋强势榜"
 
     # The actual selling point gets a dedicated visual plate — large
     # monospace tickers, click-to-anchor into the per-ticker section.
