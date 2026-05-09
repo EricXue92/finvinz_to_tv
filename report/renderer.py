@@ -466,6 +466,17 @@ body {
   font-weight: 700;
   color: var(--ink);
 }
+/* Chinese emphasis: switch to sans-serif PingFang SC so the bold weight
+   actually renders visibly. Songti SC (the strap's serif Chinese fallback)
+   barely shifts at 700 because Chinese serifs ship few weight variants.
+   Sans + navy color makes the scope note pop without screaming red. */
+.cover-strap strong.cover-emph {
+  font-family: -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-weight: 700;
+  color: var(--navy);
+  letter-spacing: 0;
+}
 
 /* SECONDARY (18pt) — ticker plate. Same size as the hero subline but bold
    navy mono so it reads as the second visual hero, not the same voice. */
@@ -1355,14 +1366,14 @@ def _render_cover(
         strap = (
             "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
             "<strong>Kristjan Kullamägi</strong> 1-6 个月强势表现股票 "
-            "+ 抛物线做空策略筛选，经跨日去重，<strong>仅收录首次入选</strong>，"
+            "+ 抛物线做空策略筛选，经跨日去重，<strong class="cover-emph">仅收录首次入选</strong>，"
             f"由 <strong>{model_label}</strong> 撰写 CANSLIM 基本面简报。"
         )
     else:
         strap = (
             "基于 <strong>Oliver Kell</strong> 股价阶段分析与 "
             "<strong>Kristjan Kullamägi</strong> 1-6 个月强势表现股票 "
-            "+ 抛物线做空策略筛选，经跨日去重，<strong>仅收录首次入选</strong>，"
+            "+ 抛物线做空策略筛选，经跨日去重，<strong class="cover-emph">仅收录首次入选</strong>，"
             "逐个生成 CANSLIM 基本面简报。"
         )
 
