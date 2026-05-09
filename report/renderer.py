@@ -368,6 +368,252 @@ body {
     print-color-adjust: exact; }
 }
 
+/* --- Cover (editorial publication front matter) ----------------------------
+   Sits flush against the viewport edges (negative margin undoes body padding).
+   Cream linen background, native serif display type, hairline rules.
+   ------------------------------------------------------------------------ */
+.cover {
+  background: #F7F2E8;
+  margin: -32px -24px 56px;
+  padding: 84px 56px 64px;
+  min-height: calc(100vh - 32px);
+  position: relative;
+  border-bottom: 6px double var(--navy);
+  font-feature-settings: "kern", "liga", "onum";
+}
+.cover-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 220px);
+}
+/* Decorative corner mark — a thin navy bracket that anchors the page */
+.cover::before {
+  content: "";
+  position: absolute;
+  top: 28px;
+  left: 28px;
+  width: 48px;
+  height: 48px;
+  border-top: 2px solid var(--navy);
+  border-left: 2px solid var(--navy);
+  pointer-events: none;
+}
+.cover::after {
+  content: "";
+  position: absolute;
+  bottom: 28px;
+  right: 28px;
+  width: 48px;
+  height: 48px;
+  border-bottom: 2px solid var(--navy);
+  border-right: 2px solid var(--navy);
+  pointer-events: none;
+}
+
+/* Top eyebrow strip */
+.cover-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--navy);
+  font-weight: 600;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--navy);
+  margin-bottom: 72px;
+}
+.cover-mark {
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+}
+.cover-eyebrow-rule {
+  flex: 0 0 28px;
+  height: 1px;
+  background: var(--navy);
+}
+.cover-eyebrow-label { flex: 1; }
+.cover-issue {
+  letter-spacing: 0.18em;
+  color: #6B1A1F;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* Hero — market label + huge serif date + tagline */
+.cover-hero { margin-bottom: 56px; }
+.cover-market {
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+.cover-date {
+  font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
+    "Hoefler Text", Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  margin: 0;
+  line-height: 0.96;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cover-weekday {
+  font-style: italic;
+  font-size: 32px;
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0.005em;
+}
+.cover-monthday {
+  font-size: 86px;
+  letter-spacing: -0.025em;
+  font-weight: 500;
+  color: var(--navy);
+}
+.cover-year {
+  font-style: italic;
+  color: var(--muted);
+  font-weight: 400;
+}
+.cover-tagline {
+  margin-top: 28px;
+  max-width: 540px;
+  font-size: 16.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+}
+
+/* Stats band */
+.cover-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  border-top: 1px solid var(--navy);
+  border-bottom: 1px solid var(--navy);
+  padding: 22px 0;
+  margin-bottom: 52px;
+}
+.cover-stat { display: flex; align-items: baseline; gap: 14px; }
+.cover-stat-value {
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+}
+.cover-stat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+/* In-this-issue section */
+.cover-section { margin-bottom: 52px; }
+.cover-section-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+.cover-section-label {
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--navy);
+  font-weight: 700;
+}
+.cover-section-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+.cover-section-meta {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+.cover-breakdown {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+.cover-cat { page-break-inside: avoid; }
+.cover-cat-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.cover-cat-name {
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.cover-cat-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+  margin-bottom: 4px;
+}
+.cover-cat-count {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+.cover-cat-tickers {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  line-height: 1.65;
+  padding-left: 2px;
+}
+
+/* Colophon */
+.cover-colophon {
+  margin-top: auto;
+  padding-top: 32px;
+  border-top: 1px solid var(--navy);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 32px;
+}
+.cover-colophon-row {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.cover-colophon-key {
+  flex: 0 0 92px;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  padding-top: 2px;
+}
+.cover-colophon-val { flex: 1; }
+
 /* Narrow screens */
 @media (max-width: 720px) {
   body { padding: 18px 12px 48px; font-size: 14px; }
@@ -375,6 +621,28 @@ body {
   .quarterly { grid-template-columns: 1fr; gap: 12px; }
   .chart-row { grid-template-columns: 70px 1fr; gap: 8px; }
   .ticker-meta { margin-left: 0; flex-basis: 100%; }
+  .cover {
+    padding: 56px 24px 44px;
+    margin: -18px -12px 36px;
+    min-height: auto;
+  }
+  .cover::before, .cover::after { width: 32px; height: 32px; }
+  .cover-eyebrow { gap: 10px; flex-wrap: wrap; margin-bottom: 48px; }
+  .cover-monthday { font-size: 56px; }
+  .cover-weekday { font-size: 22px; }
+  .cover-stats { grid-template-columns: 1fr; gap: 16px; padding: 18px 0; }
+  .cover-stat-value { font-size: 36px; }
+  .cover-colophon { grid-template-columns: 1fr; }
+}
+
+@media print {
+  .cover {
+    background: #FFFFFF;
+    min-height: auto;
+    page-break-after: always;
+    border-bottom: none;
+  }
+  .cover-inner { min-height: auto; }
 }
 """
 
@@ -936,6 +1204,180 @@ def _render_truncated(truncated: list[tuple[str, str]]) -> str:
     )
 
 
+# --- Cover page --------------------------------------------------------------
+
+# Pretty labels for the per-category breakdown on the cover. Entries not
+# listed fall back to the raw key (e.g. "Shorts" stays "Shorts"). Keep this
+# in sync with the [futu.groups] keys / Finviz screener names.
+_GROUP_DISPLAY_LABEL: dict[str, str] = {
+    "EarningsGap": "Earnings Gap",
+    "HighVolume": "High Volume",
+    "GapUp": "Gap Up",
+    "NewHigh52W": "52-Week High",
+    "TopGainers": "Top Gainers",
+    "Leaders": "Leaders",
+    "Shorts": "Shorts",
+    "RS": "Relative Strength",
+    "IPO": "IPO",
+    "HKEarningsGap": "Earnings Gap",
+    "HKHighVolume": "High Volume",
+    "HKGapUp": "Gap Up",
+    "HKLeaders": "Leaders",
+    "HKRS": "Relative Strength",
+    "HKShorts": "Shorts",
+    "HKIPO": "IPO",
+    "MorningGap": "Morning Gap",
+    "MorningGapPre": "Pre-Market Gap",
+}
+
+_MARKET_FULL_NAME: dict[str, str] = {
+    "us": "United States",
+    "hk": "Hong Kong",
+}
+
+
+def _group_breakdown(
+    enriched: list[dict[str, Any]],
+) -> list[tuple[str, list[str]]]:
+    """Preserve the first-seen order from `enriched` (the ranker has
+    already arranged it in canonical priority order). Empty groups are
+    naturally absent because they contribute no rows."""
+    groups: dict[str, list[str]] = {}
+    for d in enriched:
+        g = d.get("group") or "Other"
+        groups.setdefault(g, []).append(d.get("ticker") or "?")
+    return [
+        (_GROUP_DISPLAY_LABEL.get(g, g), tickers)
+        for g, tickers in groups.items()
+    ]
+
+
+def _render_cover(
+    market: str,
+    date_iso: str,
+    enriched: list[dict[str, Any]],
+    truncated: list[tuple[str, str]],
+    generated_at: datetime,
+    model_label: str | None,
+) -> str:
+    """Editorial cover page: serif date hero, stats band, per-category
+    breakdown, colophon. Sits flush against the viewport edges."""
+    try:
+        report_date = datetime.fromisoformat(date_iso).date()
+    except (ValueError, TypeError):
+        report_date = generated_at.date()
+
+    weekday = report_date.strftime("%A")
+    # Use d.day instead of strftime("%-d") which is platform-specific
+    # (POSIX-only — breaks on Windows).
+    month = report_date.strftime("%B")
+    year = report_date.year
+    issue_no = report_date.timetuple().tm_yday
+
+    market_full = _MARKET_FULL_NAME.get(market.lower(), market.upper())
+
+    breakdown = _group_breakdown(enriched)
+    cats_count = len(breakdown)
+    sec_count = len(enriched)
+    trunc_count = len(truncated)
+
+    breakdown_html = "".join(
+        f'<div class="cover-cat">'
+        f'<div class="cover-cat-head">'
+        f'<span class="cover-cat-name">{label}</span>'
+        f'<span class="cover-cat-rule"></span>'
+        f'<span class="cover-cat-count">{len(tickers):02d} {("security" if len(tickers) == 1 else "securities")}</span>'
+        f'</div>'
+        f'<div class="cover-cat-tickers">{", ".join(tickers)}</div>'
+        f'</div>'
+        for label, tickers in breakdown
+    )
+    if not breakdown_html:
+        breakdown_html = (
+            '<div class="cover-cat-tickers" style="color:var(--muted)">'
+            'No qualifying securities for this run.</div>'
+        )
+
+    gen_time_str = generated_at.strftime("%Y-%m-%d %H:%M %Z")
+    model_line = (
+        f"Generated by {model_label}"
+        if model_label else "Generated by CANSLIM scan engine"
+    )
+
+    return (
+        '<section class="cover">'
+        '<div class="cover-inner">'
+        # --- top eyebrow ---
+        '<header class="cover-eyebrow">'
+        '<span class="cover-mark">FINVIZ → TV</span>'
+        '<span class="cover-eyebrow-rule"></span>'
+        '<span class="cover-eyebrow-label">Daily Equities Scan</span>'
+        f'<span class="cover-issue">Vol. {year} · No. {issue_no:03d}</span>'
+        '</header>'
+        # --- hero ---
+        '<div class="cover-hero">'
+        f'<div class="cover-market">{market_full} · Equities</div>'
+        '<h1 class="cover-date">'
+        f'<span class="cover-weekday">{weekday}</span>'
+        f'<span class="cover-monthday">{month} {report_date.day}'
+        f'<span class="cover-year">, {year}</span></span>'
+        '</h1>'
+        '<p class="cover-tagline">'
+        'Daily CANSLIM scan — quantitative screen results paired with '
+        'LLM-augmented fundamentals &amp; outlook briefs.'
+        '</p>'
+        '</div>'
+        # --- stats band ---
+        '<div class="cover-stats">'
+        '<div class="cover-stat">'
+        f'<div class="cover-stat-value">{sec_count:02d}</div>'
+        '<div class="cover-stat-label">Securities<br>analyzed</div>'
+        '</div>'
+        '<div class="cover-stat">'
+        f'<div class="cover-stat-value">{cats_count:02d}</div>'
+        '<div class="cover-stat-label">Screen<br>categories</div>'
+        '</div>'
+        '<div class="cover-stat">'
+        f'<div class="cover-stat-value">{trunc_count:02d}</div>'
+        '<div class="cover-stat-label">Truncated<br>(over cap)</div>'
+        '</div>'
+        '</div>'
+        # --- in this issue ---
+        '<section class="cover-section">'
+        '<header class="cover-section-head">'
+        '<span class="cover-section-label">In this issue</span>'
+        '<span class="cover-section-rule"></span>'
+        f'<span class="cover-section-meta">{sec_count} securities · '
+        f'{cats_count} categories</span>'
+        '</header>'
+        f'<div class="cover-breakdown">{breakdown_html}</div>'
+        '</section>'
+        # --- colophon ---
+        '<footer class="cover-colophon">'
+        '<div class="cover-colophon-row">'
+        '<span class="cover-colophon-key">Generated</span>'
+        f'<span class="cover-colophon-val">{model_line}</span>'
+        '</div>'
+        '<div class="cover-colophon-row">'
+        '<span class="cover-colophon-key">Timestamp</span>'
+        f'<span class="cover-colophon-val">{gen_time_str}</span>'
+        '</div>'
+        '<div class="cover-colophon-row">'
+        '<span class="cover-colophon-key">Data</span>'
+        '<span class="cover-colophon-val">SEC EDGAR · yfinance · '
+        'IBD RS Rating · Futu OpenAPI</span>'
+        '</div>'
+        '<div class="cover-colophon-row">'
+        '<span class="cover-colophon-key">Methodology</span>'
+        '<span class="cover-colophon-val">CANSLIM (W. O&apos;Neil) · '
+        'Oliver Kell · Kristjan Kullamägi</span>'
+        '</div>'
+        '</footer>'
+        '</div>'
+        '</section>'
+    )
+
+
 # --- Document-level renderers ------------------------------------------------
 
 def render_html_document(
@@ -978,7 +1420,16 @@ def render_html_document(
         'materially. GAAP is from SEC 10-Q. Adjusted is the consensus '
         'headline (yfinance "Reported EPS").</p>'
     ) if any(_is_eps_dual(d) for d in enriched) else ""
+    cover_html = _render_cover(
+        market=market,
+        date_iso=date_iso,
+        enriched=enriched,
+        truncated=truncated,
+        generated_at=generated_at,
+        model_label=model_label,
+    )
     body = (
+        f'{cover_html}'
         f'<div class="sheet">{masthead}{index_html}'
         f'{"".join(blocks)}{truncated_html}{eps_footnote_html}{footer_html}</div>'
     )

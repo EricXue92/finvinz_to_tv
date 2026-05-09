@@ -617,3 +617,101 @@ def test_html_footnote_absent_when_no_ticker_shows_dual_eps():
         generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
     )
     assert "EPS shows GAAP / Adjusted when they differ" not in html
+
+
+# --- Cover page --------------------------------------------------------------
+
+def test_html_cover_renders_date_hero_and_stats():
+    enriched = [
+        _fake_data("AKAM", "HighVolume"),
+        _fake_data("FLEX", "HighVolume"),
+        _fake_data("DDOG", "Leaders"),
+    ]
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-09",
+        enriched=enriched,
+        prose_sections=["### x\nbody"] * 3,
+        truncated=[("WMT", "RS")],
+        generated_at=datetime(2026, 5, 9, 16, 30, 0, tzinfo=HKT),
+        model_label="Anthropic Claude Sonnet 4.6",
+    )
+    # Editorial framing
+    assert 'class="cover"' in html
+    assert "FINVIZ → TV" in html
+    assert "Daily Equities Scan" in html
+    # Vol. YYYY · No. day-of-year (129 for May 9 in 2026)
+    assert "Vol. 2026 · No. 129" in html
+    # Market label
+    assert "United States · Equities" in html
+    # Hero date pieces
+    assert "Saturday" in html
+    assert "May 9" in html
+    assert "2026" in html
+    # Stats band — 3 securities, 2 categories, 1 truncated, all 2-digit zero-padded
+    assert ">03</div>" in html  # securities
+    assert ">02</div>" in html  # categories
+    assert ">01</div>" in html  # truncated
+    # Colophon
+    assert "Anthropic Claude Sonnet 4.6" in html
+    assert "SEC EDGAR" in html
+    assert "CANSLIM" in html
+
+
+def test_html_cover_groups_tickers_by_category_in_first_seen_order():
+    """Per-category breakdown must follow ranker's first-seen order, not
+    alphabetical or insertion-into-dict-by-Python-version."""
+    enriched = [
+        _fake_data("CORZ", "EarningsGap"),
+        _fake_data("AKAM", "HighVolume"),
+        _fake_data("FLEX", "HighVolume"),
+        _fake_data("DDOG", "Leaders"),
+        _fake_data("PENG", "NewHigh52W"),
+    ]
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-09",
+        enriched=enriched,
+        prose_sections=["### x\nbody"] * 5,
+        truncated=[],
+        generated_at=datetime(2026, 5, 9, 16, 30, 0, tzinfo=HKT),
+        model_label="Anthropic Claude Sonnet 4.6",
+    )
+    # Find the cover breakdown area; categories should appear in the
+    # ranker-given order (EarningsGap → HighVolume → Leaders → NewHigh52W).
+    cover_start = html.find('class="cover-breakdown"')
+    cover_end = html.find('class="cover-colophon"', cover_start)
+    breakdown = html[cover_start:cover_end]
+    # Category labels appear in this order:
+    pos_eg = breakdown.find("Earnings Gap")
+    pos_hv = breakdown.find("High Volume")
+    pos_ld = breakdown.find("Leaders")
+    pos_nh = breakdown.find("52-Week High")
+    assert pos_eg != -1 and pos_hv != -1 and pos_ld != -1 and pos_nh != -1
+    assert pos_eg < pos_hv < pos_ld < pos_nh
+    # HighVolume row groups its two tickers together, comma-separated
+    assert "AKAM, FLEX" in breakdown
+
+
+def test_html_cover_handles_empty_enriched():
+    """Cover still renders structurally (no crash) when no securities pass."""
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-09",
+        enriched=[], prose_sections=[], truncated=[],
+        generated_at=datetime(2026, 5, 9, 16, 30, 0, tzinfo=HKT),
+        model_label="Anthropic Claude Sonnet 4.6",
+    )
+    assert 'class="cover"' in html
+    assert ">00</div>" in html  # securities count
+    assert "No qualifying securities" in html
+
+
+def test_html_cover_market_label_handles_hk():
+    html = renderer.render_html_document(
+        market="hk", date_iso="2026-05-09",
+        enriched=[_fake_data("0700", "HKLeaders")],
+        prose_sections=["### x\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 9, 20, 30, 0, tzinfo=HKT),
+        model_label="DeepSeek V4 Pro",
+    )
+    assert "Hong Kong · Equities" in html
+    # HK group label translates the same as US Leaders
+    assert "Leaders" in html
