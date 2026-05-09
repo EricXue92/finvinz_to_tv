@@ -558,3 +558,31 @@ def test_html_quarterly_falls_back_to_single_eps_when_close():
     # Single-value mode: no GAAP/Adj suffix in the quarterly section.
     assert "GAAP /" not in html
     assert "/ $0.42 Adj" not in html
+
+
+def test_md_latest_quarter_shows_dual_eps_when_materially_different():
+    d = _fake_data("AKAM")
+    d["eps_latest_q"] = 0.71
+    d["eps_latest_q_yoy_pct"] = -13.41
+    d["eps_latest_q_adj"] = 1.61
+    d["eps_latest_q_adj_yoy_pct"] = -5.29
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "EPS $0.71 GAAP / $1.61 Adj (YoY GAAP -13.4% / Adj -5.3%)" in md
+
+
+def test_md_latest_quarter_falls_back_to_single_eps_when_close():
+    d = _fake_data("INOD")
+    d["eps_latest_q"] = 0.42
+    d["eps_latest_q_yoy_pct"] = 90.91
+    d["eps_latest_q_adj"] = 0.42
+    d["eps_latest_q_adj_yoy_pct"] = 90.91
+    md = renderer.render_markdown_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "EPS $0.42 (YoY +90.9%)" in md

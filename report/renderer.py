@@ -1061,25 +1061,28 @@ def _render_md_ticker(idx: int, d: dict[str, Any], prose: str) -> str:
     if d.get("group") == "IPO" and _has_no_fundamentals(d):
         return head + snap + _render_md_ipo_no_data_banner(d) + (prose.rstrip() + "\n")
 
-    eps = d.get("eps_latest_q")
-    eps_usable = isinstance(eps, (int, float)) and not (isinstance(eps, float) and math.isnan(eps))
-    eps_str = f"${eps:,.2f}" if eps_usable else "—"
-    rev_str = _fmt_money(d.get("revenue_latest_q"))
-    eps_yoy = d.get("eps_latest_q_yoy_pct")
-    rev_yoy = d.get("revenue_latest_q_yoy_pct")
-    if eps_yoy is None:
-        eps_yoy = d.get("yahoo_earnings_growth_yoy_pct")
-        eps_src = " (Yahoo)" if eps_yoy is not None else ""
+    eps_gaap = d.get("eps_latest_q")
+    eps_gaap_yoy = d.get("eps_latest_q_yoy_pct")
+    eps_adj = d.get("eps_latest_q_adj")
+    eps_adj_yoy = d.get("eps_latest_q_adj_yoy_pct")
+    if eps_gaap_yoy is None and not _eps_usable(eps_adj_yoy):
+        eps_gaap_yoy = d.get("yahoo_earnings_growth_yoy_pct")
+        eps_yoy_src = " (Yahoo)" if eps_gaap_yoy is not None else ""
     else:
-        eps_src = ""
+        eps_yoy_src = ""
+    rev_str = _fmt_money(d.get("revenue_latest_q"))
+    rev_yoy = d.get("revenue_latest_q_yoy_pct")
     if rev_yoy is None:
         rev_yoy = d.get("yahoo_revenue_growth_yoy_pct")
         rev_src = " (Yahoo)" if rev_yoy is not None else ""
     else:
         rev_src = ""
-    eps_seg = f"EPS {eps_str} (YoY {_fmt_pct(eps_yoy)}{eps_src})"
+    eps_val_str, eps_yoy_str = _format_eps_dual(
+        eps_gaap, eps_gaap_yoy, eps_adj, eps_adj_yoy
+    )
+    eps_seg = f"EPS {eps_val_str} ({eps_yoy_str}{eps_yoy_src})"
     rev_seg = f"Revenue {rev_str} (YoY {_fmt_pct(rev_yoy)}{rev_src})"
-    if _is_hot(eps_yoy, EPS_HOT_PCT):
+    if _is_hot(eps_gaap_yoy, EPS_HOT_PCT) or _is_hot(eps_adj_yoy, EPS_HOT_PCT):
         eps_seg = f"**{eps_seg}**"
     if _is_hot(rev_yoy, REVENUE_HOT_PCT):
         rev_seg = f"**{rev_seg}**"
