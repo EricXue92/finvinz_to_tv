@@ -704,13 +704,17 @@ def _is_eps_dual(d: dict[str, Any]) -> bool:
 
 
 def _render_quarterly(data: dict[str, Any]) -> str:
-    eps = data.get("eps_latest_q")
-    eps_yoy = data.get("eps_latest_q_yoy_pct")
-    if eps_yoy is None:
-        eps_yoy = data.get("yahoo_earnings_growth_yoy_pct")
-        eps_yoy_src = " (Yahoo)" if eps_yoy is not None else ""
-    else:
-        eps_yoy_src = ""
+    eps_gaap = data.get("eps_latest_q")
+    eps_gaap_yoy = data.get("eps_latest_q_yoy_pct")
+    eps_adj = data.get("eps_latest_q_adj")
+    eps_adj_yoy = data.get("eps_latest_q_adj_yoy_pct")
+    # Yahoo's pre-computed MRQ YoY is the coarsest fallback — only used when
+    # neither EDGAR (GAAP) nor yfinance earnings_dates (Adj) gave us a YoY.
+    eps_yoy_src = ""
+    if eps_gaap_yoy is None and not _eps_usable(eps_adj_yoy):
+        eps_gaap_yoy = data.get("yahoo_earnings_growth_yoy_pct")
+        eps_yoy_src = " (Yahoo)" if eps_gaap_yoy is not None else ""
+
     rev = data.get("revenue_latest_q")
     rev_yoy = data.get("revenue_latest_q_yoy_pct")
     if rev_yoy is None:
@@ -719,14 +723,28 @@ def _render_quarterly(data: dict[str, Any]) -> str:
     else:
         rev_yoy_src = ""
 
-    eps_usable = isinstance(eps, (int, float)) and not (isinstance(eps, float) and math.isnan(eps))
-    eps_str = f"${eps:,.2f}" if eps_usable else "—"
+    eps_val_str, eps_yoy_str = _format_eps_dual(
+        eps_gaap, eps_gaap_yoy, eps_adj, eps_adj_yoy
+    )
     rev_str = _fmt_money(rev)
 
-    eps_hot = " hot" if _is_hot(eps_yoy, EPS_HOT_PCT) else ""
+    # Hot pill triggers if EITHER GAAP or Adj YoY clears the threshold —
+    # don't drown a hot Adj signal because GAAP looks tame, or vice versa.
+    eps_hot = " hot" if (
+        _is_hot(eps_gaap_yoy, EPS_HOT_PCT) or _is_hot(eps_adj_yoy, EPS_HOT_PCT)
+    ) else ""
     rev_hot = " hot" if _is_hot(rev_yoy, REVENUE_HOT_PCT) else ""
+
+    # Pill positive/negative class follows the larger-magnitude YoY so a hot
+    # Adj number colours the pill correctly even when GAAP YoY is None.
+    pill_yoy = eps_gaap_yoy if eps_gaap_yoy is not None else eps_adj_yoy
+    if (
+        _eps_usable(eps_adj_yoy) and _eps_usable(eps_gaap_yoy)
+        and abs(eps_adj_yoy) > abs(eps_gaap_yoy)
+    ):
+        pill_yoy = eps_adj_yoy
     eps_pill = (
-        f'<div class="yoy {_yoy_class(eps_yoy)}{eps_hot}">YoY {_fmt_pct(eps_yoy)}{eps_yoy_src}</div>'
+        f'<div class="yoy {_yoy_class(pill_yoy)}{eps_hot}">{eps_yoy_str}{eps_yoy_src}</div>'
     )
     rev_pill = (
         f'<div class="yoy {_yoy_class(rev_yoy)}{rev_hot}">YoY {_fmt_pct(rev_yoy)}{rev_yoy_src}</div>'
@@ -734,7 +752,7 @@ def _render_quarterly(data: dict[str, Any]) -> str:
     return (
         f'<section class="quarterly">'
         f'<div><div class="qtr-label">Latest Quarter — EPS</div>'
-        f'<div class="metric-value{eps_hot}">{eps_str}</div>{eps_pill}</div>'
+        f'<div class="metric-value{eps_hot}">{eps_val_str}</div>{eps_pill}</div>'
         f'<div><div class="qtr-label">Latest Quarter — Revenue</div>'
         f'<div class="metric-value{rev_hot}">{rev_str}</div>{rev_pill}</div>'
         f"</section>"
