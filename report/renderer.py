@@ -438,19 +438,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* HEADLINE (28pt) — single-line methodology statement, the value prop */
+/* MASTHEAD (52pt) — short Chinese masthead title, set as a publication
+   nameplate. With only 3-5 characters, it carries presence at this size
+   while leaving room for the strap line beneath. */
 .cover-hero { margin-bottom: 14mm; }
 .cover-headline {
   font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
     "Hoefler Text", Georgia,
     "Songti SC", "STSong", "PingFang SC", "Hiragino Sans GB", serif;
   margin: 0;
-  font-size: 28pt;
+  font-size: 52pt;
   font-weight: 500;
-  letter-spacing: -0.005em;
-  line-height: 1.25;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
   color: var(--ink);
-  max-width: 165mm;
 }
 .cover-strap {
   margin: 6mm 0 0;
@@ -654,7 +655,7 @@ body {
     flex-wrap: wrap;
     margin-bottom: 10mm;
   }
-  .cover-headline { font-size: 20pt; }
+  .cover-headline { font-size: 36pt; }
   .cover-strap { font-size: 10.5pt; }
   .cover-disclaimer { font-size: 7pt; max-width: none; }
   .cover-plate {
@@ -1317,7 +1318,7 @@ def _render_cover(
     cats_count = len(breakdown)
     sec_count = len(enriched)
 
-    headline = "按照 Oliver Kell + Kristjan Kullamägi 的选股策略"
+    headline = "动能加速榜"
 
     # The actual selling point gets a dedicated visual plate — large
     # monospace tickers, click-to-anchor into the per-ticker section.

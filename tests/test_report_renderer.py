@@ -647,7 +647,7 @@ def test_html_cover_hero_leads_with_methodology_not_date():
     assert "2026.05.09 · 周六" in html
 
     # Hero is the methodology statement — count removed entirely.
-    assert "按照 Oliver Kell + Kristjan Kullamägi 的选股策略" in html
+    assert "动能加速榜" in html
     assert "3 支股票" not in html  # large count headline removed
 
     # Strap names both methodology authors with their respective
@@ -721,7 +721,7 @@ def test_html_cover_handles_empty_enriched():
         model_label="Anthropic Claude Sonnet 4.6",
     )
     assert 'class="cover"' in html
-    assert "按照 Oliver Kell + Kristjan Kullamägi 的选股策略" in html
+    assert "动能加速榜" in html
     assert "本期暂无符合条件的股票" in html
 
 
