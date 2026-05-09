@@ -399,3 +399,78 @@ def test_fetch_ticker_data_calls_edgar_when_exchange_is_empty_string():
          patch("report.enrich.fetch_edgar_fundamentals", side_effect=_track):
         enrich.fetch_ticker_data("FLEX", "HighVolume", "", rs_lookup=lambda t: 97)
     assert edgar_calls["n"] == 1
+
+
+def test_fetch_ticker_data_extracts_adjusted_eps_from_earnings_dates():
+    """yfinance earnings_dates has 'Reported EPS' column = consensus/Adjusted
+    convention. We extract latest past row + same row 4 entries earlier for
+    YoY. EDGAR GAAP fields stay independent."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "AKAM-mock", "currentPrice": 100, "previousClose": 99}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    idx = pd.to_datetime([
+        "2026-08-06 16:00", "2026-05-07 16:00", "2026-02-19 16:00",
+        "2025-11-06 16:00", "2025-08-07 16:00", "2025-05-08 16:00",
+    ], utc=True)
+    fake_ticker.earnings_dates = pd.DataFrame(
+        {"EPS Estimate": [1.61, 1.60, 1.75, 1.64, 1.53, 1.57],
+         "Reported EPS": [float("nan"), 1.61, 1.84, 1.86, 1.73, 1.70],
+         "Surprise(%)": [float("nan"), 0.35, 5.12, 13.71, 13.18, 8.58]},
+        index=idx,
+    )
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None), \
+         patch("report.enrich.pd.Timestamp.now", return_value=pd.Timestamp("2026-05-09", tz="UTC")):
+        data = enrich.fetch_ticker_data("AKAM", "Leaders", "NASDAQ", rs_lookup=lambda t: 90)
+    assert data["eps_latest_q_adj"] == pytest.approx(1.61)
+    assert data["eps_latest_q_adj_yoy_pct"] == pytest.approx(-5.294, rel=0.01)
+
+
+def test_fetch_ticker_data_adj_eps_handles_nan_latest_row():
+    """Reported EPS is NaN for the just-released earnings (financial calendar
+    sometimes lags by hours). Adj fields should be None (not NaN), so the
+    renderer falls back to GAAP-only display."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "T", "currentPrice": 100, "previousClose": 99}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    idx = pd.to_datetime([
+        "2026-05-08 16:00", "2026-02-08 16:00", "2025-11-08 16:00",
+        "2025-08-08 16:00", "2025-05-08 16:00",
+    ], utc=True)
+    fake_ticker.earnings_dates = pd.DataFrame(
+        {"EPS Estimate": [0.50, 0.45, 0.40, 0.35, 0.30],
+         "Reported EPS": [float("nan"), 0.46, 0.41, 0.36, 0.31],
+         "Surprise(%)": [float("nan"), 2.0, 2.5, 2.5, 3.0]},
+        index=idx,
+    )
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None), \
+         patch("report.enrich.pd.Timestamp.now", return_value=pd.Timestamp("2026-05-09", tz="UTC")):
+        data = enrich.fetch_ticker_data("T", "EarningsGap", "NASDAQ", rs_lookup=lambda t: 90)
+    assert data["eps_latest_q_adj"] is None
+    assert data["eps_latest_q_adj_yoy_pct"] is None
+
+
+def test_fetch_ticker_data_adj_eps_missing_prior_year_row():
+    """Only 3 past rows = no row 4 entries earlier. Latest is set; YoY None."""
+    fake_ticker = MagicMock()
+    fake_ticker.info = {"longName": "T", "currentPrice": 100, "previousClose": 99}
+    fake_ticker.quarterly_income_stmt = pd.DataFrame()
+    fake_ticker.income_stmt = pd.DataFrame()
+    idx = pd.to_datetime([
+        "2026-05-08 16:00", "2026-02-08 16:00", "2025-11-08 16:00",
+    ], utc=True)
+    fake_ticker.earnings_dates = pd.DataFrame(
+        {"EPS Estimate": [0.50, 0.45, 0.40],
+         "Reported EPS": [0.55, 0.46, 0.41],
+         "Surprise(%)": [10.0, 2.0, 2.5]},
+        index=idx,
+    )
+    with patch("report.enrich.yf.Ticker", return_value=fake_ticker), \
+         patch("report.enrich.fetch_edgar_fundamentals", return_value=None), \
+         patch("report.enrich.pd.Timestamp.now", return_value=pd.Timestamp("2026-05-09", tz="UTC")):
+        data = enrich.fetch_ticker_data("T", "Leaders", "NASDAQ", rs_lookup=lambda t: 90)
+    assert data["eps_latest_q_adj"] == pytest.approx(0.55)
+    assert data["eps_latest_q_adj_yoy_pct"] is None

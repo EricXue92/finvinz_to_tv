@@ -195,6 +195,12 @@ def fetch_ticker_data(
         "eps_latest_q_yoy_pct": None,
         "revenue_latest_q": None,
         "revenue_latest_q_yoy_pct": None,
+        # Company-Adjusted EPS from yfinance earnings_dates "Reported EPS"
+        # (consensus convention used by TV's earnings widget). EDGAR's
+        # eps_latest_q stays GAAP. See spec
+        # docs/superpowers/specs/2026-05-09-eps-gaap-adj-display-design.md.
+        "eps_latest_q_adj": None,
+        "eps_latest_q_adj_yoy_pct": None,
         # Annual earnings increases — past 5 fiscal years of YoY (CANSLIM "A")
         "annual_eps_yoy_5y": [None, None, None, None, None],
         "annual_revenue_yoy_5y": [None, None, None, None, None],
@@ -245,8 +251,27 @@ def fetch_ticker_data(
                 past = ed[ed.index <= pd.Timestamp.now(tz=ed.index.tz)]
                 if not past.empty:
                     data["latest_earnings_date"] = past.index.max()
-        except Exception:
-            pass
+                    # Reported EPS is yfinance's term for the consensus-reported
+                    # (Adjusted) headline number. earnings_dates is sorted
+                    # newest→oldest, so the latest past row is the first row
+                    # of `past`; the same fiscal quarter one year prior sits
+                    # 4 rows further down. NaN on the latest row (financial
+                    # calendar lag) → leave Adj None and let the renderer
+                    # fall back to GAAP-only display rather than misrender
+                    # last quarter as "latest".
+                    past_sorted = past.sort_index(ascending=False)
+                    if "Reported EPS" in past_sorted.columns:
+                        latest_adj = past_sorted["Reported EPS"].iloc[0]
+                        if pd.notna(latest_adj):
+                            data["eps_latest_q_adj"] = float(latest_adj)
+                            if len(past_sorted) > 4:
+                                prior_adj = past_sorted["Reported EPS"].iloc[4]
+                                if pd.notna(prior_adj):
+                                    data["eps_latest_q_adj_yoy_pct"] = compute_yoy(
+                                        float(latest_adj), float(prior_adj)
+                                    )
+        except Exception as e:
+            logger.warning(f"[enrich] {ticker}: earnings_dates parse failed: {e}")
         if data["latest_earnings_date"] is None:
             data["latest_earnings_date"] = info.get("mostRecentQuarter")
         # Yahoo's pre-computed MRQ YoY — fallback when quarterly_income_stmt
