@@ -368,143 +368,117 @@ body {
     print-color-adjust: exact; }
 }
 
-/* --- Cover (editorial trader's tearsheet, Chinese with English proper nouns)
-   Hero is the methodology + curated stock count, not the date.
-   Cream linen ground, navy ink, oxblood accent on the issue stamp.
-   Native serif stack with Songti SC fallback for Chinese glyph coverage.
+/* --- Cover (A4 paper format, editorial trader's tearsheet) -----------------
+   Fixed 210 × 297 mm sheet on cream paper with drop shadow. Strict 5-level
+   modular type scale (48pt / 18pt / 11pt / 9pt / 8pt) so the page reads as
+   one composition, not a stack of unrelated rows. mm-based vertical rhythm
+   (4 / 8 / 12 / 18) keeps spacing harmonious at print scale.
    ------------------------------------------------------------------------ */
 .cover {
+  width: 210mm;
+  min-height: 297mm;
+  max-width: 100%;
+  margin: 8px auto 56px;
+  padding: 20mm 22mm;
   background: #F7F2E8;
-  margin: -32px -24px 56px;
-  padding: 84px 56px 64px;
-  min-height: calc(100vh - 32px);
   position: relative;
-  border-bottom: 6px double var(--navy);
   font-feature-settings: "kern", "liga", "onum";
-}
-.cover-inner {
-  max-width: 920px;
-  margin: 0 auto;
+  font-size: 11pt;
+  line-height: 1.5;
+  color: var(--ink);
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 220px);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 14px 36px rgba(0, 0, 0, 0.10);
 }
-.cover::before, .cover::after {
-  content: "";
-  position: absolute;
-  width: 48px;
-  height: 48px;
-  pointer-events: none;
+.cover-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
-.cover::before {
-  top: 28px; left: 28px;
-  border-top: 2px solid var(--navy);
-  border-left: 2px solid var(--navy);
-}
-.cover::after {
-  bottom: 28px; right: 28px;
-  border-bottom: 2px solid var(--navy);
-  border-right: 2px solid var(--navy);
-}
-
-/* Top eyebrow strip — section label · hairline · issue + date */
+/* MICRO (8pt) — eyebrow strip */
 .cover-eyebrow {
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 11.5px;
+  gap: 4mm;
+  font-size: 8pt;
   letter-spacing: 0.18em;
   color: var(--navy);
-  font-weight: 600;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--navy);
-  margin-bottom: 72px;
-}
-.cover-eyebrow-label {
   font-weight: 700;
+  padding-bottom: 4mm;
+  border-bottom: 0.75px solid var(--navy);
+  margin-bottom: 14mm;
 }
 .cover-eyebrow-rule {
   flex: 1;
-  height: 1px;
+  height: 0.75px;
   background: var(--navy);
 }
 .cover-eyebrow-issue {
   letter-spacing: 0.14em;
   color: #6B1A1F;
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
 }
 
-/* Hero — '11 支股票' + '依 Kell + Kullamägi 法精选' + strap line */
-.cover-hero { margin-bottom: 32px; }
+/* DISPLAY (48pt) + SECONDARY (18pt) — hero block */
+.cover-hero { margin-bottom: 14mm; }
 .cover-headline {
   font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
     "Hoefler Text", Georgia,
-    "Songti SC", "STSong", "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", serif;
-  font-weight: 500;
+    "Songti SC", "STSong", "PingFang SC", "Hiragino Sans GB", serif;
   margin: 0;
   line-height: 1.05;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 3mm;
 }
-.cover-headline-line { display: block; }
 .cover-headline-line:first-child {
-  font-size: 88px;
-  letter-spacing: -0.022em;
-  color: var(--ink);
+  font-size: 48pt;
   font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 .cover-headline-sub {
-  font-size: 26px;
-  letter-spacing: 0.005em;
-  color: var(--muted);
+  font-size: 18pt;
   font-weight: 400;
-  line-height: 1.25;
+  color: var(--muted);
+  letter-spacing: 0;
+  line-height: 1.3;
 }
 .cover-strap {
-  margin: 36px 0 0;
-  max-width: 620px;
+  margin: 6mm 0 0;
+  max-width: 145mm;
   font-family: "Iowan Old Style", "Hoefler Text", Georgia,
     "Songti SC", "STSong", "PingFang SC", serif;
-  font-size: 17px;
-  line-height: 1.65;
+  font-size: 11pt;
+  line-height: 1.6;
   color: var(--ink-soft);
 }
 .cover-strap strong {
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: -0.005em;
 }
 
-/* Section dividers — single hairline, no extra ornament */
-.cover-divider {
-  height: 1px;
-  background: var(--rule);
-  margin: 36px 0;
-}
-
-/* Ticker plate — the actual deliverable foregrounded as visual hero #2.
-   Each cell is large monospace, click-to-anchor link into the body. */
+/* SECONDARY (18pt) — ticker plate. Same size as the hero subline but bold
+   navy mono so it reads as the second visual hero, not the same voice. */
 .cover-plate {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 6px 18px;
-  padding: 8px 0;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1mm 6mm;
+  margin-bottom: 14mm;
 }
 .cover-plate-ticker {
-  font-family: "SF Mono", "Menlo", "Consolas", monospace;
-  font-size: 28px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 18pt;
   font-weight: 700;
-  letter-spacing: 0.015em;
+  letter-spacing: 0.01em;
   color: var(--navy);
   text-decoration: none;
-  padding: 10px 2px;
-  border-bottom: 2px solid transparent;
-  transition: border-color 0.18s ease, color 0.18s ease;
+  padding: 2.5mm 0.5mm;
+  border-bottom: 1px solid transparent;
   font-variant-numeric: tabular-nums;
-  display: inline-block;
+  transition: color 0.15s, border-color 0.15s;
 }
 .cover-plate-ticker:hover {
   color: #6B1A1F;
@@ -513,132 +487,129 @@ body {
 .cover-plate-empty {
   font-style: italic;
   color: var(--muted);
-  font-size: 16px;
-  font-family: "Iowan Old Style", "Hoefler Text", Georgia,
-    "Songti SC", serif;
+  font-size: 11pt;
+  grid-column: 1 / -1;
+  font-family: "Iowan Old Style", "Hoefler Text", Georgia, "Songti SC", serif;
 }
 
-/* In-this-issue section */
-.cover-section { margin: 0; }
+/* MICRO (8pt) labels + BODY (11pt) cat names + CAPTION (9pt) ticker lists */
+.cover-section { margin: 0 0 8mm; }
 .cover-section-head {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 22px;
+  gap: 4mm;
+  margin-bottom: 4mm;
 }
 .cover-section-label {
-  font-size: 11.5px;
+  font-size: 8pt;
   letter-spacing: 0.22em;
   color: var(--navy);
   font-weight: 700;
 }
 .cover-section-rule {
   flex: 1;
-  height: 1px;
-  background: var(--rule);
+  height: 0.75px;
+  background: #C9C2B5;
 }
 .cover-section-meta {
-  font-size: 11.5px;
-  color: var(--muted);
+  font-size: 8pt;
   letter-spacing: 0.06em;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .cover-breakdown {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4mm;
 }
 .cover-cat { page-break-inside: avoid; }
 .cover-cat-head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  margin-bottom: 5px;
+  gap: 3mm;
+  margin-bottom: 1mm;
 }
 .cover-cat-name {
   font-family: "Iowan Old Style", "Hoefler Text", Georgia, serif;
-  font-size: 18px;
+  font-size: 11pt;
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: 0.005em;
 }
 .cover-cat-rule {
   flex: 1;
-  height: 1px;
-  background: var(--rule);
-  margin-bottom: 4px;
+  height: 0.75px;
+  background: #C9C2B5;
+  margin-bottom: 1mm;
 }
 .cover-cat-count {
   font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11.5px;
+  font-size: 9pt;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 .cover-cat-tickers {
   font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 13px;
-  letter-spacing: 0.04em;
+  font-size: 9pt;
+  letter-spacing: 0.03em;
   color: var(--ink);
-  line-height: 1.65;
-  padding-left: 2px;
+  line-height: 1.6;
 }
 
-/* Colophon — methodology block (left, prose) + meta rows (right) */
+/* Colophon — methodology block (BODY 10pt) + meta rows (CAPTION 9pt) */
 .cover-colophon {
   margin-top: auto;
-  padding-top: 32px;
-  border-top: 1px solid var(--navy);
+  padding-top: 8mm;
+  border-top: 0.75px solid var(--navy);
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-  gap: 20px 56px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 6mm 12mm;
 }
 .cover-colophon-key {
-  font-size: 10px;
+  font-size: 8pt;
   letter-spacing: 0.22em;
   color: var(--muted);
   font-weight: 700;
 }
 .cover-colophon-meth .cover-colophon-key {
   display: block;
-  margin-bottom: 14px;
+  margin-bottom: 4mm;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", sans-serif;
 }
 .cover-colophon-meth-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 3mm;
   font-family: "Iowan Old Style", "Hoefler Text", Georgia,
     "Songti SC", "PingFang SC", serif;
-  font-size: 13.5px;
+  font-size: 10pt;
   line-height: 1.55;
   color: var(--ink-soft);
 }
 .cover-meth-author {
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: -0.005em;
 }
 .cover-colophon-meta {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 3mm;
 }
 .cover-colophon-meta .cover-colophon-row {
   display: flex;
-  gap: 14px;
-  font-size: 12px;
-  line-height: 1.5;
+  gap: 3mm;
+  font-size: 9pt;
+  line-height: 1.45;
   color: var(--ink-soft);
 }
 .cover-colophon-meta .cover-colophon-key {
-  flex: 0 0 80px;
-  padding-top: 2px;
+  flex: 0 0 22mm;
+  padding-top: 0.5mm;
 }
 .cover-colophon-val { flex: 1; }
 
-/* Narrow screens */
+/* Narrow screens — cover loses A4 framing, becomes fluid */
 @media (max-width: 720px) {
   body { padding: 18px 12px 48px; font-size: 14px; }
   .sheet { padding: 0; }
@@ -646,26 +617,26 @@ body {
   .chart-row { grid-template-columns: 70px 1fr; gap: 8px; }
   .ticker-meta { margin-left: 0; flex-basis: 100%; }
   .cover {
-    padding: 56px 24px 44px;
-    margin: -18px -12px 36px;
+    width: auto;
     min-height: auto;
+    margin: -18px -12px 36px;
+    padding: 14mm 8mm;
+    box-shadow: none;
   }
-  .cover::before, .cover::after { width: 32px; height: 32px; }
   .cover-eyebrow {
-    gap: 10px;
+    gap: 3mm;
     flex-wrap: wrap;
-    margin-bottom: 44px;
-    font-size: 10.5px;
+    margin-bottom: 10mm;
   }
-  .cover-headline-line:first-child { font-size: 52px; }
-  .cover-headline-sub { font-size: 19px; }
-  .cover-strap { font-size: 15.5px; }
+  .cover-headline-line:first-child { font-size: 32pt; }
+  .cover-headline-sub { font-size: 14pt; }
+  .cover-strap { font-size: 10.5pt; }
   .cover-plate {
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    gap: 4px 12px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1mm 4mm;
   }
-  .cover-plate-ticker { font-size: 22px; padding: 8px 2px; }
-  .cover-colophon { grid-template-columns: 1fr; gap: 24px; }
+  .cover-plate-ticker { font-size: 14pt; padding: 2mm 0.5mm; }
+  .cover-colophon { grid-template-columns: 1fr; gap: 4mm; }
 }
 
 @media print {
@@ -1391,12 +1362,10 @@ def _render_cover(
         '</h1>'
         f'<p class="cover-strap">{strap}</p>'
         '</div>'
-        '<div class="cover-divider"></div>'
         # --- ticker plate: the actual deliverable, foregrounded as the
         #     visual second hero. Each ticker links to its in-document
         #     anchor for click-through.
         f'<div class="cover-plate">{plate_html}</div>'
-        '<div class="cover-divider"></div>'
         # --- per-category breakdown ---
         '<section class="cover-section">'
         '<header class="cover-section-head">'
@@ -1406,7 +1375,6 @@ def _render_cover(
         '</header>'
         f'<div class="cover-breakdown">{breakdown_html}</div>'
         '</section>'
-        '<div class="cover-divider"></div>'
         # --- colophon: methodology attribution (left, larger) plus
         #     metadata rows (right, smaller). Reads like a publication
         #     masthead: gives the buyer the full provenance trail.
