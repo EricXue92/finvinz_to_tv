@@ -586,3 +586,34 @@ def test_md_latest_quarter_falls_back_to_single_eps_when_close():
         generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
     )
     assert "EPS $0.42 (YoY +90.9%)" in md
+
+
+def test_html_footnote_appears_when_any_ticker_shows_dual_eps():
+    """Footnote appears once when at least one ticker uses the dual form."""
+    d_dual = _fake_data("AKAM")
+    d_dual["eps_latest_q"] = 0.71
+    d_dual["eps_latest_q_yoy_pct"] = -13.41
+    d_dual["eps_latest_q_adj"] = 1.61
+    d_dual["eps_latest_q_adj_yoy_pct"] = -5.29
+    d_single = _fake_data("INOD")
+    d_single["eps_latest_q"] = 0.42
+    d_single["eps_latest_q_yoy_pct"] = 90.91
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d_dual, d_single],
+        prose_sections=["### 公司速览\nbody", "### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "EPS shows GAAP / Adjusted when they differ" in html
+    assert html.count("EPS shows GAAP / Adjusted when they differ") == 1
+
+
+def test_html_footnote_absent_when_no_ticker_shows_dual_eps():
+    d = _fake_data("INOD")
+    d["eps_latest_q"] = 0.42
+    d["eps_latest_q_yoy_pct"] = 90.91
+    html = renderer.render_html_document(
+        market="us", date_iso="2026-05-07", enriched=[d],
+        prose_sections=["### 公司速览\nbody"], truncated=[],
+        generated_at=datetime(2026, 5, 7, 10, 5, 0, tzinfo=HKT),
+    )
+    assert "EPS shows GAAP / Adjusted when they differ" not in html
