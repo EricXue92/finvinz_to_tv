@@ -45,6 +45,7 @@ def notify_morning_gap(
     total: int,
     config: dict,
     promoted: list[str] | None = None,
+    market: str = "US",
 ) -> None:
     """Push ntfy alert(s) for a morning-gap scan.
 
@@ -57,7 +58,9 @@ def notify_morning_gap(
         config: full parsed config.toml dict. Reads [notify] section.
         promoted: tickers that appeared in pre-market and are now first-confirmed
             post-open (post-open volume gate just crossed). Fires a separate
-            high-priority alert. Always empty for pre-market scans.
+            high-priority alert. Always empty for pre-market scans and for
+            HK (HK has no pre phase).
+        market: "US" or "HK" — controls the title prefix only.
     """
     promoted = promoted or []
     if not new_tickers and not promoted:
@@ -75,14 +78,15 @@ def notify_morning_gap(
     server = notify_cfg.get("ntfy_server", "https://ntfy.sh").rstrip("/")
     max_in_body = int(notify_cfg.get("max_tickers_in_body", 10))
     sign = "" if offset_min < 0 else "+"
+    prefix = "HK Morning Gap" if market == "HK" else "Morning Gap"
 
     if new_tickers:
-        title = f"Morning Gap {sign}{offset_min}min · {len(new_tickers)} new"
+        title = f"{prefix} {sign}{offset_min}min · {len(new_tickers)} new"
         body = _format_body(new_tickers, max_in_body, total)
         _ntfy_post(server, topic, title, body, priority="default")
 
     if promoted:
-        title = f"Morning Gap {sign}{offset_min}min · {len(promoted)} PROMOTED"
+        title = f"{prefix} {sign}{offset_min}min · {len(promoted)} PROMOTED"
         body = (
             _format_body(promoted, max_in_body, total)
             + " · pre-market gap confirmed by RTH volume"

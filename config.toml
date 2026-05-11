@@ -50,6 +50,7 @@ append_only_groups = [
     "HKLeaders",
     "HKRS",
     "HKIPO",
+    "HKMorningGap",
 ]
 
 [futu.groups]
@@ -78,6 +79,9 @@ hk_rs                 = "HKRS"
 # HK IPO sidecar — short-history HK Main Board listings that don't have
 # 12 months of yfinance data yet. Independent cross-day master.
 hk_ipo                = "HKIPO"
+# HK morning-gap (post-open intraday scanner, mirror of US morning_gap).
+# HK has no pre-auction data via Futu snapshot, so there is no _pre variant.
+hk_morning_gap        = "HKMorningGap"
 
 # --- Longs: 5 个子策略，按 list 顺序内部互斥去重，每个单独输出。
 # 优先级 (高 → 低): EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers
@@ -253,6 +257,29 @@ scan_offsets = [-20, -10, -5, 5, 10, 15, 20, 25, 30]
 offset_tolerance_minutes = 2
 # ADR% filter is inherited from [settings] (min_adr_percent / adr_days).
 # Override here if a different threshold is desired for morning-gap only.
+
+# --- HK Morning Gap (盘后扫描,无盘前) ---
+# 港股没有 US 式的盘前数据 (Futu 快照 pre_change_rate / pre_volume 对 HK
+# 全部返回 N/A,验证日 2026-05-11),所以只有盘后扫描:09:30 HKT 开盘后
+# +5/+10/+15/+20/+25/+30 分钟。gap = (last_price - prev_close_price) / prev_close。
+# Universe = HKEX 主板 (~2,400),通过 Futu basicinfo 拉取。
+# 基线门槛对齐 HK 长仓 ([hk_settings]): cap≥HK$300M、价≥HK$20、20日均量
+# ≥500K 股、20日均成交额≥HK$100M、ADR≥3.5%、收盘价站上 SMA50+SMA200。
+# 之后过滤累计量:盘中累计 volume ≥ 20 日均量 (Futu 快照 volume 字段是
+# 当日 RTH 累计,非 pre/after)。无 yfinance 1m fallback (HK 1m 数据不稳)。
+[hk_morning_gap]
+name = "HK Morning Gap Up"
+exchanges = ["HK_MAINBOARD"]
+min_gap_percent = 5.0           # 同 US
+min_market_cap = 300_000_000    # HKD,与 [hk_settings] 长仓基线一致
+min_price = 20.0                # HKD,与 [hk_settings] 长仓基线一致
+min_avg_volume = 500_000        # 20日股数/天
+avg_volume_days = 20
+min_dollar_volume = 100_000_000 # HKD,20日均量 × 最新收盘
+scan_offsets = [10, 20, 30, 40, 50, 60]
+offset_tolerance_minutes = 2
+# min_adr_percent / adr_days 默认继承 [hk_settings] (3.5% / 20d);
+# 也可在这里覆盖。
 
 # --- 推送通知 (ntfy.sh) ---
 # Morning-gap 扫描发现"新"票时推送到 phone + Mac 浏览器。

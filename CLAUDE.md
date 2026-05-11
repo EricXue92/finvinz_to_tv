@@ -9,7 +9,8 @@ uv sync                              # Install dependencies
 uv run main.py                       # Full EOD (US + HK) — ad-hoc only; production splits these
 uv run main.py --mode us-eod         # US only (Longs/Leaders/Shorts/RS/IPO) — 10:00 HKT slot
 uv run main.py --mode hk-eod         # HK only (Shorts + Longs/Leaders/RS)   — 20:00 HKT slot
-uv run main.py --mode morning-gap    # intraday gap scan; auto-detects ET window, exits clean outside
+uv run main.py --mode morning-gap    # US intraday gap scan; auto-detects ET window, exits clean outside
+uv run main.py --mode hk-morning-gap # HK intraday gap scan (post-open only); auto-detects HKT window, exits clean outside
 uv run pytest tests/ -v              # Unit tests (HK pure-logic helpers)
 ```
 
@@ -49,6 +50,7 @@ Python tool: `main.py` (entry point + US EOD/morning-gap orchestration), `hk_eod
 
 Switch via `[report] backend = "deepseek"` in `config.toml`. Per-backend tuning (model name, max_tokens, search call limits) lives under `[report.anthropic]` / `[report.deepseek]`. The factory `build_backend()` raises a clear error when required env vars are missing — `__main__.py` catches and soft-fails the same way as missing `ANTHROPIC_API_KEY`. Snapshot fields stay in English/numbers; qualitative sections are in Chinese. 4xx API errors (bad key/model) fail fast with a distinct `[配置错误]` placeholder; 5xx/429/timeouts retry once before falling back to `[分析失败]`. Shorts, HK Shorts, and Morning Gap are intentionally excluded (technical/intraday plays, fundamentals are not the deciding signal).
 - **Morning Gap** (`--mode morning-gap` only; `[morning_gap]` config): Intraday gap-up scanner. **Pre-market** (-20/-10 min) → `MorningGapPre.txt`; **post-open** (+10/+15/+20/+25/+30 min) → `MorningGap.txt`. Phase 1 = Futu snapshot universe scan (NASDAQ/NYSE/AMEX, cap ≥ $300M, price ≥ $10, gap ≥ 5%). Phase 2 = yfinance DV/ADR/SMA/avg-vol + Futu intraday cumulative volume (post-open only; ≥ 20-day avg daily volume). Per-day, **per-phase** seen files at `output/state/morning_gap_seen_pre_<date>.txt` and `morning_gap_seen_post_<date>.txt` — pre-market and post-open dedup independently so a ticker pushed in pre-market can still trigger a post-open alert. Both files merge into the append-only `EarningsGap` Futu group. **Requires OpenD** — no Finviz fallback. Each scan fires up to two ntfy pushes via `notify.py`: a regular **"N new"** alert for tickers brand-new to the phase, and a high-priority **"N PROMOTED"** alert listing pre-market gappers that have just crossed the post-open RTH cumulative-volume gate (volume confirmation of a pre-market gap).
+- **HK Morning Gap** (`--mode hk-morning-gap`; `[hk_morning_gap]` config): HK intraday gap-up scanner — **post-open only** (+10/+20/+30/+40/+50/+60 min after 09:30 HKT, i.e. 09:40/09:50/10:00/10:10/10:20/10:30) → `output/TV/HK/<date>_HKMorningGap.txt`. **No pre-market phase**: Futu snapshot returns `pre_change_rate` / `pre_volume` / `pre_price` = `N/A` for all HK tickers regardless of time-of-day (verified 2026-05-11 — HK pre-auction IEP is not exposed by the snapshot API at our Lv1 account permission). Phase 1 = Futu basicinfo (HK_MAINBOARD universe, ~3,300 after delisting filter) + snapshot batch (cap ≥ HK$300M, price ≥ HK$20, gap ≥ 5%; gap derived from `(last_price - prev_close_price) / prev_close_price`). Phase 2 = yfinance daily 1y → 20d avg dollar volume ≥ HK$100M, ADR% ≥ 3.5%, above SMA50+SMA200, 20d avg volume ≥ 500K. Phase 3 = Futu snapshot `volume` field (today's RTH cumulative) ≥ 20-day avg daily volume — no yfinance 1m fallback (HK 1m data is unreliable; OpenD is already required upstream so a second source of truth would just complicate failure modes). Per-day seen file `output/state/hk_morning_gap_seen_post_<date>.txt` (no pre-phase variant). Independent append-only Futu group `HKMorningGap` (not merged into `HKEarningsGap` — HKEarningsGap is the EOD pattern-based proxy, semantically distinct from intraday gappers). ntfy title prefix is `"HK Morning Gap"`. PROMOTED alert never fires (no pre phase). Output ticker format is TradingView `HKEX:N` (leading zeros stripped) to match the rest of the HK pipeline.
 
 **Key mechanisms:**
 - Each run writes **only** date-stamped files (e.g. `2026_04_21_Shorts.txt`). There is no un-dated "latest" copy.
@@ -67,9 +69,11 @@ Switch via `[report] backend = "deepseek"` in `config.toml`. Per-backend tuning 
 
 **Scheduling (HK EOD):** Runs Mon-Fri 20:00 HKT via launchd (`~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist` → `scripts/run_hk_eod.sh` → `main.py --mode hk-eod`). HK market closes at 16:00 HKT; the 20:00 slot leaves 4 hours of slack for k-line data to finalize. No `pmset` wake — the user's Mac is typically awake at 20:00, and launchd fires immediately on next wake if asleep. Logs to `output/launchd_HK.log`.
 
-**Modes:** `eod` (default; full US+HK run, useful for ad-hoc), `us-eod` (US only — used by the 10:00 HKT slot), `hk-eod` (HK only — used by the 20:00 HKT slot), `morning-gap` (intraday gap scanner).
+**Modes:** `eod` (default; full US+HK run, useful for ad-hoc), `us-eod` (US only — used by the 10:00 HKT slot), `hk-eod` (HK only — used by the 20:00 HKT slot), `morning-gap` (US intraday gap scanner), `hk-morning-gap` (HK intraday gap scanner; post-open only).
 
 **Scheduling (morning-gap):** `~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist` fires 90 calendar entries/week (Mon-Fri × 9 ET offsets × EDT/EST). One-shot pmset wakes are scheduled by `sudo uv run scripts/schedule_morning_gap_wakes.py` (re-run weekly). The script self-validates ET on each trigger and exits cleanly outside any window — DO NOT add a hard error path here; missed wakes are silent by design.
+
+**Scheduling (hk-morning-gap):** Template plist `scripts/com.xue.finviz-to-tv.hk-morning-gap.plist` fires 30 entries/week (Mon-Fri × 6 HKT offsets at 09:40/09:50/10:00/10:10/10:20/10:30). HKT has no DST so EDT/EST split is not needed. No `pmset` wake required (user's Mac is typically awake during HK morning); if asleep, launchd fires on next wake. Wrapper `scripts/run_hk_morning_gap.sh` rotates `output/launchd_HK_morning_gap.log` daily. To install: `cp scripts/com.xue.finviz-to-tv.hk-morning-gap.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-morning-gap.plist`. Same self-validation contract as the US plist: `_get_hkt_scan_offset` returns None outside the window and the run exits cleanly.
 
 ## IBD Relative Strength Rating
 
@@ -108,7 +112,7 @@ Uses `finviz` package (web scraping, no API key needed):
 
 **Prerequisites (must be done by the user, once):**
 1. Install & launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in with the user's Futu account. Default listens on `127.0.0.1:11111`.
-2. In the Futu PC client, manually create the 16 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO`, `HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`, `HKIPO`. **The API cannot create groups — it can only modify existing custom groups.** The earnings-gap, pre-market and post-open morning-gap scans all sync into the single append-only `EarningsGap` group.
+2. In the Futu PC client, manually create the 17 custom watchlist groups: `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `HKShorts`, `IPO`, `HKEarningsGap`, `HKHighVolume`, `HKGapUp`, `HKLeaders`, `HKRS`, `HKIPO`, `HKMorningGap`. **The API cannot create groups — it can only modify existing custom groups.** The earnings-gap, pre-market and post-open morning-gap scans all sync into the single append-only `EarningsGap` group; HK morning-gap goes to its own `HKMorningGap` (not merged into `HKEarningsGap`).
 3. The morning-gap scan now **requires** OpenD running — discovery is
    Futu-snapshot based (it no longer depends on Finviz). With OpenD down,
    `--mode morning-gap` writes empty `.txt` files and skips the Futu sync,
@@ -125,6 +129,7 @@ append_only_groups = [
     "EarningsGap", "HighVolume", "GapUp", "NewHigh52W", "TopGainers",
     "Leaders", "Shorts", "RS", "HKShorts", "IPO",
     "HKEarningsGap", "HKHighVolume", "HKGapUp", "HKLeaders", "HKRS",
+    "HKMorningGap",
 ]
 
 [futu.groups]
@@ -146,6 +151,7 @@ hk_longs_high_volume  = "HKHighVolume"
 hk_longs_gap_up       = "HKGapUp"
 hk_leaders            = "HKLeaders"
 hk_rs                 = "HKRS"
+hk_morning_gap        = "HKMorningGap"   # post-open HK intraday gappers
 ```
 
 **Ticker format conversion (`_to_futu_code`):**

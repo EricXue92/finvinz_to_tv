@@ -22,6 +22,7 @@ from finviz.screener import Screener
 import openpyxl
 
 from futu_sync import (
+    discover_hk_morning_gap_candidates,
     discover_morning_gap_candidates,
     get_market_caps_futu,
     intraday_cumulative_volume_futu,
@@ -67,9 +68,14 @@ def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
     )
 
 
-def _morning_gap_seen_path(output_dir: Path, today: str, phase: str) -> Path:
-    """Per-phase seen file. `phase` is 'pre' or 'post'. Auto-resets daily."""
-    return output_dir / "state" / f"morning_gap_seen_{phase}_{today}.txt"
+def _morning_gap_seen_path(
+    output_dir: Path, today: str, phase: str, market: str = "US"
+) -> Path:
+    """Per-phase seen file. `phase` is 'pre' or 'post'. Auto-resets daily.
+    HK morning-gap (post-open only) uses a separate `hk_morning_gap_seen_*`
+    prefix to keep US and HK state independent."""
+    prefix = "hk_morning_gap_seen" if market == "HK" else "morning_gap_seen"
+    return output_dir / "state" / f"{prefix}_{phase}_{today}.txt"
 
 
 def _read_seen_set(path: Path) -> set[str]:
@@ -98,6 +104,7 @@ def _morning_gap_classify(
     tickers: list[str],
     output_dir: Path,
     is_pre: bool,
+    market: str = "US",
 ) -> tuple[list[str], list[str]]:
     """Categorize tickers vs phase-specific seen sets and update seen file.
 
@@ -110,11 +117,13 @@ def _morning_gap_classify(
       - Post-open: fresh = tickers brand-new today (not in pre OR post seen);
         promoted = tickers that were in pre seen but appear in post for the
         first time today (volume gate just confirmed a pre-market gapper).
+        For HK there is no pre phase (Futu does not expose HK pre-auction
+        fields), so promoted is always empty.
 
     Side effect: appends `tickers` to the matching phase's seen file.
     """
-    pre_path = _morning_gap_seen_path(output_dir, today, "pre")
-    post_path = _morning_gap_seen_path(output_dir, today, "post")
+    pre_path = _morning_gap_seen_path(output_dir, today, "pre", market)
+    post_path = _morning_gap_seen_path(output_dir, today, "post", market)
     pre_seen = _read_seen_set(pre_path)
     current = set(tickers)
 
@@ -610,6 +619,168 @@ def run_morning_gap(
             f"(yfinance, offset={offset}m)"
         )
 
+    return offset, final
+
+
+def _get_hkt_scan_offset(
+    scan_offsets: list[int], tolerance_minutes: int
+) -> int | None:
+    """HK equivalent of `_get_et_scan_offset`. Offset is minutes relative to
+    9:30 HKT (market open). HK has a 12:00–13:00 lunch break, but morning-gap
+    only schedules positive offsets up to +30, so the lunch break is not a
+    concern. Returns None if outside any window or weekend."""
+    now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    if now_hk.weekday() >= 5:
+        return None
+    market_open_hk = now_hk.replace(hour=9, minute=30, second=0, microsecond=0)
+    minutes_since_open = (now_hk - market_open_hk).total_seconds() / 60
+    if (
+        minutes_since_open < min(scan_offsets) - tolerance_minutes
+        or minutes_since_open > max(scan_offsets) + tolerance_minutes
+    ):
+        return None
+    best = min(scan_offsets, key=lambda o: abs(o - minutes_since_open))
+    if abs(best - minutes_since_open) <= tolerance_minutes:
+        return best
+    return None
+
+
+def run_hk_morning_gap(
+    config: dict, futu_cfg: dict | None = None
+) -> tuple[int | None, list[str]]:
+    """Run the HK morning-gap scan (post-open only).
+
+    HK does not expose pre-auction fields via Futu snapshot, so there is no
+    pre-market phase here. Scan offsets are positive minutes after 9:30 HKT
+    market open (typically +10/+20/+30/+40/+50/+60).
+
+    Returns (offset, tickers_in_yfinance_format), or (None, []) if outside
+    any scan window. Tickers are e.g. `["0700.HK", "1810.HK"]` — the caller
+    converts to TradingView `HKEX:N` before writing.
+    """
+    scan_offsets = config.get("scan_offsets", [10, 20, 30, 40, 50, 60])
+    tolerance = config.get("offset_tolerance_minutes", 2)
+    offset = _get_hkt_scan_offset(scan_offsets, tolerance)
+    if offset is None:
+        logger.info("[HK Morning Gap] Not in scan window, exiting")
+        return None, []
+
+    logger.info(f"[HK Morning Gap] Running for offset +{offset}min")
+
+    # Phase 1: Futu HK snapshot-based discovery — cap / price / gap.
+    # Discovery returns yfinance-format tickers (e.g. "0700.HK").
+    futu_host = (futu_cfg or {}).get("host", "127.0.0.1")
+    futu_port = (futu_cfg or {}).get("port", 11111)
+    discovery = discover_hk_morning_gap_candidates(
+        min_gap_pct=config.get("min_gap_percent", 5.0),
+        min_market_cap=config.get("min_market_cap", 300_000_000),
+        min_price=config.get("min_price", 20.0),
+        exchanges=config.get("exchanges", ["HK_MAINBOARD"]),
+        host=futu_host,
+        port=futu_port,
+    )
+    if discovery is None:
+        logger.warning(
+            "[HK Morning Gap] Futu discovery failed (OpenD unreachable or "
+            "API error), skipping run"
+        )
+        return offset, []
+    tickers = discovery
+    logger.info(f"  Found {len(tickers)} tickers from Futu HK snapshot discovery")
+    if not tickers:
+        return offset, []
+
+    # Phase 2: yfinance daily for 1y (needed for SMA200) — also feeds the
+    # dollar-volume / ADR% / avg-vol filters which look at the trailing
+    # ~20-30 bars.
+    daily_data = _yf_download_with_retry(
+        tickers, period="1y", interval="1d", progress=False,
+        group_by="ticker", threads=False,
+    )
+    if daily_data is None or daily_data.empty:
+        logger.warning("  Daily yfinance download failed, exiting")
+        return offset, []
+
+    now_hk = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    market_open = True  # always trim today's partial bar
+    today_hk = now_hk.date()
+
+    # Phase 3: Dollar volume filter (HK$100M default — matches long-side baseline)
+    min_dv = config.get("min_dollar_volume", 0)
+    if min_dv > 0:
+        tickers = _filter_dollar_volume_from_data(
+            tickers, daily_data, min_dv, market_open, today_hk, len(tickers) == 1
+        )
+        logger.info(f"  {len(tickers)} after dollar volume filter (>= HK${min_dv:,.0f})")
+    if not tickers:
+        return offset, []
+
+    # Phase 3b: ADR% filter
+    min_adr = config.get("min_adr_percent", 0)
+    if min_adr > 0:
+        adr_days = config.get("adr_days", 20)
+        tickers = _filter_adr_percent(
+            tickers, daily_data, min_adr, adr_days, today_hk
+        )
+        logger.info(f"  {len(tickers)} after ADR% filter (>= {min_adr}%, {adr_days}d)")
+    if not tickers:
+        return offset, []
+
+    # Phase 3c: SMA50/SMA200 trend gate
+    tickers = _filter_sma_trend(tickers, daily_data, today_hk)
+    logger.info(f"  {len(tickers)} after SMA50/SMA200 trend filter")
+    if not tickers:
+        return offset, []
+
+    # Phase 3d: 20-day average volume gate (500K shares/day default)
+    min_avg_vol = config.get("min_avg_volume", 500_000)
+    avg_days = config.get("avg_volume_days", 20)
+    tickers = _filter_avg_volume(
+        tickers, daily_data, min_avg_vol, avg_days, today_hk
+    )
+    logger.info(
+        f"  {len(tickers)} after 20d avg volume filter (>= {min_avg_vol:,.0f} shares)"
+    )
+    if not tickers:
+        return offset, []
+
+    # Phase 4: Compute 20-day avg daily volume per ticker for the cumulative gate
+    single = len(tickers) == 1
+    avg_daily_volumes: dict[str, float] = {}
+    for ticker in tickers:
+        try:
+            if single:
+                volumes = daily_data["Volume"].dropna()
+            else:
+                volumes = daily_data[ticker]["Volume"].dropna()
+            volumes = _trim_today(volumes, market_open, today_hk)
+            if len(volumes) < avg_days:
+                continue
+            avg_daily_volumes[ticker] = float(volumes.iloc[-avg_days:].mean())
+        except (KeyError, TypeError):
+            continue
+
+    tickers = [t for t in tickers if t in avg_daily_volumes]
+    logger.info(f"  {len(tickers)} have sufficient 20-day daily volume data")
+    if not tickers:
+        return offset, []
+
+    # Phase 5: Cumulative-volume gate via Futu HK snapshot. No yfinance 1m
+    # fallback — HK 1m yfinance data is unreliable, and discovery already
+    # requires OpenD anyway, so a single source of truth keeps it simple.
+    final = intraday_cumulative_volume_futu(
+        tickers, avg_daily_volumes,
+        host=futu_host, port=futu_port, market="HK",
+    )
+    if final is None:
+        logger.warning(
+            "  Futu cumulative-volume gate failed — emitting pre-gate list"
+        )
+        return offset, tickers
+    logger.info(
+        f"  {len(final)} after intraday cumulative volume filter "
+        f"(Futu HK, offset={offset}m)"
+    )
     return offset, final
 
 
@@ -1159,12 +1330,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=["eod", "us-eod", "hk-eod", "morning-gap", "report"],
+        choices=["eod", "us-eod", "hk-eod", "morning-gap", "hk-morning-gap", "report"],
         default="eod",
         help="eod: full end-of-day run (US + HK). "
              "us-eod: US only (Longs/Leaders/Shorts/RS/IPO) — for the morning HKT slot when HK market is mid-session. "
              "hk-eod: HK only (Shorts + Longs/Leaders/RS) — for the evening HKT slot after HK market closes. "
-             "morning-gap: intraday gap-up scanner. "
+             "morning-gap: US intraday gap-up scanner. "
+             "hk-morning-gap: HK intraday gap-up scanner (post-open only — Futu does not expose HK pre-auction fields). "
              "report: generate CANSLIM Markdown+HTML report from today's dated .txt files (requires --market).",
     )
     parser.add_argument(
@@ -1190,6 +1362,7 @@ def main() -> int:
         "us-eod": "End-of-Day (US only)",
         "hk-eod": "End-of-Day (HK only)",
         "morning-gap": "Morning-Gap",
+        "hk-morning-gap": "Morning-Gap (HK)",
     }.get(args.mode, args.mode)
     banner = f"  RUN {now_hkt.strftime('%Y-%m-%d %A %H:%M %Z')}  |  mode={mode_label}  "
     bar = "═" * (len(banner) + 2)
@@ -1586,6 +1759,55 @@ def main() -> int:
         if fresh or promoted:
             notify_morning_gap(
                 fresh, offset, len(sorted_tickers), config, promoted=promoted
+            )
+
+        logger.info("Done.")
+        return 0
+
+    if args.mode == "hk-morning-gap":
+        morning_cfg = config.get("hk_morning_gap")
+        if not morning_cfg:
+            logger.error("[HK Morning Gap] No [hk_morning_gap] config section found")
+            return 1
+        # Inherit ADR settings from [hk_settings] if not overridden — HK
+        # long-side baseline is min_adr_percent=3.5, lower than US's 4.0.
+        hk_settings = config.get("hk_settings") or {}
+        morning_cfg.setdefault("min_adr_percent", hk_settings.get("min_adr_percent", 3.5))
+        morning_cfg.setdefault("adr_days", hk_settings.get("adr_days", 20))
+
+        _log_section(f"[HK Morning Gap] Running: {morning_cfg['name']}")
+        try:
+            offset, yf_tickers = run_hk_morning_gap(
+                morning_cfg, futu_cfg=config.get("futu") or {}
+            )
+        except Exception as e:
+            logger.warning(f"[HK Morning Gap] Failed: {e}")
+            return 1
+
+        if offset is None:
+            return 0  # Outside scan window — not an error
+
+        # Convert yfinance format "0700.HK" → TradingView "HKEX:700"
+        # (leading zeros stripped — TradingView rejects HKEX:0148 imports).
+        def _yf_to_tv(yf: str) -> str:
+            stripped = yf.replace(".HK", "").lstrip("0")
+            return f"HKEX:{stripped or '0'}"
+
+        tv_tickers = sorted({_yf_to_tv(t) for t in yf_tickers})
+        dated = hk_output_dir / f"{today}_HKMorningGap.txt"
+        write_watchlist(tv_tickers, dated, fmt)
+        logger.info(
+            f"[HK Morning Gap] +{offset}min: {len(tv_tickers)} tickers -> {dated}"
+        )
+        _write_webull(tv_tickers, dated, output_dir)
+        _futu_sync(config, "hk_morning_gap", tv_tickers, "HK")
+        fresh, _ = _morning_gap_classify(
+            today, tv_tickers, output_dir, is_pre=False, market="HK"
+        )
+        if fresh:
+            notify_morning_gap(
+                fresh, offset, len(tv_tickers), config,
+                promoted=[], market="HK",
             )
 
         logger.info("Done.")

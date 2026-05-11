@@ -206,8 +206,9 @@ def intraday_cumulative_volume_futu(
     avg_daily_volumes: dict[str, float],
     host: str = "127.0.0.1",
     port: int = 11111,
+    market: Literal["US", "HK"] = "US",
 ) -> list[str] | None:
-    """Filter US tickers whose today's RTH cumulative volume >= their 20-day
+    """Filter tickers whose today's RTH cumulative volume >= their 20-day
     average daily volume. Reads ``volume`` from ``get_market_snapshot`` —
     that field is today's regular-session cumulative (separate from
     ``pre_volume`` / ``after_volume``), so calling it at e.g. 09:50 ET
@@ -233,7 +234,7 @@ def intraday_cumulative_volume_futu(
 
     code_to_ticker: dict[str, str] = {}
     for t in tickers:
-        c = _to_futu_code(t, "US")
+        c = _to_futu_code(t, market)
         if c:
             code_to_ticker[c] = t
     if not code_to_ticker:
@@ -480,6 +481,119 @@ def discover_morning_gap_candidates(
         return survivors
     except Exception as e:
         logger.warning(f"  Futu discovery: unexpected error — {e}")
+        return None
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+
+
+def discover_hk_morning_gap_candidates(
+    min_gap_pct: float,
+    min_market_cap: float,
+    min_price: float,
+    exchanges: list[str],
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> list[str] | None:
+    """Discover HK morning-gap candidates via Futu snapshot (post-open only).
+
+    HK does not have a US-style pre-market session — Futu snapshot fields
+    ``pre_change_rate`` / ``pre_volume`` / ``pre_price`` return ``N/A`` for
+    all HK tickers regardless of time-of-day (verified 2026-05-11). HK's
+    pre-auction (09:00–09:20 HKT) IEP/IEV are not exposed by the snapshot
+    API at our account permission level. So this function only does the
+    post-open path: gap = (last_price - prev_close_price) / prev_close_price.
+
+    Returns plain HK tickers in yfinance format (e.g. ``"0700.HK"``) to feed
+    directly into the existing HK yfinance metrics pipeline. Returns ``None``
+    on any failure.
+    """
+    try:
+        from futu import OpenQuoteContext, RET_OK, Market, SecurityType
+    except ImportError:
+        logger.warning("  Futu HK discovery: futu-api not installed")
+        return None
+
+    if not _opend_reachable(host, port):
+        logger.warning(f"  Futu HK discovery: OpenD not reachable at {host}:{port}")
+        return None
+
+    exchanges_set = set(exchanges)
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        ret, basic = ctx.get_stock_basicinfo(
+            market=Market.HK, stock_type=SecurityType.STOCK
+        )
+        if ret != RET_OK:
+            logger.warning(f"  Futu HK discovery: get_stock_basicinfo failed — {basic}")
+            return None
+        if basic is None or len(basic) == 0:
+            logger.warning("  Futu HK discovery: empty basicinfo result")
+            return None
+
+        # Probe (2026-05-11): `delisting` is bool for HK basicinfo too — all
+        # False on a healthy day. Filter by exchange_type whitelist (defaults
+        # to HK_MAINBOARD; ~2,400 names) and drop delisted rows.
+        mask = (
+            basic["exchange_type"].isin(exchanges_set)
+            & (basic["delisting"] == False)  # noqa: E712
+        )
+        codes = basic.loc[mask, "code"].tolist()
+        logger.info(
+            f"  Futu HK discovery: basicinfo={len(basic)} "
+            f"after exchange/delisting filter={len(codes)}"
+        )
+        if not codes:
+            return []
+
+        survivors: list[str] = []
+        BATCH = 400
+        for i in range(0, len(codes), BATCH):
+            batch = codes[i:i + BATCH]
+            ret, snap = ctx.get_market_snapshot(batch)
+            if ret != RET_OK:
+                logger.warning(
+                    f"  Futu HK discovery: snapshot batch {i}-{i + len(batch)} "
+                    f"failed — {snap}"
+                )
+                return None
+            for _, row in snap.iterrows():
+                code = row.get("code")
+                if not code or not code.startswith("HK."):
+                    continue
+                try:
+                    cap = float(row.get("total_market_val", 0) or 0)
+                    price = float(row.get("last_price", 0) or 0)
+                    prev_close = float(row.get("prev_close_price", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if cap < min_market_cap or price < min_price or prev_close <= 0:
+                    continue
+                gap = (price - prev_close) / prev_close * 100.0
+                if gap < min_gap_pct:
+                    continue
+                # Strip "HK." prefix and convert "HK.00700" → "0700.HK" so
+                # the result feeds directly into yfinance (HK pipeline uses
+                # the 4-digit + ".HK" form; TV/Futu conversion happens later).
+                num_part = code[len("HK."):]
+                try:
+                    n = int(num_part)
+                except ValueError:
+                    continue
+                survivors.append(f"{n:04d}.HK")
+
+        logger.info(
+            f"  Futu HK discovery: {len(survivors)} candidates "
+            f"(post-open, gap>={min_gap_pct}%, "
+            f"cap>=HK${min_market_cap:,.0f}, price>=HK${min_price:.2f})"
+        )
+        return survivors
+    except Exception as e:
+        logger.warning(f"  Futu HK discovery: unexpected error — {e}")
         return None
     finally:
         if ctx is not None:
