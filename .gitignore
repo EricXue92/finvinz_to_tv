@@ -6,6 +6,8 @@ __pycache__/
 .DS_Store
 .playwright-mcp/
 /20[0-9][0-9]_*.txt
+/20[0-9][0-9]_*.md
+/20[0-9][0-9]_*.html
 .worktrees/
 .env
 .env.*
