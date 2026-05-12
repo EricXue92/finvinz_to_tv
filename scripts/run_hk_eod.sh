@@ -29,11 +29,25 @@ fi
 UV=/Users/xue/.local/bin/uv
 PROJECT=/Users/xue/finviz_to_tv
 
-"$UV" run --directory "$PROJECT" main.py --mode hk-eod
-# Under `set -e`, a non-zero EOD exits the script here; the report only runs on
-# success. EOD_STATUS is preserved so launchd sees the EOD's true exit code
-# even if the report step (below) is reached and itself fails.
+# Hard wall-clock cap — HK pulls ~2,400 tickers from yfinance + Futu snapshots,
+# any of which can hang on a half-closed socket (see run_eod.sh comment). HK
+# legitimately takes longer than US so the default ceiling is higher. macOS
+# has no `timeout`; `set -m` puts the job in its own pgrp so the watchdog can
+# kill uv's python grandchild along with the parent.
+EOD_TIMEOUT=${EOD_TIMEOUT:-2700}
+set +e
+set -m
+"$UV" run --directory "$PROJECT" main.py --mode hk-eod &
+EOD_PID=$!
+set +m
+( sleep "$EOD_TIMEOUT" && kill -TERM "-$EOD_PID" 2>/dev/null \
+    && sleep 15 && kill -KILL "-$EOD_PID" 2>/dev/null ) &
+WATCHDOG_PID=$!
+wait "$EOD_PID"
 EOD_STATUS=$?
+kill "$WATCHDOG_PID" 2>/dev/null
+wait "$WATCHDOG_PID" 2>/dev/null
+set -e
 
 # Report is a soft side-effect; failures here must not turn the EOD run red.
 set +e
