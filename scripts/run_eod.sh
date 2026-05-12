@@ -40,11 +40,27 @@ fi
 UV=/Users/xue/.local/bin/uv
 PROJECT=/Users/xue/finviz_to_tv
 
-"$UV" run --directory "$PROJECT" main.py --mode us-eod
-# Under `set -e`, a non-zero EOD exits the script here; the report only runs on
-# success. EOD_STATUS is preserved so launchd sees the EOD's true exit code
-# even if the report step (below) is reached and itself fails.
+# Hard wall-clock cap for the EOD step. A real run is ~3-5 min; anything past
+# 30 min means a hung socket (observed 2026-05-12: finviz scrape stuck inside
+# SSL read() for 50+ min because the `finviz` lib sets no socket timeout, and
+# launchd has no kill timer of its own). macOS ships no `timeout`, so we
+# `set -m` to put the backgrounded job in its own process group, then a
+# watchdog sends SIGTERM (escalates to SIGKILL) to the whole group so uv's
+# python grandchild dies with its parent instead of leaking.
+EOD_TIMEOUT=${EOD_TIMEOUT:-1800}
+set +e
+set -m
+"$UV" run --directory "$PROJECT" main.py --mode us-eod &
+EOD_PID=$!
+set +m
+( sleep "$EOD_TIMEOUT" && kill -TERM "-$EOD_PID" 2>/dev/null \
+    && sleep 15 && kill -KILL "-$EOD_PID" 2>/dev/null ) &
+WATCHDOG_PID=$!
+wait "$EOD_PID"
 EOD_STATUS=$?
+kill "$WATCHDOG_PID" 2>/dev/null
+wait "$WATCHDOG_PID" 2>/dev/null
+set -e
 
 # Report is a soft side-effect; failures here must not turn the EOD run red.
 set +e
