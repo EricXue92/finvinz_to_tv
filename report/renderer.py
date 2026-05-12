@@ -931,7 +931,7 @@ def _render_snapshot(data: dict[str, Any]) -> str:
             gap_val = f"{_fmt_pct(gap)}  (prev close ${prev:,.2f} → ${last:,.2f})"
         else:
             gap_val = _fmt_pct(gap)
-    rows.append(("Gap (today)", gap_val, _yoy_class(gap) if gap is not None else ""))
+    rows.append(("Gap", gap_val, _yoy_class(gap) if gap is not None else ""))
     rs = data.get("rs_percentile")
     rows.append(("RS Percentile", str(rs) if rs is not None else "—", ""))
     inst = data.get("institutional_holdings_pct")

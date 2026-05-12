@@ -10,6 +10,7 @@ returned as None without overwriting EDGAR data.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 from typing import Any, Callable
 
@@ -167,14 +168,50 @@ def extract_annual_yoy_3y(
     return extract_annual_yoy(df, row_label, years_back=3)
 
 
+def _close_pair_as_of(ticker: str, t: "yf.Ticker", as_of: _dt.date) -> tuple[float | None, float | None]:
+    """Return (close_on_as_of, close_on_prior_trading_day) from the yfinance
+    daily history, anchored to `as_of`. Falls back to (None, None) on any error
+    or when the history doesn't contain at least one bar on/before `as_of`.
+
+    The report is *for* the screening date — at ad-hoc run-time `info["currentPrice"]`
+    is today's intraday tape, not the screening day's close, which made Gap show
+    'today vs prev close' instead of 'close on report-date vs prior trading day'."""
+    try:
+        start = as_of - _dt.timedelta(days=30)
+        end_excl = as_of + _dt.timedelta(days=1)
+        hist = t.history(start=start.isoformat(), end=end_excl.isoformat(), auto_adjust=False)
+    except Exception as e:
+        logger.warning(f"[enrich] {ticker}: history pull for {as_of} failed: {e}")
+        return (None, None)
+    if hist is None or hist.empty:
+        return (None, None)
+    idx = hist.index
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    mask = idx.normalize() <= pd.Timestamp(as_of)
+    hist = hist.loc[mask]
+    if hist.empty:
+        return (None, None)
+    last = float(hist["Close"].iloc[-1])
+    prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else None
+    return (last, prev)
+
+
 def fetch_ticker_data(
     ticker: str,
     group: str,
     exchange: str,
     rs_lookup: Callable[[str], int | None],
+    as_of_date: _dt.date | None = None,
 ) -> dict[str, Any]:
     """Build the structured dict for one ticker. Per-field try/except so a
-    yfinance schema drift on one attribute does not blank the whole record."""
+    yfinance schema drift on one attribute does not blank the whole record.
+
+    `as_of_date` (when set) anchors `last_price` / `prev_close` / `gap_pct` to
+    the screening day's daily close + prior trading day's close instead of
+    yfinance's live `info` snapshot. Ad-hoc report runs (e.g. HK report at 11 AM
+    HKT against yesterday's files) would otherwise mis-report Gap as today's
+    intraday move vs yesterday's close."""
     data: dict[str, Any] = {
         "ticker": ticker,
         "group": group,
@@ -231,8 +268,13 @@ def fetch_ticker_data(
         data["sector"] = info.get("sector")
         data["industry"] = info.get("industry")
         data["market_cap"] = info.get("marketCap")
-        data["last_price"] = info.get("currentPrice") or info.get("regularMarketPrice")
-        data["prev_close"] = info.get("previousClose")
+        if as_of_date is not None:
+            last, prev = _close_pair_as_of(ticker, t, as_of_date)
+            data["last_price"] = last
+            data["prev_close"] = prev
+        else:
+            data["last_price"] = info.get("currentPrice") or info.get("regularMarketPrice")
+            data["prev_close"] = info.get("previousClose")
         if (
             data["last_price"] is not None
             and data["prev_close"] is not None

@@ -157,13 +157,15 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
 
     rs_lookup = _load_rs_lookup(market, date_stem)
 
+    as_of = date.fromisoformat(date_iso)
+
     # Enrich (sequential — yfinance is the bottleneck and parallel pulls trip rate limits).
     enriched: list[dict] = []
     for qualified, group in analyzed_entries:
         exchange, symbol = _split_exchange_ticker(qualified)
         yf_sym = _yf_ticker(symbol, market)
         try:
-            data = enrich.fetch_ticker_data(yf_sym, group, exchange, rs_lookup)
+            data = enrich.fetch_ticker_data(yf_sym, group, exchange, rs_lookup, as_of_date=as_of)
         except Exception as e:
             logger.warning(f"[report] enrich failed for {qualified}: {e}")
             data = _empty_data(yf_sym, group, exchange)
