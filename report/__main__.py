@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import csv
 import logging
+import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from report.state import (
     MAX_TICKERS_PER_REPORT,
     OUTPUT_REPORTS_DIR,
     PROJECT_ROOT,
+    groups_for_market,
     input_dir_for_market,
     load_dotenv,
     load_report_config,
@@ -202,13 +204,53 @@ async def _run_async(market: str, date_stem: str, date_iso: str) -> int:
     return 0
 
 
+_DATED_FILENAME = re.compile(r"^(\d{4})_(\d{2})_(\d{2})_(.+)$")
+
+
+def _latest_available_date(market: str) -> date | None:
+    """Scan the market's input dir for the most recent date_stem that has at
+    least one non-empty group file. Returns None when the dir is empty.
+
+    Lets ad-hoc `--mode report` runs surface the *last* trading day's picks
+    instead of demanding today's files exist (HK EOD only writes at 20:00 HKT,
+    and weekend / holiday runs would otherwise hit an empty 'today')."""
+    input_dir = input_dir_for_market(market)
+    if not input_dir.is_dir():
+        return None
+    valid_groups = set(groups_for_market(market))
+    latest: tuple[int, int, int] | None = None
+    for path in input_dir.glob("*.txt"):
+        m = _DATED_FILENAME.match(path.stem)
+        if not m or m.group(4) not in valid_groups:
+            continue
+        try:
+            if path.stat().st_size == 0:
+                continue
+        except OSError:
+            continue
+        ymd = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if latest is None or ymd > latest:
+            latest = ymd
+    if latest is None:
+        return None
+    try:
+        return date(*latest)
+    except ValueError:
+        return None
+
+
 def run(market: str, override_date: str | None = None) -> int:
     """Entry point invoked by main.py. Soft-fails on any exception."""
     try:
         if override_date:
             d = date.fromisoformat(override_date)
         else:
-            d = datetime.now(HKT).date()
+            today = datetime.now(HKT).date()
+            d = _latest_available_date(market.lower()) or today
+            if d != today:
+                logger.info(
+                    f"[report] no {market.upper()} files for {today}; using latest available {d}"
+                )
         date_stem = d.strftime("%Y_%m_%d")
         date_iso = d.isoformat()
         return asyncio.run(_run_async(market.lower(), date_stem, date_iso))
