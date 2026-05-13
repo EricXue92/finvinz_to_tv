@@ -289,7 +289,7 @@ offset_tolerance_minutes = 2
 enabled = true
 ntfy_topic = "xue-finviz-morning-gap-9f3k2"
 ntfy_server = "https://ntfy.sh"
-max_tickers_in_body = 50
+max_tickers_in_body = 100
 
 # --- 报告生成 LLM backend ---
 # 选择哪个大模型生成 CANSLIM 日报。两个 backend 走相同的 Anthropic SDK 协议
