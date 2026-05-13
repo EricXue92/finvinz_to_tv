@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Long-running subscriber for the morning-gap ntfy topic. Bridges every
+  push from ntfy.sh into macOS Notification Center via osascript so the
+  Mac mirrors the phone.
+
+  KeepAlive=true so any exit (network drop, ntfy CLI crash, Mac wake)
+  triggers a restart; ThrottleInterval=10 prevents a restart storm.
+  RunAtLoad=true so it comes up at login.
+
+  The wrapper resumes from output/state/ntfy_last_seen.txt to avoid
+  re-firing already-delivered messages on each restart.
+
+  To install:
+    cp scripts/com.xue.finviz-to-tv.ntfy-subscriber.plist \
+       ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) \
+       ~/Library/LaunchAgents/com.xue.finviz-to-tv.ntfy-subscriber.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.xue.finviz-to-tv.ntfy-subscriber</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/xue/finviz_to_tv/scripts/run_ntfy_subscriber.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/xue/finviz_to_tv</string>
+</dict>
+</plist>
