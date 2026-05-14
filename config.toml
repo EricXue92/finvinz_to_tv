@@ -17,8 +17,8 @@ adr_days = 20
 # Set either to 0 to disable that tier; the GitHub fetch is skipped only
 # when both are 0. Tickers missing from the table (recent IPOs without
 # 12 months of history, foreign listings) are kept, not dropped.
-min_rs_percentile = 89          # Leaders only — IBD RS percentile gate
-min_rs_percentile_longs = 89    # Longs (5 splits) + RS group + US Shorts — IBD RS percentile gate
+min_rs_percentile = 90          # Leaders only — IBD RS percentile gate (top 10%)
+min_rs_percentile_longs = 90    # Longs (5 splits) + RS group + US Shorts — IBD RS percentile gate (top 10%)
 
 # --- Futu (富途牛牛) 自动同步 ---
 # 需要本地运行 FutuOpenD,且分组需在富途客户端预先手动建好(API 不能新建分组)
@@ -191,7 +191,7 @@ min_avg_volume          = 500_000         # 5 个长线组的统一日均量门�
 # 池砍掉。3.5 在"放过百强股"和"还能筛掉静态低波动股"之间取折中。
 min_adr_percent         = 3.5
 min_price               = 20.0            # HKD
-min_rs_percentile_longs = 89              # 与 HSI 比较，本地 IBD 算法
+min_rs_percentile_longs = 90              # 与 HSI 比较，本地 IBD 算法 (top 10%)
 hsi_rs_trigger          = -1.5            # HSI 当日跌幅 ≤ 此值则触发 RS 组
 
 [[hk_longs]]
