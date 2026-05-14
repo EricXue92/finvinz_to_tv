@@ -16,6 +16,7 @@ import csv
 import io
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -29,6 +30,48 @@ RS_CSV_URL = "https://raw.githubusercontent.com/Fred6725/rs-log/main/output/rs_s
 # minute or two. Three attempts spread across ~40s ride through that window
 # without turning a brief blip into a skipped RS gate for the day.
 _FETCH_RETRY_DELAYS = (10.0, 30.0)
+
+# Max staleness for the local-cache fallback when today's fetch fails.
+# US EOD runs Tue-Sat, so a Mon-holiday + Tue-failure gap is at worst 2 days;
+# 3 gives one day of safety margin. Beyond that the percentile drift makes
+# "no gate" more honest than "wrong gate".
+_FALLBACK_MAX_AGE_DAYS = 3
+
+
+def _find_fallback_cache(
+    state_dir: Path, today: str, today_filename: str
+) -> tuple[Path, int] | None:
+    """Pick the most recent rs_rating_*.csv within _FALLBACK_MAX_AGE_DAYS
+    of `today`. Returns (path, age_days) or None.
+
+    `today_filename` is the cache name for today; it's excluded from
+    candidates because if it were readable we wouldn't be in the
+    fallback path. `today` is the underscore-formatted YYYY_MM_DD string
+    callers already pass to `fetch_rs_table`.
+    """
+    try:
+        today_date = datetime.strptime(today, "%Y_%m_%d").date()
+    except ValueError:
+        logger.warning(f"[RS Rating] today={today!r} not parseable; no fallback")
+        return None
+    if not state_dir.exists():
+        return None
+    best: tuple[Path, int] | None = None
+    for p in state_dir.glob("rs_rating_*.csv"):
+        if p.name == today_filename:
+            continue
+        stem_date = p.stem.removeprefix("rs_rating_")
+        try:
+            file_date = datetime.strptime(stem_date, "%Y_%m_%d").date()
+        except ValueError:
+            continue
+        delta = (today_date - file_date).days
+        # Negative delta = future-dated file (clock skew); skip
+        if delta < 0 or delta > _FALLBACK_MAX_AGE_DAYS:
+            continue
+        if best is None or delta < best[1]:
+            best = (p, delta)
+    return best
 
 
 def fetch_rs_table(
@@ -72,14 +115,36 @@ def fetch_rs_table(
         if csv_text is None:
             logger.warning(
                 f"[RS Rating] Fetch failed after {attempts} attempts ({last_err}); "
-                "RS filter will be skipped"
+                "trying local cache fallback"
             )
-            return None
-        try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(csv_text, encoding="utf-8")
-        except OSError as e:
-            logger.warning(f"[RS Rating] Cache write failed: {e}")
+            fallback = _find_fallback_cache(
+                cache_path.parent, today, cache_path.name
+            )
+            if fallback is None:
+                logger.warning(
+                    f"[RS Rating] No fallback within {_FALLBACK_MAX_AGE_DAYS} days; "
+                    "RS filter will be skipped"
+                )
+                return None
+            fb_path, age_days = fallback
+            try:
+                csv_text = fb_path.read_text(encoding="utf-8")
+            except OSError as e:
+                logger.warning(
+                    f"[RS Rating] Fallback cache {fb_path.name} read failed: {e}; "
+                    "RS filter will be skipped"
+                )
+                return None
+            logger.warning(
+                f"[RS Rating] Using stale fallback cache: {fb_path.name} "
+                f"({age_days} day(s) old)"
+            )
+        else:
+            try:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(csv_text, encoding="utf-8")
+            except OSError as e:
+                logger.warning(f"[RS Rating] Cache write failed: {e}")
 
     try:
         reader = csv.DictReader(io.StringIO(csv_text))
