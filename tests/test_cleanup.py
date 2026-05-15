@@ -26,3 +26,28 @@ def test_today_and_yesterday_survive(output_tree: Path) -> None:
     cleanup_old_outputs(output_tree, date(2026, 5, 15))
     assert (output_tree / "TV/US/2026_05_15_Leaders.txt").exists()
     assert (output_tree / "TV/US/2026_05_14_Leaders.txt").exists()
+
+
+def test_files_older_than_two_days_deleted(output_tree: Path) -> None:
+    _touch(output_tree / "TV/US/2026_05_15_Leaders.txt")
+    _touch(output_tree / "TV/US/2026_05_14_Leaders.txt")
+    _touch(output_tree / "TV/US/2026_05_13_Leaders.txt")
+    _touch(output_tree / "TV/US/2026_05_09_Leaders.txt")
+
+    _touch(output_tree / "TV/HK/2026_05_13_Shorts.txt")
+    _touch(output_tree / "Webull/US/2026_05_12_GapUp.txt")
+    _touch(output_tree / "Webull/HK/2026_05_11_RS.txt")
+    _touch(output_tree / "Reports/2026_05_13_us.md")
+    _touch(output_tree / "Reports/2026_05_13_hk.html")
+
+    cleanup_old_outputs(output_tree, date(2026, 5, 15))
+
+    assert (output_tree / "TV/US/2026_05_15_Leaders.txt").exists()
+    assert (output_tree / "TV/US/2026_05_14_Leaders.txt").exists()
+    assert not (output_tree / "TV/US/2026_05_13_Leaders.txt").exists()
+    assert not (output_tree / "TV/US/2026_05_09_Leaders.txt").exists()
+    assert not (output_tree / "TV/HK/2026_05_13_Shorts.txt").exists()
+    assert not (output_tree / "Webull/US/2026_05_12_GapUp.txt").exists()
+    assert not (output_tree / "Webull/HK/2026_05_11_RS.txt").exists()
+    assert not (output_tree / "Reports/2026_05_13_us.md").exists()
+    assert not (output_tree / "Reports/2026_05_13_hk.html").exists()
