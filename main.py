@@ -29,6 +29,7 @@ from futu_sync import (
     pre_market_gap_futu,
     sync_to_futu,
 )
+from cleanup import cleanup_old_outputs
 from hk_eod import fetch_hkex_equities, filter_hk_shorts, run_hk_eod
 from notify import notify_morning_gap
 from rs_rating import fetch_rs_table, filter_by_rs
@@ -1399,6 +1400,7 @@ def main() -> int:
     min_rs_percentile_longs = settings.get("min_rs_percentile_longs", 0)
 
     today = date.today().strftime("%Y_%m_%d")
+    today_date = date.today()
 
     us_output_dir = output_dir / "TV" / "US"
     us_output_dir.mkdir(parents=True, exist_ok=True)
@@ -1432,6 +1434,10 @@ def main() -> int:
             )
         except Exception as e:
             logger.warning(f"[HK EOD] Pipeline failed: {e}")
+        try:
+            cleanup_old_outputs(output_dir, today_date)
+        except Exception as e:
+            logger.warning(f"[cleanup] Failed: {e}")
         logger.info("Done.")
         return 0
 
@@ -1715,6 +1721,10 @@ def main() -> int:
             except Exception as e:
                 logger.warning(f"[HK EOD] Pipeline failed: {e}")
 
+        try:
+            cleanup_old_outputs(output_dir, today_date)
+        except Exception as e:
+            logger.warning(f"[cleanup] Failed: {e}")
         logger.info("Done.")
         return 0
 
@@ -1761,6 +1771,10 @@ def main() -> int:
                 fresh, offset, len(sorted_tickers), config, promoted=promoted
             )
 
+        try:
+            cleanup_old_outputs(output_dir, today_date)
+        except Exception as e:
+            logger.warning(f"[cleanup] Failed: {e}")
         logger.info("Done.")
         return 0
 
@@ -1810,6 +1824,10 @@ def main() -> int:
                 promoted=[], market="HK",
             )
 
+        try:
+            cleanup_old_outputs(output_dir, today_date)
+        except Exception as e:
+            logger.warning(f"[cleanup] Failed: {e}")
         logger.info("Done.")
         return 0
 
