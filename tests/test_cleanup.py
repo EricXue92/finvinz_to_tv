@@ -51,3 +51,30 @@ def test_files_older_than_two_days_deleted(output_tree: Path) -> None:
     assert not (output_tree / "Webull/HK/2026_05_11_RS.txt").exists()
     assert not (output_tree / "Reports/2026_05_13_us.md").exists()
     assert not (output_tree / "Reports/2026_05_13_hk.html").exists()
+
+
+def test_rs_rating_uses_four_day_window(output_tree: Path) -> None:
+    # rs_rating_*.csv survives for 4 days; today is 2026-05-15, cutoff =
+    # 2026-05-12, so 05_12..05_15 survive, 05_11 and earlier go.
+    for d in ("2026_05_15", "2026_05_14", "2026_05_13",
+              "2026_05_12", "2026_05_11", "2026_05_09"):
+        _touch(output_tree / f"state/rs_rating_{d}.csv")
+
+    # hk_rs_rating_*.csv is on the standard 2-day rule despite living
+    # next to rs_rating_*.csv. Today = 15, cutoff = 14.
+    for d in ("2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12"):
+        _touch(output_tree / f"state/hk_rs_rating_{d}.csv")
+
+    cleanup_old_outputs(output_tree, date(2026, 5, 15))
+
+    assert (output_tree / "state/rs_rating_2026_05_15.csv").exists()
+    assert (output_tree / "state/rs_rating_2026_05_14.csv").exists()
+    assert (output_tree / "state/rs_rating_2026_05_13.csv").exists()
+    assert (output_tree / "state/rs_rating_2026_05_12.csv").exists()
+    assert not (output_tree / "state/rs_rating_2026_05_11.csv").exists()
+    assert not (output_tree / "state/rs_rating_2026_05_09.csv").exists()
+
+    assert (output_tree / "state/hk_rs_rating_2026-05-15.csv").exists()
+    assert (output_tree / "state/hk_rs_rating_2026-05-14.csv").exists()
+    assert not (output_tree / "state/hk_rs_rating_2026-05-13.csv").exists()
+    assert not (output_tree / "state/hk_rs_rating_2026-05-12.csv").exists()
