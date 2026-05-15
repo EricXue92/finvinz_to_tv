@@ -133,3 +133,26 @@ def test_morning_gap_state_files_cleaned(output_tree: Path) -> None:
     assert not (output_tree / "state/morning_gap_seen_post_2026_05_12.txt").exists()
     assert (output_tree / "state/hk_morning_gap_seen_post_2026_05_15.txt").exists()
     assert not (output_tree / "state/hk_morning_gap_seen_post_2026_05_13.txt").exists()
+
+
+def test_empty_state_dir_does_not_crash(output_tree: Path) -> None:
+    # state/ exists but contains nothing matching the rules.
+    cleanup_old_outputs(output_tree, date(2026, 5, 15))
+
+
+def test_missing_subdir_is_skipped(tmp_path: Path) -> None:
+    # output/ exists but none of the expected subdirs do.
+    out = tmp_path / "output"
+    out.mkdir()
+    cleanup_old_outputs(out, date(2026, 5, 15))
+
+
+def test_malformed_date_in_filename_is_skipped(
+    output_tree: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Feb 30 doesn't exist — file must NOT be deleted, and a warning logged.
+    _touch(output_tree / "TV/US/2026_02_30_Leaders.txt")
+    with caplog.at_level("WARNING"):
+        cleanup_old_outputs(output_tree, date(2026, 5, 15))
+    assert (output_tree / "TV/US/2026_02_30_Leaders.txt").exists()
+    assert any("malformed date" in r.message for r in caplog.records)
