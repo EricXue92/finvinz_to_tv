@@ -78,3 +78,38 @@ def test_rs_rating_uses_four_day_window(output_tree: Path) -> None:
     assert (output_tree / "state/hk_rs_rating_2026-05-14.csv").exists()
     assert not (output_tree / "state/hk_rs_rating_2026-05-13.csv").exists()
     assert not (output_tree / "state/hk_rs_rating_2026-05-12.csv").exists()
+
+
+def test_survivors_are_preserved(output_tree: Path) -> None:
+    # The state files we explicitly never want to delete.
+    _touch(output_tree / "state/eod_seen_US.txt")
+    _touch(output_tree / "state/eod_seen_HK.txt")
+    _touch(output_tree / "state/eod_seen_IPO.txt")
+    _touch(output_tree / "state/eod_seen_HKIPO.txt")
+    _touch(output_tree / "state/ntfy_last_seen.txt")
+    _touch(output_tree / "state/edgar_cache/AAPL.json")
+    _touch(output_tree / "launchd_US.log")
+    _touch(output_tree / "launchd_HK.log")
+
+    # Non-dated rogue file in a watched directory.
+    _touch(output_tree / "TV/US/notes.txt")
+    # Reports cover preview (not dated).
+    _touch(output_tree / "Reports/_cover_preview.html")
+
+    # Mix in something old to ensure cleanup actually ran.
+    _touch(output_tree / "TV/US/2026_05_01_Leaders.txt")
+
+    cleanup_old_outputs(output_tree, date(2026, 5, 15))
+
+    assert (output_tree / "state/eod_seen_US.txt").exists()
+    assert (output_tree / "state/eod_seen_HK.txt").exists()
+    assert (output_tree / "state/eod_seen_IPO.txt").exists()
+    assert (output_tree / "state/eod_seen_HKIPO.txt").exists()
+    assert (output_tree / "state/ntfy_last_seen.txt").exists()
+    assert (output_tree / "state/edgar_cache/AAPL.json").exists()
+    assert (output_tree / "launchd_US.log").exists()
+    assert (output_tree / "launchd_HK.log").exists()
+    assert (output_tree / "TV/US/notes.txt").exists()
+    assert (output_tree / "Reports/_cover_preview.html").exists()
+    # ...and the old dated file was actually deleted.
+    assert not (output_tree / "TV/US/2026_05_01_Leaders.txt").exists()
