@@ -113,3 +113,23 @@ def test_survivors_are_preserved(output_tree: Path) -> None:
     assert (output_tree / "Reports/_cover_preview.html").exists()
     # ...and the old dated file was actually deleted.
     assert not (output_tree / "TV/US/2026_05_01_Leaders.txt").exists()
+
+
+def test_morning_gap_state_files_cleaned(output_tree: Path) -> None:
+    _touch(output_tree / "state/morning_gap_seen_pre_2026_05_15.txt")
+    _touch(output_tree / "state/morning_gap_seen_post_2026_05_15.txt")
+    _touch(output_tree / "state/morning_gap_seen_pre_2026_05_14.txt")
+    _touch(output_tree / "state/morning_gap_seen_pre_2026_05_13.txt")
+    _touch(output_tree / "state/morning_gap_seen_post_2026_05_12.txt")
+    _touch(output_tree / "state/hk_morning_gap_seen_post_2026_05_15.txt")
+    _touch(output_tree / "state/hk_morning_gap_seen_post_2026_05_13.txt")
+
+    cleanup_old_outputs(output_tree, date(2026, 5, 15))
+
+    assert (output_tree / "state/morning_gap_seen_pre_2026_05_15.txt").exists()
+    assert (output_tree / "state/morning_gap_seen_post_2026_05_15.txt").exists()
+    assert (output_tree / "state/morning_gap_seen_pre_2026_05_14.txt").exists()
+    assert not (output_tree / "state/morning_gap_seen_pre_2026_05_13.txt").exists()
+    assert not (output_tree / "state/morning_gap_seen_post_2026_05_12.txt").exists()
+    assert (output_tree / "state/hk_morning_gap_seen_post_2026_05_15.txt").exists()
+    assert not (output_tree / "state/hk_morning_gap_seen_post_2026_05_13.txt").exists()
