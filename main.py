@@ -1623,19 +1623,18 @@ def main() -> int:
             except Exception as e:
                 logger.warning(f"[RS] Failed: {e}")
 
-        # --- Cross-group dedup: priority Longs > Leaders > RS ---
-        # A ticker firing in multiple long-side groups is kept only in the
-        # highest-priority one. Since each .txt and Futu group is rewritten
-        # every run, this also prevents day-over-day cross-group duplication.
-        before = (len(leaders_tickers), len(rs_tickers))
+        # --- Cross-group dedup: priority Longs > Leaders ---
+        # A ticker firing in both Longs and Leaders is kept only in Longs.
+        # RS is intentionally NOT subtracted here — it's the conditional
+        # weak-market scan, and re-surfacing a Longs/Leaders ticker that
+        # still holds up on a market-down day is the entire signal.
+        before_le = len(leaders_tickers)
         leaders_tickers -= longs_tickers
-        rs_tickers -= longs_tickers | leaders_tickers
-        removed_le = before[0] - len(leaders_tickers)
-        removed_rs = before[1] - len(rs_tickers)
-        if removed_le or removed_rs:
+        removed_le = before_le - len(leaders_tickers)
+        if removed_le:
             logger.info(
-                f"[Dedup] Priority Longs > Leaders > RS: "
-                f"removed {removed_le} from Leaders, {removed_rs} from RS"
+                f"[Dedup] Priority Longs > Leaders: "
+                f"removed {removed_le} from Leaders"
             )
 
         # --- Write Longs (one file per strategy; Leaders/RS dedup already applied to union) ---
