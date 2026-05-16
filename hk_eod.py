@@ -899,13 +899,19 @@ def run_hk_eod(
     )
 
     # --- Cross-day master dedup ---
+    # RS is excluded — see comment on within-day priority dedup above.
+    # An RS hit must NOT consult or mutate the long-side master, because
+    # the whole point of the conditional scan is to re-detect strong
+    # names on weak-market days regardless of prior sightings.
     seen_path = eod_seen_path(output_dir, "HK")
     seen = load_seen(seen_path)
     final: dict[str, list[str]] = {}
     for name, codes_list in dedup.items():
-        tag = f"[HK {name}]"
-        # Convert to TV format for the seen file (matches write_watchlist input)
         tv = sorted(_to_tv(c) for c in codes_list)
+        if name == "RS":
+            final[name] = tv
+            continue
+        tag = f"[HK {name}]"
         tv = dedup_seen(tag, tv, seen, seen_path)
         final[name] = tv
 
