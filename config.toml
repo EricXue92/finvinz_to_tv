@@ -153,7 +153,7 @@ perf_large_cap = 50     # >= $10B: month perf >= 50%
 perf_mid_cap = 200      # $2B–$10B: month perf >= 200%
 perf_small_cap = 300    # $300M–$2B: month perf >= 300%
 
-# --- RS: 条件触发，仅当 SPY 和 QQQ 都跌超 1% 时运行 ---
+# --- RS: 条件触发，仅当 SPY 和 QQQ 当日都跌 ≥ 1.2% 时运行 ---
 
 [rs]
 name = "Relative Strength"
@@ -192,7 +192,7 @@ min_avg_volume          = 500_000         # 5 个长线组的统一日均量门�
 min_adr_percent         = 3.5
 min_price               = 20.0            # HKD
 min_rs_percentile_longs = 90              # 与 HSI 比较，本地 IBD 算法 (top 10%)
-hsi_rs_trigger          = -1.5            # HSI 当日跌幅 ≤ 此值则触发 RS 组
+hsi_rs_trigger          = -1.2            # HSI 当日跌幅 ≤ 此值则触发 RS 组
 
 [[hk_longs]]
 key = "earnings_gap"

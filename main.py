@@ -1274,14 +1274,14 @@ def filter_relative_volume(
     return result
 
 
-def check_market_down(threshold: float = -1.5) -> bool:
-    """Check if both SPY and QQQ are down more than threshold%."""
+def check_market_down(threshold: float = -1.2) -> bool:
+    """Check if both SPY and QQQ are down at least |threshold|%."""
     spy = get_stock("SPY")
     qqq = get_stock("QQQ")
     spy_change = float(spy["Change"].strip("%"))
     qqq_change = float(qqq["Change"].strip("%"))
     logger.info(f"  SPY: {spy_change:+.2f}%  QQQ: {qqq_change:+.2f}%")
-    return spy_change < threshold and qqq_change < threshold
+    return spy_change <= threshold and qqq_change <= threshold
 
 
 def _get_et_scan_offset(
@@ -1619,7 +1619,7 @@ def main() -> int:
                     rs_tickers.update(found)
                     rs_ran = True
                 else:
-                    logger.info("[RS] Condition not met (SPY/QQQ not both down >1.5%), skipping")
+                    logger.info("[RS] Condition not met (SPY/QQQ not both down >=1.2%), skipping")
             except Exception as e:
                 logger.warning(f"[RS] Failed: {e}")
 

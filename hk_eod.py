@@ -851,7 +851,7 @@ def run_hk_eod(
     # use_yesterday is True the live HSI snapshot reflects a state that
     # doesn't match the trimmed k-line data, so the trigger is meaningless
     # — skip the RS group in that case.
-    rs_trigger = hk_settings.get("hsi_rs_trigger", -1.5)
+    rs_trigger = hk_settings.get("hsi_rs_trigger", -1.2)
     if use_yesterday:
         hsi_change = None
         rs_enabled = False
