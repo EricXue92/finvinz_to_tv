@@ -884,7 +884,15 @@ def run_hk_eod(
     )
 
     # --- Within-day cross-strategy priority dedup ---
-    dedup = dedup_by_priority(raw)
+    # RS is the conditional weak-market scan; the entire point is to
+    # re-surface names already collected in other groups when HSI dumps.
+    # So priority dedup is restricted to the 4 first-sighting strategies,
+    # and RS is spliced back in untouched.
+    dedup = dedup_by_priority(
+        raw,
+        priority=["EarningsGap", "HighVolume", "GapUp", "Leaders"],
+    )
+    dedup["RS"] = list(raw.get("RS", []))
     logger.info(
         "[HK Longs] within-day priority dedup: "
         + ", ".join(f"{n} {post_rs_counts[n]}→{len(dedup[n])}" for n in HK_STRATEGY_PRIORITY)
