@@ -1662,9 +1662,11 @@ def main() -> int:
             _futu_sync(config, "leaders", sorted_leaders, "US")
 
         # --- Write RS (only if it actually ran) ---
+        # RS bypasses cross-day master dedup (eod_seen_US.txt) — see the
+        # within-day comment above. _dedup_seen is intentionally NOT called
+        # here so an RS hit neither consults nor mutates us_seen.
         if rs_ran:
             sorted_rs = sorted(rs_tickers)
-            sorted_rs = _dedup_seen("[RS]", sorted_rs, us_seen, us_seen_path)
             dated = us_output_dir / f"{today}_RS.txt"
             write_watchlist(sorted_rs, dated, fmt)
             logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
