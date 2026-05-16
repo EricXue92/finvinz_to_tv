@@ -113,3 +113,28 @@ def test_dedup_by_priority_strips_lower_priority_duplicates():
         "Leaders":     ["E"],
         "RS":          ["F"],
     }
+
+
+def test_dedup_by_priority_excludes_rs_when_priority_is_subset():
+    """When the caller passes a 4-strategy priority subset (RS omitted),
+    RS must be absent from the output dict — the caller is responsible
+    for splicing it back in untouched. This pins the contract used by
+    run_hk_eod to carve RS out of within-day priority dedup."""
+    raw = {
+        "EarningsGap": ["A"],
+        "HighVolume":  ["B"],
+        "GapUp":       ["C"],
+        "Leaders":     ["D", "E"],
+        "RS":          ["A", "D", "F"],  # would normally be dropped to ["F"]
+    }
+    out = dedup_by_priority(
+        raw,
+        priority=["EarningsGap", "HighVolume", "GapUp", "Leaders"],
+    )
+    assert "RS" not in out
+    assert out == {
+        "EarningsGap": ["A"],
+        "HighVolume":  ["B"],
+        "GapUp":       ["C"],
+        "Leaders":     ["D", "E"],
+    }
