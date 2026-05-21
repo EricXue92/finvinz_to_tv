@@ -1398,6 +1398,7 @@ def main() -> int:
     # disables that tier. Source: Fred6725/rs-log (refreshed weekday ~01:30 UTC).
     min_rs_percentile = settings.get("min_rs_percentile", 0)
     min_rs_percentile_longs = settings.get("min_rs_percentile_longs", 0)
+    min_rs_percentile_3m = settings.get("min_rs_percentile_3m", 0)
 
     today = date.today().strftime("%Y_%m_%d")
     today_date = date.today()
@@ -1462,6 +1463,22 @@ def main() -> int:
         rs_table = (
             fetch_rs_table(output_dir, today)
             if max(min_rs_percentile, min_rs_percentile_longs) > 0
+            else None
+        )
+
+        # --- IBD-style 3M RS table (local, vs SPY) ---
+        # Built once per run. Triggered only when the 3M knob is non-zero.
+        # Universe = Fred6725 12M table's tickers (~6100). Cached to
+        # state/rs_rating_3m_<date>.csv with raw_score column for IPO
+        # ladder out-of-universe percentile lookup.
+        import us_rs_3m  # local import: us_rs_3m imports main._yf_download_with_retry
+        rs_table_3m = (
+            us_rs_3m.build_3m_table(
+                output_dir,
+                datetime.strptime(today, "%Y_%m_%d").date(),
+                rs_table_12m=rs_table,
+            )
+            if min_rs_percentile_3m > 0
             else None
         )
 
