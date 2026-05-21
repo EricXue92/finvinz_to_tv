@@ -664,6 +664,99 @@ def dedup_by_priority(
     return out
 
 
+def filter_hk_ipo_candidates(
+    klines: dict[str, pd.DataFrame],
+    metrics: pd.DataFrame,
+    rs_table_3m: pd.DataFrame | None,
+    hk_settings: dict,
+) -> tuple[list[str], dict[str, int]]:
+    """筛选 HK IPO 候选 (< 253 行历史的 HKEX 主板 ticker)。
+
+    过滤阶梯（同一 ticker 按顺序走，命中任一即 drop 并计数）：
+      - len(df) < 20          → drops['min_history']     (新增 day-20 floor)
+      - cap < min_market_cap  → drops['cap']
+      - price < min_price     → drops['price']
+      - if has 20-day metrics:
+          avg_vol < min_avg_volume       → drops['avg_vol']
+          $vol   < min_dollar_volume     → drops['dvol']
+          ADR%   < min_adr_percent       → drops['adr']
+      - if has SMA50: not above SMA50    → drops['sma50']
+      - if has SMA200: not above SMA200  → drops['sma200']
+      - if len(df) >= 64 and rs_table_3m is not None:        (新增 3M RS 闸门)
+          ticker not in rs_table_3m      → drops['rs_3m_missing']
+          rs_percentile < threshold      → drops['rs_3m']
+
+    253 行及以上的 ticker 不在此函数范围（走长线流水线），直接跳过。
+
+    Returns:
+        (kept_codes, drop_counts) — kept_codes 是 Futu 5-digit 格式
+        (例如 "HK.00700")；drop_counts 包含上述所有 reason keys，
+        每个 key 至少为 0。
+    """
+    ipo_cap = hk_settings.get("min_market_cap", 300_000_000)
+    ipo_min_price = hk_settings.get("min_price", 20.0)
+    ipo_min_avg_vol = hk_settings.get("min_avg_volume", 500_000)
+    ipo_min_dvol = hk_settings.get("min_dollar_volume", 100_000_000)
+    ipo_min_adr = hk_settings.get("min_adr_percent", 3.5)
+    rs_3m_threshold = int(hk_settings.get("min_rs_percentile_longs_3m", 90))
+
+    kept: list[str] = []
+    drops: dict[str, int] = {
+        "min_history": 0,
+        "cap": 0, "price": 0,
+        "avg_vol": 0, "dvol": 0, "adr": 0,
+        "sma50": 0, "sma200": 0,
+        "rs_3m": 0, "rs_3m_missing": 0,
+    }
+
+    for code, df in klines.items():
+        if len(df) >= 253:
+            continue  # 完整历史 — 由长线流水线处理
+        if len(df) < 20:
+            drops["min_history"] += 1
+            continue
+        if code not in metrics.index:
+            continue
+        row = metrics.loc[code]
+        if not (pd.notna(row["market_cap"]) and row["market_cap"] >= ipo_cap):
+            drops["cap"] += 1
+            continue
+        if not (pd.notna(row["last_price"]) and row["last_price"] >= ipo_min_price):
+            drops["price"] += 1
+            continue
+        # 20-day-conditional gates — build_metrics_frame 在 < 20 行时把这三个字段
+        # 置 NaN，所以 pd.notna 检查既挡掉短历史 ticker 的 KeyError 又保留了
+        # "未达 20 天的 IPO 不走这三条闸门" 的旧语义。但因为 len(df) < 20 已被
+        # 砍掉，这里实际上一定有 20-day metrics。
+        if pd.notna(row["avg_vol_20d"]) and row["avg_vol_20d"] < ipo_min_avg_vol:
+            drops["avg_vol"] += 1
+            continue
+        if pd.notna(row["avg_dollar_vol_20d"]) and row["avg_dollar_vol_20d"] < ipo_min_dvol:
+            drops["dvol"] += 1
+            continue
+        if pd.notna(row["adr_pct"]) and row["adr_pct"] < ipo_min_adr:
+            drops["adr"] += 1
+            continue
+        # 50/200-day conditional — sma50/sma200 为 NaN 时不查 above_sma
+        if pd.notna(row["sma50"]) and not bool(row["above_sma50"]):
+            drops["sma50"] += 1
+            continue
+        if pd.notna(row["sma200"]) and not bool(row["above_sma200"]):
+            drops["sma200"] += 1
+            continue
+        # 3M RS gate — 仅当 len(df) >= 64 (即 3M RS 算法可计算) 且表存在时触发
+        if len(df) >= 64 and rs_table_3m is not None and not rs_table_3m.empty:
+            if code not in rs_table_3m.index:
+                drops["rs_3m_missing"] += 1
+                continue
+            if int(rs_table_3m.loc[code, "rs_percentile"]) < rs_3m_threshold:
+                drops["rs_3m"] += 1
+                continue
+        kept.append(code)
+
+    return kept, drops
+
+
 def hsi_day_change_pct(
     host: str = "127.0.0.1", port: int = 11111
 ) -> float | None:
