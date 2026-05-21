@@ -31,7 +31,7 @@ def _build_ipo_metrics(
     """
     rows: list[dict] = []
     for t, df in klines.items():
-        if df is None or df.empty:
+        if df is None or df.empty or len(df) < 2:
             continue
         closes = df["close"].astype(float).values
         highs = df["high"].astype(float).values if "high" in df.columns else closes

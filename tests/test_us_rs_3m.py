@@ -221,6 +221,22 @@ def test_fetch_us_klines_yf_empty_input():
     assert us_rs_3m.fetch_us_klines_yf([], period="6mo") == {}
 
 
+def test_fetch_us_klines_yf_with_ohlcv(monkeypatch):
+    """include_ohlcv=True should produce DataFrames with 6 columns including
+    high, low, and volume — using the same MultiIndex paths as the close path.
+    """
+    import us_rs_3m
+
+    monkeypatch.setattr("us_rs_3m._yf_download_with_retry", _fake_download, raising=False)
+    monkeypatch.setattr("us_rs_3m._retry_sparse_in_batch", lambda *a, **kw: None, raising=False)
+    klines = us_rs_3m.fetch_us_klines_yf(["AAPL", "MSFT"], period="1y", batch_size=500, include_ohlcv=True)
+    assert set(klines.keys()) == {"AAPL", "MSFT"}
+    expected_cols = {"time_key", "open", "high", "low", "close", "volume"}
+    for t, df in klines.items():
+        assert set(df.columns) == expected_cols, f"{t}: columns mismatch {set(df.columns)}"
+        assert len(df) == 80
+
+
 import pytest
 
 

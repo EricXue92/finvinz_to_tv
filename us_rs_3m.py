@@ -167,12 +167,17 @@ def fetch_us_klines_yf(
     tickers: list[str],
     period: str = "6mo",
     batch_size: int = 500,
+    include_ohlcv: bool = False,
 ) -> dict[str, pd.DataFrame]:
-    """Batch-download daily closes for US tickers via yfinance.
+    """Batch-download daily closes (or full OHLCV) for US tickers via yfinance.
 
-    Returns ``{ticker: DataFrame[time_key, close]}``. Tickers that fail the
-    batch retry or come back as all-NaN are silently dropped (callers treat
-    them as "not in 3M table" via the kept-as-missing policy).
+    Returns ``{ticker: DataFrame[time_key, close]}`` when ``include_ohlcv``
+    is False (default), or ``{ticker: DataFrame[time_key, open, high, low,
+    close, volume]}`` when True.
+
+    Tickers that fail the batch retry or come back as all-NaN are silently
+    dropped (callers treat them as "not in 3M table" via the kept-as-missing
+    policy).
 
     Mirrors hk_eod.fetch_hk_klines_yf structure: 500-ticker batches with
     threads=True, no inter-batch sleep (yfinance handles rate-limits via
@@ -200,10 +205,24 @@ def fetch_us_klines_yf(
                 continue
             if closes.empty:
                 continue
-            result[t] = pd.DataFrame({
-                "time_key": closes.index,
-                "close": closes.values,
-            })
+            if include_ohlcv:
+                try:
+                    row = {
+                        "time_key": closes.index,
+                        "open": batch_data[t]["Open"].reindex(closes.index).values,
+                        "high": batch_data[t]["High"].reindex(closes.index).values,
+                        "low": batch_data[t]["Low"].reindex(closes.index).values,
+                        "close": closes.values,
+                        "volume": batch_data[t]["Volume"].reindex(closes.index).values,
+                    }
+                except (KeyError, TypeError, ValueError, AttributeError):
+                    continue
+                result[t] = pd.DataFrame(row)
+            else:
+                result[t] = pd.DataFrame({
+                    "time_key": closes.index,
+                    "close": closes.values,
+                })
     return result
 
 

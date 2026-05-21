@@ -61,3 +61,12 @@ def test_build_ipo_metrics_missing_cap_is_nan():
     metrics = _build_ipo_metrics(klines, caps)
     row = metrics.loc["NOCAP"]
     assert math.isnan(row["market_cap"])
+
+
+def test_build_ipo_metrics_skips_single_row():
+    """1-row klines must be skipped (len(df) < 2 guard, parity with hk_eod)."""
+    from us_ipo import _build_ipo_metrics
+    klines = {"ONEROW": _make_kline([25.0] * 1)}
+    caps = {"ONEROW": 1e9}
+    metrics = _build_ipo_metrics(klines, caps)
+    assert metrics.empty
