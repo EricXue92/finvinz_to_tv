@@ -1,9 +1,18 @@
+from datetime import date as _date
+from pathlib import Path
+
 import pandas as pd
 
 from us_rs_3m import (
     WEIGHTS_3M,
     _score_from_kline,
     compute_us_rs_3m_table,
+)
+from us_rs_3m import (
+    cache_path,
+    filter_by_rs,
+    load_cache,
+    save_cache,
 )
 
 
@@ -105,3 +114,53 @@ def test_compute_table_spy_failure_falls_back_to_absolute(caplog):
         table = compute_us_rs_3m_table(klines, spy)
     assert "T01" in table.index
     assert any("SPY" in r.message for r in caplog.records)
+
+
+def test_filter_by_rs_keeps_at_or_above_threshold():
+    table = pd.DataFrame({
+        "raw_score": [0.2, 0.1, 0.05],
+        "rs_percentile": [95, 90, 50],
+    }, index=["AAA", "BBB", "CCC"])
+    out = filter_by_rs(["AAA", "BBB", "CCC"], table, threshold=90)
+    assert set(out) == {"AAA", "BBB"}
+
+
+def test_filter_by_rs_missing_passthrough():
+    table = pd.DataFrame({"raw_score": [0.2], "rs_percentile": [95]}, index=["AAA"])
+    out = filter_by_rs(["AAA", "ZZZ"], table, threshold=90)
+    # ZZZ not in table → kept-as-missing (US long-side passthrough policy)
+    assert set(out) == {"AAA", "ZZZ"}
+
+
+def test_filter_by_rs_none_table_passthrough():
+    out = filter_by_rs(["AAA", "BBB"], None, threshold=90)
+    assert out == ["AAA", "BBB"]
+
+
+def test_filter_by_rs_threshold_zero_passthrough():
+    table = pd.DataFrame({
+        "raw_score": [0.05],
+        "rs_percentile": [10],
+    }, index=["LOW"])
+    out = filter_by_rs(["LOW"], table, threshold=0)
+    assert out == ["LOW"]
+
+
+def test_cache_path():
+    p = cache_path(_date(2026, 5, 21), Path("/tmp/out"))
+    assert p == Path("/tmp/out/state/rs_rating_3m_2026-05-21.csv")
+
+
+def test_save_and_load_cache_roundtrip(tmp_path):
+    df = pd.DataFrame({
+        "raw_score": [0.2, 0.05],
+        "rs_percentile": [95, 50],
+    }, index=["AAA", "BBB"])
+    df.index.name = "ticker"
+    save_cache(df, _date(2026, 5, 21), tmp_path)
+
+    loaded = load_cache(_date(2026, 5, 21), tmp_path)
+    assert loaded is not None
+    assert list(loaded.index) == ["AAA", "BBB"]
+    assert loaded.loc["AAA", "rs_percentile"] == 95
+    assert abs(loaded.loc["AAA", "raw_score"] - 0.2) < 1e-9

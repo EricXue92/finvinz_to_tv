@@ -13,6 +13,8 @@ The 3M table is consumed twice:
 from __future__ import annotations
 
 import logging
+from datetime import date
+from pathlib import Path
 
 import pandas as pd
 
@@ -97,3 +99,45 @@ def compute_us_rs_3m_table(
         "raw_score": series,
         "rs_percentile": pct.round().astype(int),
     })
+
+
+def filter_by_rs(
+    tickers: list[str],
+    table: pd.DataFrame | None,
+    threshold: int,
+) -> list[str]:
+    """Keep tickers with rs_percentile >= threshold.
+
+    Missing-from-table → KEPT (US passthrough policy, mirrors rs_rating.py
+    and hk_rs.filter_by_rs). Threshold ≤ 0 → passthrough.
+    """
+    if table is None or table.empty or threshold <= 0:
+        return list(tickers)
+    out: list[str] = []
+    for t in tickers:
+        if t not in table.index:
+            out.append(t)
+            continue
+        if int(table.loc[t, "rs_percentile"]) >= threshold:
+            out.append(t)
+    return out
+
+
+def cache_path(today: date, output_dir: Path) -> Path:
+    return output_dir / "state" / f"rs_rating_3m_{today.isoformat()}.csv"
+
+
+def save_cache(table: pd.DataFrame, today: date, output_dir: Path) -> None:
+    p = cache_path(today, output_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(p, index_label="ticker")
+
+
+def load_cache(today: date, output_dir: Path) -> pd.DataFrame | None:
+    p = cache_path(today, output_dir)
+    if not p.exists():
+        return None
+    try:
+        return pd.read_csv(p, index_col="ticker")
+    except Exception:
+        return None
