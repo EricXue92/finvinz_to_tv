@@ -328,6 +328,8 @@ def filter_shorts(
     futu_cfg: dict | None = None,
     rs_table: dict[str, int] | None = None,
     min_rs_percentile: int = 0,
+    rs_table_3m: "pd.DataFrame | None" = None,
+    min_rs_percentile_3m: int = 0,
 ) -> tuple[int, list[str]]:
     """Run shorts pipeline: finviz Ownership → single yfinance download →
     performance / dollar-volume / consecutive-up-days filters.
@@ -356,6 +358,20 @@ def filter_shorts(
         kept = filter_by_rs(tickers, rs_table, min_rs_percentile, "  [Shorts]")
         kept_set = set(kept)
         market_caps = {t: c for t, c in market_caps.items() if t in kept_set}
+        tickers = kept
+        if not tickers:
+            return total, []
+
+    if min_rs_percentile_3m > 0 and rs_table_3m is not None and tickers:
+        import us_rs_3m
+        kept = us_rs_3m.filter_by_rs(tickers, rs_table_3m, min_rs_percentile_3m)
+        kept_set = set(kept)
+        market_caps = {t: c for t, c in market_caps.items() if t in kept_set}
+        dropped = len(tickers) - len(kept)
+        logger.info(
+            f"  [Shorts] {len(kept)} after RS_3M >= {min_rs_percentile_3m} "
+            f"(dropped {dropped})"
+        )
         tickers = kept
         if not tickers:
             return total, []
@@ -1558,6 +1574,15 @@ def main() -> int:
                     tickers = filter_by_rs(
                         tickers, rs_table, min_rs_percentile, f"  [Leaders/{name}]"
                     )
+                if min_rs_percentile_3m > 0 and rs_table_3m is not None and tickers:
+                    before = len(tickers)
+                    tickers = us_rs_3m.filter_by_rs(
+                        tickers, rs_table_3m, min_rs_percentile_3m
+                    )
+                    logger.info(
+                        f"  [Leaders/{name}] {len(tickers)} after RS_3M >= "
+                        f"{min_rs_percentile_3m} (dropped {before - len(tickers)})"
+                    )
                 if (min_dollar_volume > 0 or min_adr_percent > 0) and tickers:
                     tickers = filter_dollar_volume_and_adr_yf(
                         tickers, min_dollar_volume, min_adr_percent, adr_days,
@@ -1594,6 +1619,8 @@ def main() -> int:
                     futu_cfg=config.get("futu") or {},
                     rs_table=rs_table,
                     min_rs_percentile=min_rs_percentile_longs,
+                    rs_table_3m=rs_table_3m,
+                    min_rs_percentile_3m=min_rs_percentile_3m,
                 )
                 logger.info(f"  Found {total} tickers from finviz Ownership screener")
 
@@ -1623,6 +1650,15 @@ def main() -> int:
                     if min_rs_percentile_longs > 0 and found:
                         found = filter_by_rs(
                             found, rs_table, min_rs_percentile_longs, "  [RS]"
+                        )
+                    if min_rs_percentile_3m > 0 and rs_table_3m is not None and found:
+                        before = len(found)
+                        found = us_rs_3m.filter_by_rs(
+                            found, rs_table_3m, min_rs_percentile_3m
+                        )
+                        logger.info(
+                            f"  [RS] {len(found)} after RS_3M >= "
+                            f"{min_rs_percentile_3m} (dropped {before - len(found)})"
                         )
                     if (min_dollar_volume > 0 or min_adr_percent > 0) and found:
                         found = filter_dollar_volume_and_adr_yf(
