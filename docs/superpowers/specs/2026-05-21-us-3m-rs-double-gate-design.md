@@ -6,7 +6,7 @@
 
 ## 背景
 
-当前 US 长线流水线（`main.py` / `rs_rating.py`）的所有 RS-gated 组——Longs 五个分支（EarningsGap / HighVolume / GapUp / NewHigh52W / TopGainers）、Leaders、conditional RS 组、Shorts——共用一道 12 月 RS 闸门：
+当前 US 长线流水线（`main.py` / `rs_rating.py`）的所有 RS-gated 组——Longs 五个分支（EarningsGap / HighVolume / GapUp / NewHigh52W / TopGainers）、Leaders、conditional RS 组、Shorts——共用一道 12 月 RS 闸门(实际两个旋钮都设 90)：
 
 ```
 RS_12M = 0.4·Q1 + 0.2·Q2 + 0.2·Q3 + 0.2·Q4   (vs SPY，IBD 加权)
@@ -18,20 +18,25 @@ RS_12M = 0.4·Q1 + 0.2·Q2 + 0.2·Q3 + 0.2·Q4   (vs SPY，IBD 加权)
 
 ## 目标
 
-引入第二道 3 月 RS 闸门，与 12 月闸门串联（AND）：
+引入第二道 3 月 RS 闸门，与 12 月闸门串联（AND）:
 
 ```
-RS_3M = 0.5·R21 + 0.3·R42 + 0.2·R63   (vs SPY，3M 等权 IBD 风格)
+RS_3M = 0.5·R21 + 0.3·R42 + 0.2·R63   (vs SPY,3M 等权 IBD 风格)
 ```
 
-应用顺序：先 12M ≥ 阈值砍一刀，再在幸存者上 3M ≥ 阈值砍第二刀。
+应用顺序:先 12M ≥ 阈值砍一刀,再在幸存者上 3M ≥ 阈值砍第二刀。
 
-**Fred6725 CSV 里的 `3M_RS_Percentile` 列不可复用**：它表达的是「3 个月前那一天的 12 月 RS 排名」，语义是「持续性 / 不是昙花一现」，不是「短窗口动量」。和港股 3M 闸门含义不一致；本期要的是和港股镜像。
+**3M 闸门的应用范围(收窄)**:仅对 **Leaders、conditional RS 组、Shorts** 三个组生效。**Longs 五个分支(EarningsGap / HighVolume / GapUp / NewHigh52W / TopGainers)保持 12M-only 不变。**
 
-**非目标**：
-- 不引入 1M / 6M 闸门（YAGNI）。
-- 不改动 IPO 组（IPO 现在不被 RS 闸过滤，本期保持）。
-- 不改动 morning-gap（intraday 不需要长线 RS）。
+理由:Longs 五个分支已经各自有强事件型闸门(earnings 缺口 / 高 RVol / gap up / 52 周新高 / Top Gainer),12M RS 90 + 这些事件本身已经把候选池缩得很紧;再叠一层 3M 会过度收紧导致 .txt 经常空仓。Leaders / RS / Shorts 这三个组没有同等强度的事件闸门(它们是纯走势型挑选),需要更严格的 RS 双层筛选才能把"老 leader 且还在领跑"的语义压实。
+
+**Fred6725 CSV 里的 `3M_RS_Percentile` 列不可复用**:它表达的是「3 个月前那一天的 12 月 RS 排名」,语义是「持续性 / 不是昙花一现」,不是「短窗口动量」。和港股 3M 闸门含义不一致;本期要的是和港股镜像。
+
+**非目标**:
+- 不在 Longs 5 splits 上加 3M 闸门(见上方理由)。
+- 不引入 1M / 6M 闸门(YAGNI)。
+- 不改动 IPO 组(IPO 现在不被 RS 闸过滤,本期保持)。
+- 不改动 morning-gap(intraday 不需要长线 RS)。
 
 ## 设计
 
@@ -72,75 +77,76 @@ def save_cache / load_cache
 
 ### 触发条件
 
-仅当 `max(min_rs_percentile_3m, min_rs_percentile_longs_3m) > 0` 时执行：
+仅当 `min_rs_percentile_3m > 0` 时执行：
 
 1. 触发 Fred6725 CSV 拉取（如未触发）→ 拿 universe
 2. yfinance batch 拉取 universe + SPY
 3. 计算 `rs_3m_table`,缓存到 `output/state/rs_rating_3m_<date>.csv`
-4. 在所有 RS 闸门处串联应用
+4. 在 Leaders / RS / Shorts 三个组上串联应用
 
-两个 3M 旋钮都为 0 → 完全跳过 yfinance batch 与 `rs_3m_table` 生成,既有 12M 行为不受影响。
+`min_rs_percentile_3m = 0` → 完全跳过 yfinance batch 与 `rs_3m_table` 生成,既有 12M 行为不受影响。
 
 ### 闸门串联
 
-`main.py` 现有的 4 个 `filter_by_rs` 调用点,每个后面紧跟一行 3M 调用:
+`main.py` 现有 4 个 `filter_by_rs` 调用点,**只在其中 3 个**(Leaders / RS / Shorts)后面串联 3M 调用。Longs/{key} 调用点不动:
 
 | 调用点 | 既有 12M 阈值 | 新增 3M 阈值 |
 |---|---|---|
-| Longs/{key}（line ~1490） | `min_rs_percentile_longs` | `min_rs_percentile_longs_3m` |
-| Leaders/{name}（line ~1540） | `min_rs_percentile` | `min_rs_percentile_3m` |
-| RS group（line ~1606） | `min_rs_percentile_longs` | `min_rs_percentile_longs_3m` |
-| run_shorts（line ~355） | `min_rs_percentile_longs`（注:既有传入这个,不是 `min_rs_percentile`） | `min_rs_percentile_longs_3m` |
+| Longs/{key}(line ~1490) | `min_rs_percentile_longs` | **不加 — 保持 12M only** |
+| Leaders/{name}(line ~1540) | `min_rs_percentile` | `min_rs_percentile_3m` |
+| RS group(line ~1606) | `min_rs_percentile_longs` | `min_rs_percentile_3m` |
+| run_shorts(line ~355) | `min_rs_percentile_longs`(caller 传入) | `min_rs_percentile_3m`(caller 传入) |
 
-伪代码片段:
+伪代码片段(以 Leaders 为例):
 
 ```python
-if min_rs_percentile_longs > 0 and tickers:
-    tickers = filter_by_rs(tickers, rs_table_12m, min_rs_percentile_longs, f"  [Longs/{key}]")
-if min_rs_percentile_longs_3m > 0 and tickers:
-    tickers = us_rs_3m.filter_by_rs(tickers, rs_table_3m, min_rs_percentile_longs_3m)
-    logger.info(f"  [Longs/{key}] {len(tickers)} after RS_3M >= {min_rs_percentile_longs_3m}")
+if min_rs_percentile > 0 and tickers:
+    tickers = filter_by_rs(tickers, rs_table_12m, min_rs_percentile, f"  [Leaders/{name}]")
+if min_rs_percentile_3m > 0 and tickers:
+    tickers = us_rs_3m.filter_by_rs(tickers, rs_table_3m, min_rs_percentile_3m)
+    logger.info(f"  [Leaders/{name}] {len(tickers)} after RS_3M >= {min_rs_percentile_3m}")
 ```
 
-`run_shorts` 签名扩展(同 HK shorts 处理):
+`run_shorts` 签名扩展:
 
 ```python
 def run_shorts(
     ...,
-    rs_table: dict[str, int] | None = None,         # 既有 — 12M
-    min_rs_percentile: int = 0,                     # 既有 — 12M(参数名是这个,但 caller 传入的是 min_rs_percentile_longs 的值)
-    rs_table_3m: pd.DataFrame | None = None,        # 新增
-    min_rs_percentile_3m: int = 0,                  # 新增(参数名,caller 传入 min_rs_percentile_longs_3m 的值)
+    rs_table: dict[str, int] | None = None,         # 既有 — 12M(caller 传 min_rs_percentile_longs)
+    min_rs_percentile: int = 0,                     # 既有 — 形参名遗留;caller 传 min_rs_percentile_longs 的值
+    rs_table_3m: pd.DataFrame | None = None,        # 新增 — 3M 表
+    min_rs_percentile_3m: int = 0,                  # 新增 — caller 传同名 config 的值
 ):
 ```
 
-注意:`run_shorts` 的形参叫 `min_rs_percentile`,但调用处实际传的是 `min_rs_percentile_longs`(见 `main.py:1577-1579`)— 这是既有命名遗留,本期不改。新加的 `min_rs_percentile_3m` 形参同样接收 caller 的 `min_rs_percentile_longs_3m` 值。
+注意:`run_shorts` 既有形参叫 `min_rs_percentile`,但调用处实际传的是 `min_rs_percentile_longs`(见 `main.py:1577-1579`)— 这是既有命名遗留,本期不改。新加的形参直接叫 `min_rs_percentile_3m`,caller 也传同名的 config 值,无遗留歧义。
 
 ### Config
 
-`[settings]` 新增 2 行,放在既有 `min_rs_percentile_longs` 旁边:
+`[settings]` 新增 1 行:
 
 ```toml
-min_rs_percentile          = 90    # 既有 — Leaders 12M
-min_rs_percentile_3m       = 90    # 新 — Leaders 3M(本地短窗口 vs SPY)
-min_rs_percentile_longs    = 90    # 既有 — Longs 5 splits / conditional RS / Shorts 12M
-min_rs_percentile_longs_3m = 90    # 新 — Longs 5 splits / conditional RS / Shorts 3M
+min_rs_percentile       = 90    # 既有 — Leaders 12M
+min_rs_percentile_longs = 90    # 既有 — Longs 5 splits / conditional RS / Shorts 12M
+min_rs_percentile_3m    = 90    # 新   — Leaders / conditional RS / Shorts 共用 3M 闸门(本地短窗口 vs SPY)
 ```
 
-任一旋钮 = 0 即独立关闭那一层(与 HK 一致):
+旋钮设 0 的语义(与 HK 一致):
 - `min_rs_percentile = 0` → 关闭 Leaders 12M(既有)
-- `min_rs_percentile_3m = 0` → 关闭 Leaders 3M(新)
 - `min_rs_percentile_longs = 0` → 关闭 Longs/RS/Shorts 12M(既有)
-- `min_rs_percentile_longs_3m = 0` → 关闭 Longs/RS/Shorts 3M(新)
-- 两个 3M 同时 = 0 → 完全跳过 yfinance batch 和 `rs_rating_3m_<date>.csv` 生成
+- `min_rs_percentile_3m = 0` → 关闭 3M 层(Leaders/RS/Shorts 全部),完全跳过 yfinance batch 和 `rs_rating_3m_<date>.csv` 生成(新)
+
+说明:3M 闸门仅作用于 Leaders/RS/Shorts 三个组;Longs 5 splits 始终只看 12M 不参与 3M 表查询,即使 `min_rs_percentile_3m > 0`。
 
 ### 日志格式
 
-延续既有「每次 `filter_by_rs` 一行」的模式,3M 紧跟 12M:
+延续既有「每次 `filter_by_rs` 一行」的模式,3M 紧跟 12M(仅在 Leaders/RS/Shorts 三个组打印 3M 行):
 
 ```
+[Leaders/4w] 42 after RS >= 90 (dropped 318, kept-as-missing 7)
+[Leaders/4w] 28 after RS_3M >= 90 (dropped 14, kept-as-missing 0)
 [Longs/EarningsGap] 38 after RS >= 90 (dropped 412, kept-as-missing 5)
-[Longs/EarningsGap] 31 after RS_3M >= 90 (dropped 7, kept-as-missing 0)
+(no RS_3M line for Longs)
 ```
 
 外加一行 batch 总结(镜像 hk_rs):
@@ -193,14 +199,14 @@ min_rs_percentile_longs_3m = 90    # 新 — Longs 5 splits / conditional RS / S
 
 `## IBD Relative Strength Rating` 节 `### US` 子节大改:
 
-- 标题改为 `### US: Fred6725 CSV (12M, vs SPY) + 本地 3M (vs SPY)`
-- 加段落说明双层 gate 的语义("老 leader 且还在领跑")
+- 标题改为 `### US: Fred6725 CSV (12M, vs SPY) + 本地 3M (Leaders/RS/Shorts only, vs SPY)`
+- 加段落说明 3M 层仅作用于 Leaders/RS/Shorts 三个组,Longs 5 splits 保持 12M-only;附决策理由(Longs 已有强事件型闸门,叠 3M 会过度收紧)
 - 加 `WEIGHTS_3M` 公式和实现指向 `us_rs_3m.py`
 - 加 universe / SPY 数据来源说明
-- 加触发条件(两个 3M 旋钮都 0 则跳过 batch)
+- 加触发条件(`min_rs_percentile_3m = 0` 则跳过 batch)
 - 加缓存路径 `rs_rating_3m_<date>.csv`
-- 加 `min_rs_percentile_3m` / `min_rs_percentile_longs_3m` 配置项
-- 更新"All US EOD long-side groups plus US Shorts gate at RS ≥ 90"→「双层 gate(12M ∩ 3M),两层都 ≥ 90」
+- 加 `min_rs_percentile_3m` 配置项
+- 更新"All US EOD long-side groups plus US Shorts gate at RS ≥ 90"→「12M ≥ 90 对全部 RS-gated 组生效;3M ≥ 90 额外作用于 Leaders/RS/Shorts」
 - "Missing tickers" 段保持("缺表 kept-as-missing"对两层都适用)
 
 `### HK` 子节无改动。
@@ -234,7 +240,7 @@ launchd 10:00 HKT 槽位充裕(下一个调度事件是 20:00 HKT 港股),时间
 
 1. **yfinance 拉取慢 / 超时** — batch 内部 retry 由 yfinance 处理。整批失败 → 单批被跳过,影响该批 500 个 ticker 进不入 3M 表 → 那些 ticker 在 `filter_by_rs` 里 kept-as-missing,不会被错砍。
 2. **SPY 拉取失败** — 已有 fallback 路径(`spy_score = 0.0` → 绝对分数排名)。
-3. **回退**:把 `min_rs_percentile_3m` 和 `min_rs_percentile_longs_3m` 都设 0 即完全关闭。代码可保留(没有性能影响),后续可重启。
+3. **回退**:把 `min_rs_percentile_3m` 设 0 即完全关闭 3M 层。代码可保留(没有性能影响),后续可重启。
 
 ## Open questions / 已确认
 
@@ -242,6 +248,7 @@ launchd 10:00 HKT 槽位充裕(下一个调度事件是 20:00 HKT 港股),时间
 - ✅ Benchmark = SPY(yfinance 拉)
 - ✅ Universe = Fred6725 CSV 的 ticker 列(~6100 只)
 - ✅ 模块拆分:新建 `us_rs_3m.py`,复制 `hk_rs.py` 逻辑(不复用)
-- ✅ 拉取触发:仅当 `max(min_rs_percentile_3m, min_rs_percentile_longs_3m) > 0`
-- ✅ 配置形状:两个 3M 旋钮(Leaders / Longs)— 镜像现有 2-tier 结构
+- ✅ 拉取触发:仅当 `min_rs_percentile_3m > 0`
+- ✅ 3M 闸门应用范围:Leaders + conditional RS 组 + Shorts(Longs 5 splits **不** 加 3M,保持 12M-only)
+- ✅ 配置形状:单一旋钮 `min_rs_percentile_3m = 90` 覆盖三个组
 - ✅ 百分位计算 universe = 全市场;过滤在分组上分两层串联
