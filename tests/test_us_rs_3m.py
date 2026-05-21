@@ -1,7 +1,4 @@
-from datetime import date as _date
-
 import pandas as pd
-import pytest
 
 from us_rs_3m import (
     WEIGHTS_3M,

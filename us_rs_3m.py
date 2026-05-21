@@ -12,13 +12,7 @@ The 3M table is consumed twice:
 
 from __future__ import annotations
 
-import logging
-from datetime import date
-from pathlib import Path
-
 import pandas as pd
-
-logger = logging.getLogger(__name__)
 
 WEIGHTS_3M: list[tuple[int, float]] = [(1, 0.5), (2, 0.3), (3, 0.2)]
 
