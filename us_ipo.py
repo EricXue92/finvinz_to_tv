@@ -177,8 +177,9 @@ def filter_us_ipo_candidates(
         if rs_gate_ready and len(df) >= 64:
             ipo_score, _ = _score_from_kline(df)
             if ipo_score is None:
-                # Should be impossible (we already gated on len(df) >= 64),
-                # but drop defensively into rs_3m bucket.
+                # len(df) >= 64 but _score_from_kline returned None (zero_last
+                # or zero_past data-hygiene reject on the IPO k-line). Drop
+                # into the same rs_3m bucket as a low-percentile score.
                 drops["rs_3m"] += 1
                 continue
             relative_score = ipo_score - _spy_score
