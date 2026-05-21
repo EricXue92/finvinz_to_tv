@@ -297,3 +297,31 @@ def test_filter_hk_ipo_counts_no_metrics_when_code_missing_from_metrics_frame():
     assert drops["no_metrics"] == 1
     assert drops["min_history"] == 0
     assert drops["cap"] == 0
+
+
+def test_filter_hk_ipo_threshold_zero_disables_entire_3m_gate():
+    # min_rs_percentile_longs_3m = 0 关闭整个 3M 闸门:
+    # - percentile 任意低都不算 drop
+    # - 不在表里也不算 drop
+    # 这与 filter_by_rs 的 threshold<=0 短路一致.
+    closes = [25.0] * 70
+    klines = {
+        "HK.LOW": _make_kline(closes),   # 70 行, RS = 10 (会被默认阈值砍)
+        "HK.MISS": _make_kline(closes),  # 70 行, 不在表里 (会被默认阈值砍)
+    }
+    metrics = pd.DataFrame.from_dict(
+        {
+            "HK.LOW":  _ipo_metrics_row(sma200=float("nan"), above_sma200=False),
+            "HK.MISS": _ipo_metrics_row(sma200=float("nan"), above_sma200=False),
+        },
+        orient="index",
+    )
+    rs_table = pd.DataFrame({"rs_percentile": [10]}, index=["HK.LOW"])
+    settings = _hk_settings_default()
+    settings["min_rs_percentile_longs_3m"] = 0
+    kept, drops = filter_hk_ipo_candidates(
+        klines, metrics, rs_table_3m=rs_table, hk_settings=settings
+    )
+    assert set(kept) == {"HK.LOW", "HK.MISS"}
+    assert drops["rs_3m"] == 0
+    assert drops["rs_3m_missing"] == 0

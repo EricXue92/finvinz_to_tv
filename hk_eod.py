@@ -744,8 +744,14 @@ def filter_hk_ipo_candidates(
         if pd.notna(row["sma200"]) and not bool(row["above_sma200"]):
             drops["sma200"] += 1
             continue
-        # 3M RS gate — 仅当 len(df) >= 64 (即 3M RS 算法可计算) 且表存在时触发
-        if len(df) >= 64 and rs_table_3m is not None and not rs_table_3m.empty:
+        # 3M RS gate — 仅当 len(df) >= 64 (即 3M RS 算法可计算)、表存在、且
+        # 阈值 > 0 时触发。threshold=0 关闭整个闸门 (与 filter_by_rs 行为一致)。
+        if (
+            len(df) >= 64
+            and rs_3m_threshold > 0
+            and rs_table_3m is not None
+            and not rs_table_3m.empty
+        ):
             if code not in rs_table_3m.index:
                 drops["rs_3m_missing"] += 1
                 continue
