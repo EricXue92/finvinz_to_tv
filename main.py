@@ -293,17 +293,38 @@ def load_config(config_path: Path) -> dict:
         return tomllib.load(f)
 
 
-def run_screener(filters: list[str], signal: str | None = None) -> list[str]:
+def run_screener(
+    filters: list[str],
+    signal: str | None = None,
+    capture_caps: dict[str, float] | None = None,
+) -> list[str]:
     """Run a Finviz screener and return list of tickers. Empty result is
-    a valid outcome (returns []) — Finviz raises NoResults in that case."""
-    kwargs = {"filters": filters}
+    a valid outcome (returns []) — Finviz raises NoResults in that case.
+
+    If ``capture_caps`` is provided, the screener uses ``table="Ownership"``
+    so each row carries a "Market Cap" column; the parsed cap (USD) is
+    stored in ``capture_caps[ticker]``. Used to feed the US IPO ladder
+    after the long-side pipeline.
+    """
+    kwargs: dict = {"filters": filters}
     if signal:
         kwargs["signal"] = signal
+    if capture_caps is not None:
+        kwargs["table"] = "Ownership"
     try:
         stock_list = Screener(**kwargs)
     except NoResults:
         return []
-    return [stock["Ticker"] for stock in stock_list.data]
+    tickers: list[str] = []
+    for stock in stock_list.data:
+        t = stock["Ticker"]
+        tickers.append(t)
+        if capture_caps is not None:
+            try:
+                capture_caps[t] = parse_number(stock["Market Cap"])
+            except (KeyError, ValueError):
+                pass
+    return tickers
 
 
 def parse_number(value: str) -> float:
@@ -1505,6 +1526,7 @@ def main() -> int:
         # pipeline finishes. Separate cross-day master so a ticker that ages
         # in still lands in its proper long-side group on first qualifying day.
         ipo_drops: set[str] = set()
+        ipo_finviz_caps: dict[str, float] = {}
         ipo_seen_path = _eod_seen_path(output_dir, "IPO")
         ipo_seen = _load_seen(ipo_seen_path)
 
@@ -1518,7 +1540,11 @@ def main() -> int:
             key = screener_cfg["key"]
             _log_section(f"[Longs/{key}] Running: {name}")
             try:
-                tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
+                tickers = run_screener(
+                    screener_cfg["filters"],
+                    screener_cfg.get("signal"),
+                    capture_caps=ipo_finviz_caps,
+                )
                 logger.info(f"  Found {len(tickers)} tickers")
                 if min_rs_percentile_longs > 0 and tickers:
                     tickers = filter_by_rs(
@@ -1568,7 +1594,11 @@ def main() -> int:
             name = screener_cfg["name"]
             _log_section(f"[Leaders] Running: {name}")
             try:
-                tickers = run_screener(screener_cfg["filters"], screener_cfg.get("signal"))
+                tickers = run_screener(
+                    screener_cfg["filters"],
+                    screener_cfg.get("signal"),
+                    capture_caps=ipo_finviz_caps,
+                )
                 logger.info(f"  Found {len(tickers)} tickers")
                 if min_rs_percentile > 0 and tickers:
                     tickers = filter_by_rs(
@@ -1645,7 +1675,11 @@ def main() -> int:
                 if check_market_down():
                     logger.info("[RS] Condition met, running screener...")
                     time.sleep(delay)
-                    found = run_screener(rs_cfg["filters"], rs_cfg.get("signal"))
+                    found = run_screener(
+                        rs_cfg["filters"],
+                        rs_cfg.get("signal"),
+                        capture_caps=ipo_finviz_caps,
+                    )
                     logger.info(f"  Found {len(found)} tickers")
                     if min_rs_percentile_longs > 0 and found:
                         found = filter_by_rs(
