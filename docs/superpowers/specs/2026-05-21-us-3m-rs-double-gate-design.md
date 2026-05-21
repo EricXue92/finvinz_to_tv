@@ -32,10 +32,11 @@ RS_3M = 0.5·R21 + 0.3·R42 + 0.2·R63   (vs SPY,3M 等权 IBD 风格)
 
 **Fred6725 CSV 里的 `3M_RS_Percentile` 列不可复用**:它表达的是「3 个月前那一天的 12 月 RS 排名」,语义是「持续性 / 不是昙花一现」,不是「短窗口动量」。和港股 3M 闸门含义不一致;本期要的是和港股镜像。
 
+**附带改造:US IPO 阶梯** — 同时把 US IPO 改造为镜像 HK `filter_hk_ipo_candidates` 的"按数据深度分级"过滤器(细节见下方 "US IPO 阶梯" 节)。
+
 **非目标**:
 - 不在 Longs 5 splits 上加 3M 闸门(见上方理由)。
 - 不引入 1M / 6M 闸门(YAGNI)。
-- 不改动 IPO 组(IPO 现在不被 RS 闸过滤,本期保持)。
 - 不改动 morning-gap(intraday 不需要长线 RS)。
 
 ## 设计
@@ -166,9 +167,92 @@ min_rs_percentile_3m    = 90    # 新   — Leaders / conditional RS / Shorts �
 | 单 ticker 不足 64 行 | 不入表 → `filter_by_rs` kept-as-missing(IPO 类) |
 | Fred6725 CSV 拉取整体失败(已有 fallback) | 12M 和 3M 同时退化为 passthrough — 既有行为,无新逻辑 |
 
+### US IPO 阶梯
+
+镜像 `filter_hk_ipo_candidates`,过滤美股 IPO 候选(`ipo_drops` 集合)。新建 `us_ipo.py`(纯函数 + 单元测试,与 hk_eod 的 IPO 段落同构),签名:
+
+```python
+def filter_us_ipo_candidates(
+    klines: dict[str, pd.DataFrame],          # yfinance 拉取的 IPO 子集 k 线
+    finviz_caps: dict[str, float],            # 从 Finviz 屏拉过程中捕获的市值(USD)
+    rs_table_3m_full: pd.DataFrame | None,    # 含 raw scores 列,可对 IPO 重排 percentile
+    spy_kline: pd.DataFrame | None,           # 用于本地 score 计算
+    settings: dict,
+) -> tuple[list[str], dict[str, int]]:
+    """阶梯(同 ticker 顺序走,命中任一即 drop 并计数):
+      - len(df) < 20                   → drops['min_history']
+      - cap < $300M                    → drops['cap']      (Finviz cap 兜底)
+      - price < $10                    → drops['price']
+      - if len(df) >= 20 with metrics:
+          avg_vol_20d < 500K           → drops['avg_vol']
+          avg_dollar_vol_20d < $100M   → drops['dvol']
+          adr_pct < 4.0%               → drops['adr']
+      - if len(df) >= 50: not above SMA50  → drops['sma50']
+      - if len(df) >= 200: not above SMA200 → drops['sma200']
+      - if len(df) >= 64 and rs_table_3m_full is not None and threshold > 0:
+          compute IPO 3M score vs SPY via _score_from_kline(WEIGHTS_3M);
+          percentile-rank against rs_table_3m_full['raw_score'] distribution;
+          rs_pct < min_rs_percentile_3m → drops['rs_3m']
+    """
+```
+
+阈值取自 `[settings]`(US Longs baseline,与 Finviz 屏过滤一致):
+
+| 字段 | 取值 | 出处 |
+|---|---|---|
+| `min_market_cap` | $300M | `[settings]` 新增(对齐 `cap_smallover`)|
+| `min_price` | $10 | `[settings]` 新增(对齐 `sh_price_o10`)|
+| `min_avg_volume` | 500K | `[settings]` 新增(对齐 `sh_avgvol_o500`)|
+| `min_dollar_volume` | $100M | `[settings]` 既有 |
+| `min_adr_percent` | 4.0 | `[settings]` 既有 |
+| `min_rs_percentile_3m` | 90 | 本期新增 |
+
+`min_market_cap` / `min_price` / `min_avg_volume` 当前在 US `[settings]` 不存在(Finviz 屏自身已经过滤过)。本期作为 IPO 阶梯专用知识引入到 `[settings]`,方便后续也复用到其他场景。
+
+**集成流程**(`main.py` Write IPO list 段落 line ~1676-1701):
+
+```python
+# 1. 旧的 RS-history 兜底剔除("transient yfinance gaps, not IPOs")保持不变
+ipo_drops -= non_ipo
+
+# 2. yfinance batch 拉取 IPO 子集 k 线(period="1y" 足够覆盖 200-day SMA)
+ipo_klines = fetch_yfinance_klines(sorted(ipo_drops), period="1y")  # ~50 ticker, 1 batch
+
+# 3. 应用阶梯
+sorted_ipo, drops = filter_us_ipo_candidates(
+    klines=ipo_klines,
+    finviz_caps=ipo_finviz_caps,   # 在屏拉过程中已捕获
+    rs_table_3m_full=rs_table_3m_full,
+    spy_kline=spy_kline,           # 已在 us_rs_3m 模块中拉取
+    settings=settings,
+)
+logger.info(f"[IPO] {len(sorted_ipo)} kept; drops={drops}")
+
+# 4. 老的 cross-day master dedup
+sorted_ipo = _dedup_seen("[IPO]", sorted_ipo, ipo_seen, ipo_seen_path)
+
+# 5. 写 .txt / Webull / Futu(不变)
+```
+
+**`finviz_caps` 捕获**:`run_screener` 内部既有 `parse_number(stock["Market Cap"])` 逻辑,本期把它额外存到一个传入的 dict(同 `ipo_drops` set 的传入模式)。改动小,不影响主流程。
+
+**3M RS percentile for IPO**:核心问题是 IPO 候选不在 Fred6725 universe(< 120 天历史)。解决方案:`us_rs_3m.compute_us_rs_3m_table` 返回的 DataFrame 同时包含 `rs_percentile` 列(既有需求)和 `raw_score` 列(新增)— 缓存文件也存这两列。IPO 阶梯里:
+- 计算 IPO 候选的 3M raw_score(用同一份 SPY 数据)
+- 通过 `np.searchsorted(sorted Fred6725 raw_scores, ipo_score)` 在 Fred6725 分数分布上反查百分位
+- 阈值 ≥ 90 比较即可
+
+这等价于"如果这个 IPO 跟 Fred6725 的 6100 只股票一起排,它会排第几"。语义清晰,不影响 Fred6725 内部的 percentile 排名。
+
+**失败模式**:
+- yfinance batch 整体失败 → `ipo_klines` 空 → 阶梯全部命中 `min_history` → IPO.txt 当日空仓 + warning(可接受 — 比错放进虚假候选更安全)
+- `rs_table_3m_full` 为 None(主层 3M 拉取失败)→ 跳过 3M 闸门,其余阶梯正常运行(passthrough,镜像 HK)
+- IPO 候选不在 `finviz_caps`(理论上不应该发生 — `ipo_drops` 一定来自 Finviz 屏)→ drops['cap'] 计数(安全侧)
+
+**测试**:`tests/test_us_ipo.py` 镜像 `tests/test_hk_ipo.py`(若存在),纯逻辑覆盖每个 drop bucket。
+
 ### Cache 与 cleanup
 
-- 新缓存路径 `output/state/rs_rating_3m_<date>.csv`,文件 schema: `ticker,rs_percentile`(与 `hk_rs_rating_3m_*.csv` 同构,只是 index 名为 `ticker` 不是 `code`)。
+- 新缓存路径 `output/state/rs_rating_3m_<date>.csv`,文件 schema: `ticker,raw_score,rs_percentile`(`raw_score` 列是新增,IPO 阶梯反查百分位用;`hk_rs_rating_3m_*.csv` 现在只有 `rs_percentile`,本期不强制 HK 同步加 `raw_score`,但若改 HK 也加上有助于未来 HK IPO 阶梯演化)。
 - `cleanup.py` 加新 glob `rs_rating_3m_*.csv`,保留窗口 **4 天**(与既有 12M `rs_rating_*.csv` 一致 — 给 `_FALLBACK_MAX_AGE_DAYS = 3` 留 1 天安全垫)。
 - 报告生成器 `report/`:不需要改动,3M 表不参与 daily report(daily report 只读 `.txt` 文件)。但 `tests/test_report_*` 里如果有 cleanup / 文件枚举相关 assertion,要确认新文件不被误读。
 
@@ -195,7 +279,16 @@ min_rs_percentile_3m    = 90    # 新   — Leaders / conditional RS / Shorts �
 
 可选:加 `tests/test_main_us_rs_double_gate.py` 集成测试,用 monkeypatch 注入两个表,验证串联调用顺序。但 main.py 既有结构难单元测试(`run_us_eod` 单一巨大函数),性价比不高 — 用手动 dry-run 验证一次即可。
 
-### CLAUDE.md 改动
+### CLAUDE.md 改动 — IPO 节
+
+`## Architecture` 节 `**IPO** (no config)` 子项,从"自动收集 sidecar,无过滤"改为"自动收集 sidecar + 阶梯过滤":
+
+- 加 ladder 描述(20 天 floor → cap/price → 20d metrics → SMA50/200 → 3M RS)
+- 加阈值清单与 `[settings]` 配置项(`min_market_cap` / `min_price` / `min_avg_volume`)
+- 加缓存 / 失败模式说明
+- 保留既有的 cross-day master / Futu group / 假 IPO 兜底语义
+
+### CLAUDE.md 改动 — RS 节
 
 `## IBD Relative Strength Rating` 节 `### US` 子节大改:
 
@@ -214,25 +307,29 @@ min_rs_percentile_3m    = 90    # 新   — Leaders / conditional RS / Shorts �
 ### 文件清单
 
 新建:
-- `us_rs_3m.py` — 算法 + 缓存 + filter
+- `us_rs_3m.py` — 3M RS 算法 + 缓存 + filter(含 `raw_score` 列)
+- `us_ipo.py` — `filter_us_ipo_candidates` 阶梯函数
 - `tests/test_us_rs_3m.py` — 单元测试
+- `tests/test_us_ipo.py` — 单元测试
 - (本文件)`docs/superpowers/specs/2026-05-21-us-3m-rs-double-gate-design.md`
 
 修改:
-- `main.py` — RS 闸门 4 个调用点串联 3M 调用;`run_shorts` 签名扩展
-- `config.toml` — 加 `min_rs_percentile_3m` 和 `min_rs_percentile_longs_3m`
+- `main.py` — RS 闸门 3 个调用点(Leaders/RS/Shorts)串联 3M 调用;`run_shorts` 签名扩展;IPO 段落串联 `filter_us_ipo_candidates`;`run_screener` 捕获 Finviz caps 到外部 dict
+- `config.toml` — 加 `min_rs_percentile_3m` / `min_market_cap` / `min_price` / `min_avg_volume`(`min_dollar_volume` / `min_adr_percent` 已有)
 - `cleanup.py` — 加 `rs_rating_3m_*.csv` 4 天保留 glob
-- `CLAUDE.md` — 文档更新
+- `CLAUDE.md` — 文档更新(RS 节 + IPO 节)
 
 不动:
-- `rs_rating.py` — 12M CSV fetcher 完全不变(本期不复用它的失败 fallback,3M 表独立)
+- `rs_rating.py` — 12M CSV fetcher 完全不变
 - `hk_rs.py` / `hk_eod.py` — 港股侧零改动
 - `report/` — 报告生成不读 RS 表
 - Futu sync — 不依赖 RS
 
 ## 时间成本估算
 
-US universe ~6100 ticker × 6 个月日线 ≈ ~120 行每 ticker。batch=500 → 13 个 batch。yfinance 经验值每 batch 10-30 秒 → **总耗时 2-5 分钟**,加在 us-eod 既有 ~5 分钟基础上,变成 ~7-10 分钟。
+- **3M RS 主层** — US universe ~6100 ticker × 6 个月日线 ≈ ~120 行每 ticker。batch=500 → 13 个 batch。yfinance 经验值每 batch 10-30 秒 → ~2-5 分钟
+- **IPO 阶梯** — `ipo_drops` 典型 ~30-80 ticker × 1 年日线 → 1 个 batch → ~10-30 秒
+- **总计**:加在 us-eod 既有 ~5 分钟基础上,变成 ~7-10 分钟
 
 launchd 10:00 HKT 槽位充裕(下一个调度事件是 20:00 HKT 港股),时间预算无压力。
 
@@ -252,3 +349,6 @@ launchd 10:00 HKT 槽位充裕(下一个调度事件是 20:00 HKT 港股),时间
 - ✅ 3M 闸门应用范围:Leaders + conditional RS 组 + Shorts(Longs 5 splits **不** 加 3M,保持 12M-only)
 - ✅ 配置形状:单一旋钮 `min_rs_percentile_3m = 90` 覆盖三个组
 - ✅ 百分位计算 universe = 全市场;过滤在分组上分两层串联
+- ✅ US IPO 阶梯镜像 HK:20-day floor + cap/price + avg_vol/$vol/ADR + SMA50/200 + 3M RS
+- ✅ IPO ADR 阈值 = 4.0%(US Longs baseline,与 HK 的 3.5% 不同)
+- ✅ IPO 3M RS percentile 通过反查 Fred6725 raw score 分布得到
