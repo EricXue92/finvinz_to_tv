@@ -1,8 +1,18 @@
+from datetime import date as _date
+
 import pandas as pd
-import numpy as np
 import pytest
 
-from hk_rs import compute_rs_table, filter_by_rs
+from hk_rs import (
+    WEIGHTS_12M,
+    WEIGHTS_3M,
+    _score_from_kline,
+    cache_path,
+    compute_rs_table,
+    filter_by_rs,
+    load_cache,
+    save_cache,
+)
 
 
 def _flat_then_jump(start_price: float, jump_pct: float, n: int = 260):
@@ -42,9 +52,6 @@ def test_filter_by_rs_passthrough_for_missing():
 def test_filter_by_rs_none_table_passthrough():
     out = filter_by_rs(["HK.AAA", "HK.BBB"], None, threshold=90)
     assert out == ["HK.AAA", "HK.BBB"]
-
-
-from hk_rs import WEIGHTS_12M, WEIGHTS_3M, _score_from_kline
 
 
 def test_score_from_kline_default_weights_unchanged():
@@ -94,11 +101,6 @@ def test_compute_rs_table_with_3m_weights_logs_label(caplog):
     with caplog.at_level("INFO"):
         compute_rs_table(klines, hsi, weights=WEIGHTS_3M, label="3M")
     assert any("[HK RS 3M]" in r.message for r in caplog.records)
-
-
-from datetime import date as _date
-
-from hk_rs import cache_path, save_cache, load_cache
 
 
 def test_cache_path_default_suffix_unchanged(tmp_path):

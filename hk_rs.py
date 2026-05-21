@@ -129,8 +129,8 @@ def filter_by_rs(
 def cache_path(today: date, output_dir: Path, suffix: str = "") -> Path:
     """Default suffix '' → hk_rs_rating_<date>.csv (12M, legacy path).
     suffix='3m' → hk_rs_rating_3m_<date>.csv."""
-    stem = f"hk_rs_rating_{('' + suffix + '_') if suffix else ''}{today.isoformat()}"
-    return output_dir / "state" / f"{stem}.csv"
+    prefix = f"{suffix}_" if suffix else ""
+    return output_dir / "state" / f"hk_rs_rating_{prefix}{today.isoformat()}.csv"
 
 
 def save_cache(
