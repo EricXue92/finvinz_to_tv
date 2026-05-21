@@ -12,16 +12,33 @@ The 3M table is consumed twice:
 
 from __future__ import annotations
 
+import io
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 WEIGHTS_3M: list[tuple[int, float]] = [(1, 0.5), (2, 0.3), (3, 0.2)]
+
+# Cloud-published CSV (written by .github/workflows/update_us_rs_3m.yml).
+# Local pipeline reads from raw.githubusercontent.com instead of computing
+# locally — the home-IP yfinance compute hits Yahoo's IP-cumulative rate
+# limit after ~2000 tickers (see spec 2026-05-21-us-rs-3m-cloud-pipeline).
+_CLOUD_CSV_URL_TEMPLATE = (
+    "https://raw.githubusercontent.com/EricXue92/finvinz_to_tv/main/"
+    "data/us_rs_3m/{date}.csv"
+)
+
+# Walk back up to N days if today's CSV isn't published yet. Mirrors
+# rs_rating._FALLBACK_MAX_AGE_DAYS — US EOD runs Mon-Fri so a Mon-failure
+# + Tue-failure gap is at worst 2 days; 3 gives margin.
+_FALLBACK_MAX_AGE_DAYS = 3
 
 
 def _score_from_kline(
@@ -122,6 +139,33 @@ def filter_by_rs(
         if int(table.loc[t, "rs_percentile"]) >= threshold:
             out.append(t)
     return out
+
+
+def _fetch_cloud_csv(url: str, timeout: int = 30) -> pd.DataFrame | None:
+    """Fetch a 3M CSV from the cloud-published artifact.
+
+    Returns the DataFrame indexed by ticker on success, or None on HTTP
+    404 (today's file not yet published), network error, or parse failure.
+    Never raises — callers walk back day-by-day on None.
+    """
+    try:
+        req = Request(url, headers={"User-Agent": "finviz-to-tv/1.0"})
+        with urlopen(req, timeout=timeout) as resp:
+            body = resp.read()
+        return pd.read_csv(io.BytesIO(body), index_col="ticker")
+    except HTTPError as e:
+        if e.code == 404:
+            return None  # today's file may not be published yet; caller falls back
+        logger.warning(f"[US RS 3M] HTTP {e.code} fetching {url}")
+        return None
+    except (URLError, TimeoutError) as e:
+        logger.warning(f"[US RS 3M] Network error fetching {url}: {e}")
+        return None
+    except Exception as e:
+        # pd.read_csv can raise ParserError, EmptyDataError, etc. — all
+        # treated as "this URL didn't yield a usable table".
+        logger.warning(f"[US RS 3M] Failed to parse {url}: {type(e).__name__}: {e}")
+        return None
 
 
 def cache_path(today: date, output_dir: Path) -> Path:
@@ -284,55 +328,48 @@ def build_3m_table(
     today: date,
     rs_table_12m: dict[str, int] | None = None,
 ) -> pd.DataFrame | None:
-    """Orchestrator: load cache or (universe → fetch → compute → save).
+    """Load today's US 3M RS table from the cloud-published CSV.
 
-    Returns None when both cache and fetch fail. Universe is derived from
-    the Fred6725 12M table (must be passed in by the EOD pipeline).
+    Strategy:
+      1. Local cache hit (same-day rerun) → return immediately.
+      2. HTTP fetch today's cloud CSV; walk back up to _FALLBACK_MAX_AGE_DAYS
+         if not yet published.
+      3. All fail → return None (callers degrade via filter_by_rs's
+         missing→passthrough policy).
+
+    The local compute path was removed in 2026-05-21 because home-IP
+    runs were getting throttled mid-loop; compute now happens in
+    .github/workflows/update_us_rs_3m.yml on ephemeral GH runners.
+
+    ``rs_table_12m`` is retained for signature compatibility with the
+    pre-cloud call sites but is no longer consulted.
     """
+    del rs_table_12m  # unused; signature kept for back-compat
+
     cached = load_cache(today, output_dir)
     if cached is not None and not cached.empty:
         logger.info(f"[US RS 3M] Using cached table: {len(cached)} tickers")
         return cached
 
-    tickers = fetch_universe_from_rs_csv(rs_table_12m)
-    if not tickers:
-        logger.warning("[US RS 3M] No universe (Fred6725 12M table empty/None); skipping 3M build")
-        return None
+    for delta in range(_FALLBACK_MAX_AGE_DAYS + 1):
+        target_date = today - timedelta(days=delta)
+        url = _CLOUD_CSV_URL_TEMPLATE.format(date=target_date.isoformat())
+        table = _fetch_cloud_csv(url)
+        if table is None or table.empty:
+            continue
+        if delta == 0:
+            logger.info(f"[US RS 3M] Fetched cloud CSV: {len(table)} tickers")
+            save_cache(table, today, output_dir)
+        else:
+            logger.warning(
+                f"[US RS 3M] Cloud CSV for {today.isoformat()} not available; "
+                f"using stale fallback from {target_date.isoformat()} ({delta} day(s) old)"
+            )
+        return table
 
-    # Fetch SPY FIRST, before the universe loop consumes any of Yahoo's
-    # rate-limit budget. If SPY falls into the throttle tail (as on
-    # 2026-05-21), the whole table degrades to "absolute scores
-    # (un-relativised)" — every ticker's percentile gets warped, not just
-    # the ones we couldn't fetch.
-    spy = _fetch_spy_kline(period="6mo")
-    if spy is None:
-        logger.warning("[US RS 3M] SPY fetch failed; computing absolute scores (un-relativised)")
-        spy = pd.DataFrame({"time_key": [], "close": []})
-
-    klines = fetch_us_klines_yf(tickers, period="6mo")
-    if not klines:
-        logger.warning("[US RS 3M] yfinance batch returned no data; 3M layer will passthrough")
-        return None
-
-    table = compute_us_rs_3m_table(klines, spy)
-    if table.empty:
-        logger.warning("[US RS 3M] No tickers scored; 3M layer will passthrough")
-        return None
-
-    # Refuse to cache a severely partial table — percentile ranks in a 1300
-    # ticker subset vs. the 6000-ticker universe are not interchangeable
-    # (a 90th-percentile name in the partial may be 70th in the full set).
-    # Returning None forces the next rerun to retry rather than freezing
-    # the day at a warped distribution.
-    coverage = len(table) / len(tickers) if tickers else 0
-    if coverage < 0.5:
-        logger.warning(
-            f"[US RS 3M] Coverage {len(table)}/{len(tickers)} ({coverage:.1%}) "
-            f"below 50% — refusing to cache warped table; 3M layer will "
-            f"passthrough until a healthier rerun succeeds"
-        )
-        return None
-
-    save_cache(table, today, output_dir)
-    logger.info(f"[US RS 3M] Built {len(table)} ticker table → cache")
-    return table
+    logger.warning(
+        f"[US RS 3M] No cloud CSV within {_FALLBACK_MAX_AGE_DAYS} days; "
+        "3M layer will passthrough "
+        "(check https://github.com/EricXue92/finvinz_to_tv/actions)"
+    )
+    return None
