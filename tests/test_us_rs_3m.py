@@ -165,6 +165,19 @@ def test_save_and_load_cache_roundtrip(tmp_path):
     assert abs(loaded.loc["AAA", "raw_score"] - 0.2) < 1e-9
 
 
+def _fake_download(tickers, **kwargs):
+    """Mimic yfinance batch shape: MultiIndex columns (ticker, field).
+
+    yfinance always returns a MultiIndex even for single-ticker batches
+    when group_by='ticker' is used — this fake replicates that shape.
+    """
+    idx = pd.date_range(end="2026-05-21", periods=80, freq="B")
+    cols = pd.MultiIndex.from_product(
+        [tickers, ["Open", "High", "Low", "Close", "Volume"]]
+    )
+    return pd.DataFrame(100.0, index=idx, columns=cols)
+
+
 def test_fetch_us_klines_yf_shapes(monkeypatch):
     """Smoke test that the fetcher returns the right DataFrame shape.
 
@@ -173,22 +186,34 @@ def test_fetch_us_klines_yf_shapes(monkeypatch):
     """
     import us_rs_3m
 
-    def _fake_download(tickers, **kwargs):
-        # Mimic yfinance batch shape: MultiIndex columns (ticker, field)
-        idx = pd.date_range(end="2026-05-21", periods=80, freq="B")
-        cols = pd.MultiIndex.from_product(
-            [tickers, ["Open", "High", "Low", "Close", "Volume"]]
-        )
-        data = pd.DataFrame(100.0, index=idx, columns=cols)
-        return data
-
     monkeypatch.setattr("us_rs_3m._yf_download_with_retry", _fake_download, raising=False)
+    monkeypatch.setattr("us_rs_3m._retry_sparse_in_batch", lambda *a, **kw: None, raising=False)
     klines = us_rs_3m.fetch_us_klines_yf(["AAPL", "MSFT"], period="6mo", batch_size=500)
     assert set(klines.keys()) == {"AAPL", "MSFT"}
     for t, df in klines.items():
         assert "close" in df.columns
         assert "time_key" in df.columns
         assert len(df) == 80
+
+
+def test_fetch_us_klines_yf_single_ticker(monkeypatch):
+    """Single-ticker batch must use the same MultiIndex path (not 'batch_data["Close"]').
+
+    With group_by='ticker', yfinance returns MultiIndex even for 1-ticker batches.
+    The old code had a broken `if len(batch) == 1` branch that did
+    batch_data["Close"] — which raises KeyError on MultiIndex and silently
+    dropped the ticker. This test verifies AAPL is present in the output.
+    """
+    import us_rs_3m
+
+    monkeypatch.setattr("us_rs_3m._yf_download_with_retry", _fake_download, raising=False)
+    monkeypatch.setattr("us_rs_3m._retry_sparse_in_batch", lambda *a, **kw: None, raising=False)
+    klines = us_rs_3m.fetch_us_klines_yf(["AAPL"], period="6mo", batch_size=500)
+    assert "AAPL" in klines
+    df = klines["AAPL"]
+    assert "close" in df.columns
+    assert "time_key" in df.columns
+    assert len(df) == 80
 
 
 def test_fetch_us_klines_yf_empty_input():

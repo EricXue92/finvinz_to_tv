@@ -153,6 +153,16 @@ def _yf_download_with_retry(tickers, **kwargs):
     return _impl(tickers, **kwargs)
 
 
+def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int) -> None:
+    """Indirection layer so tests can monkeypatch this attribute.
+
+    At runtime, lazily import the helper from main.py (avoids circular import:
+    main.py imports from us_rs_3m).
+    """
+    from main import _retry_sparse_in_batch as _impl
+    return _impl(data, tickers, period=period, min_rows=min_rows)
+
+
 def fetch_us_klines_yf(
     tickers: list[str],
     period: str = "6mo",
@@ -182,13 +192,11 @@ def fetch_us_klines_yf(
         if batch_data is None or batch_data.empty:
             logger.warning(f"[US RS 3M]   batch failed; skipping {len(batch)} tickers")
             continue
+        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=64)
         for t in batch:
             try:
-                if len(batch) == 1:
-                    closes = batch_data["Close"].dropna()
-                else:
-                    closes = batch_data[t]["Close"].dropna()
-            except (KeyError, AttributeError):
+                closes = batch_data[t]["Close"].dropna()
+            except (KeyError, TypeError, ValueError, AttributeError):
                 continue
             if closes.empty:
                 continue
