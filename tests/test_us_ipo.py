@@ -206,3 +206,115 @@ def test_filter_keeps_clean_20_to_49_day_ticker():
     )
     assert kept == ["FRESH"]
     assert sum(drops.values()) == 0
+
+
+def test_filter_skips_rs_gate_when_below_64_days():
+    """Tickers with 30 days history don't trigger the RS gate even if
+    the table would have rejected them."""
+    from us_ipo import filter_us_ipo_candidates
+    closes = [25.0] * 30
+    klines = {"YOUNG": _make_kline(closes, highs=[27.0] * 30, lows=[23.0] * 30,
+                                    volumes=[5_000_000.0] * 30)}
+    # Table has YOUNG with a very low raw_score — but len < 64 so the gate
+    # shouldn't even fire.
+    rs_table = pd.DataFrame({
+        "raw_score": [0.5, 0.4, 0.3],
+        "rs_percentile": [99, 95, 90],
+    }, index=["A", "B", "C"])
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"YOUNG": 5e9},
+        rs_table_3m_full=rs_table,
+        spy_kline=_make_kline([400.0] * 80),
+        settings=_us_settings_default(),
+    )
+    assert kept == ["YOUNG"]
+    assert drops["rs_3m"] == 0
+
+
+def test_filter_passes_rs_gate_when_score_at_high_percentile():
+    """A 70-day IPO with +20% jump beats most Fred6725 scores → ≥90 percentile → kept."""
+    from us_ipo import filter_us_ipo_candidates
+    # 70 行 with strong jump at the very end relative to 21d ago
+    closes = [100.0] * 50 + [120.0] * 20
+    klines = {"WINNER": _make_kline(closes, highs=[c * 1.05 for c in closes],
+                                     lows=[c * 0.95 for c in closes],
+                                     volumes=[10_000_000.0] * 70)}
+    # Fred6725-like distribution: scores -0.1 to 0.05 → WINNER's much higher
+    # score lands in the top
+    rs_table = pd.DataFrame({
+        "raw_score": np.linspace(-0.1, 0.05, 100),
+        "rs_percentile": np.linspace(0, 99, 100).astype(int),
+    }, index=[f"F{i:03d}" for i in range(100)])
+    spy = _make_kline([400.0] * 80)
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"WINNER": 5e9},
+        rs_table_3m_full=rs_table, spy_kline=spy,
+        settings=_us_settings_default(),
+    )
+    assert kept == ["WINNER"]
+    assert drops["rs_3m"] == 0
+
+
+def test_filter_drops_when_rs_score_below_threshold():
+    """A 70-day IPO scoring lower than the 90th-percentile cutoff → drop."""
+    from us_ipo import filter_us_ipo_candidates
+    # Use rising closes so last > sma50 (passes all other gates, reaches RS gate)
+    closes = [20.0] * 50 + [25.0] * 20
+    klines = {"LOSER": _make_kline(closes, highs=[c * 1.08 for c in closes],
+                                    lows=[c * 0.92 for c in closes],
+                                    volumes=[10_000_000.0] * 70)}
+    # Fred6725 distribution all well above 0 → LOSER's small positive score
+    # (last/past21 - 1 ≈ 0.25 raw) - spy_score(0) ≈ 0.25, but distribution
+    # is [0.5, 1.0] → lands at near 0 percentile → drops
+    rs_table = pd.DataFrame({
+        "raw_score": np.linspace(0.5, 1.0, 100),
+        "rs_percentile": np.linspace(0, 99, 100).astype(int),
+    }, index=[f"F{i:03d}" for i in range(100)])
+    spy = _make_kline([400.0] * 80)
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"LOSER": 5e9},
+        rs_table_3m_full=rs_table, spy_kline=spy,
+        settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["rs_3m"] == 1
+
+
+def test_filter_passes_when_rs_table_is_none():
+    """rs_table_3m_full=None → 3M gate skipped (passthrough); other gates still apply."""
+    from us_ipo import filter_us_ipo_candidates
+    # Use rising closes so last > sma50
+    closes = [20.0] * 50 + [25.0] * 20
+    klines = {"PASS": _make_kline(closes, highs=[c * 1.08 for c in closes],
+                                   lows=[c * 0.92 for c in closes],
+                                   volumes=[10_000_000.0] * 70)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"PASS": 5e9},
+        rs_table_3m_full=None, spy_kline=None,
+        settings=_us_settings_default(),
+    )
+    assert kept == ["PASS"]
+    assert drops["rs_3m"] == 0
+
+
+def test_filter_passes_when_rs_threshold_is_zero():
+    """min_rs_percentile_3m=0 → gate fully disabled."""
+    from us_ipo import filter_us_ipo_candidates
+    # Use rising closes so last > sma50
+    closes = [20.0] * 50 + [25.0] * 20
+    klines = {"X": _make_kline(closes, highs=[c * 1.08 for c in closes],
+                                lows=[c * 0.92 for c in closes],
+                                volumes=[10_000_000.0] * 70)}
+    rs_table = pd.DataFrame({
+        "raw_score": [0.5],
+        "rs_percentile": [99],
+    }, index=["X"])
+    settings = _us_settings_default()
+    settings["min_rs_percentile_3m"] = 0
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"X": 5e9},
+        rs_table_3m_full=rs_table, spy_kline=_make_kline([400.0] * 80),
+        settings=settings,
+    )
+    assert kept == ["X"]
+    assert drops["rs_3m"] == 0

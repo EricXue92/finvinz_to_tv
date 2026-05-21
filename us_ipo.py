@@ -157,8 +157,32 @@ def filter_us_ipo_candidates(
         if pd.notna(row["sma200"]) and not bool(row["above_sma200"]):
             drops["sma200"] += 1
             continue
-        # 3M RS gate placeholder — Task 11 will fill in the body. Until then,
-        # tickers with >= 64 days pass through here without RS check.
+        # 3M RS gate — only fires for n >= 64 with a usable table.
+        if (
+            len(df) >= 64
+            and rs_threshold > 0
+            and rs_table_3m_full is not None
+            and not rs_table_3m_full.empty
+            and spy_kline is not None
+        ):
+            from us_rs_3m import _score_from_kline
+            spy_score, _ = _score_from_kline(spy_kline)
+            spy_score = spy_score if spy_score is not None else 0.0
+            ipo_score, ipo_reason = _score_from_kline(df)
+            if ipo_score is None:
+                # Should be impossible (we already gated on len(df) >= 64),
+                # but log defensively and drop into rs_3m bucket.
+                drops["rs_3m"] += 1
+                continue
+            relative_score = ipo_score - spy_score
+            distribution = rs_table_3m_full["raw_score"].astype(float).sort_values().values
+            # Percentile of relative_score against Fred6725 distribution.
+            # searchsorted("right") gives the count of distribution <= score.
+            rank = np.searchsorted(distribution, relative_score, side="right")
+            pct = int(round(rank / max(len(distribution), 1) * 99))
+            if pct < rs_threshold:
+                drops["rs_3m"] += 1
+                continue
         kept.append(t)
 
     return kept, drops
