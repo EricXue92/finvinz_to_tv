@@ -91,7 +91,7 @@ def compute_us_rs_3m_table(
     if not scores:
         return pd.DataFrame(columns=["raw_score", "rs_percentile"])
 
-    series = pd.Series(scores, name="raw_score")
+    series = pd.Series(scores)  # column name comes from the dict key below
     pct = series.rank(method="average", pct=True) * 99
     return pd.DataFrame({
         "raw_score": series,
