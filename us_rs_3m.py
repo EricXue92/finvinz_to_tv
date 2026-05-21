@@ -12,7 +12,11 @@ The 3M table is consumed twice:
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 WEIGHTS_3M: list[tuple[int, float]] = [(1, 0.5), (2, 0.3), (3, 0.2)]
 
@@ -49,3 +53,47 @@ def _score_from_kline(
             return None, "zero_past"
         score += w * ((last / past) - 1.0)
     return score, "ok"
+
+
+def compute_us_rs_3m_table(
+    klines: dict[str, pd.DataFrame],
+    spy_kline: pd.DataFrame,
+) -> pd.DataFrame:
+    """Return DataFrame indexed by ticker with columns ``raw_score`` and
+    ``rs_percentile`` (0-99).
+
+    Tickers without enough history (< 64 rows) are excluded. ``raw_score``
+    is retained alongside the percentile so the US IPO ladder can score
+    out-of-universe candidates against the same Fred6725 distribution.
+    """
+    spy_score, spy_reason = _score_from_kline(spy_kline)
+    if spy_score is None:
+        logger.warning(
+            f"[US RS 3M] SPY score rejected ({spy_reason}) — falling back to "
+            f"absolute scores (effectively un-relativised)."
+        )
+        spy_score = 0.0
+
+    scores: dict[str, float] = {}
+    reasons: dict[str, int] = {}
+    for ticker, df in klines.items():
+        s, reason = _score_from_kline(df)
+        reasons[reason] = reasons.get(reason, 0) + 1
+        if s is None:
+            continue
+        scores[ticker] = s - spy_score
+
+    logger.info(
+        f"[US RS 3M] computed: {len(scores)}/{len(klines)} klines scored. "
+        f"Reason breakdown: {dict(sorted(reasons.items(), key=lambda x: -x[1]))}"
+    )
+
+    if not scores:
+        return pd.DataFrame(columns=["raw_score", "rs_percentile"])
+
+    series = pd.Series(scores, name="raw_score")
+    pct = series.rank(method="average", pct=True) * 99
+    return pd.DataFrame({
+        "raw_score": series,
+        "rs_percentile": pct.round().astype(int),
+    })
