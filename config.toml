@@ -191,7 +191,8 @@ min_avg_volume          = 500_000         # 5 个长线组的统一日均量门�
 # 池砍掉。3.5 在"放过百强股"和"还能筛掉静态低波动股"之间取折中。
 min_adr_percent         = 3.5
 min_price               = 20.0            # HKD
-min_rs_percentile_longs = 90              # 与 HSI 比较，本地 IBD 算法 (top 10%)
+min_rs_percentile_longs    = 90           # 12月 RS 闸门 — 与 HSI 比较，本地 IBD 算法 (top 10%)
+min_rs_percentile_longs_3m = 90           # 3月 RS 闸门 — 0.5·R21+0.3·R42+0.2·R63 vs HSI (top 10%)
 hsi_rs_trigger          = -1.2            # HSI 当日跌幅 ≤ 此值则触发 RS 组
 
 [[hk_longs]]
