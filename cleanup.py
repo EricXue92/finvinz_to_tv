@@ -40,6 +40,11 @@ _RETENTION_RULES: tuple[_Rule, ...] = (
           "%Y_%m_%d", 2),
     _Rule("state", re.compile(rf"^hk_morning_gap_seen_post_{_DATE_U}\.txt$"),
           "%Y_%m_%d", 2),
+    # 3M variant first — its filename starts with hk_rs_rating_3m_, which
+    # would otherwise be a no-match against the 12M regex below (the 12M
+    # regex anchors on hk_rs_rating_<date>.csv with no '3m_' segment).
+    _Rule("state", re.compile(rf"^hk_rs_rating_3m_{_DATE_D}\.csv$"),
+          "%Y-%m-%d", 2),
     _Rule("state", re.compile(rf"^hk_rs_rating_{_DATE_D}\.csv$"),
           "%Y-%m-%d", 2),
     # rs_rating_*.csv: 4-day window preserves the documented 3-day GitHub

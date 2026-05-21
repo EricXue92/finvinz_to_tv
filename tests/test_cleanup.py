@@ -60,10 +60,11 @@ def test_rs_rating_uses_four_day_window(output_tree: Path) -> None:
               "2026_05_12", "2026_05_11", "2026_05_09"):
         _touch(output_tree / f"state/rs_rating_{d}.csv")
 
-    # hk_rs_rating_*.csv is on the standard 2-day rule despite living
-    # next to rs_rating_*.csv. Today = 15, cutoff = 14.
+    # hk_rs_rating_*.csv (12M) and hk_rs_rating_3m_*.csv (3M) are both on
+    # the standard 2-day rule. Today = 15, cutoff = 14.
     for d in ("2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12"):
         _touch(output_tree / f"state/hk_rs_rating_{d}.csv")
+        _touch(output_tree / f"state/hk_rs_rating_3m_{d}.csv")
 
     cleanup_old_outputs(output_tree, date(2026, 5, 15))
 
@@ -78,6 +79,11 @@ def test_rs_rating_uses_four_day_window(output_tree: Path) -> None:
     assert (output_tree / "state/hk_rs_rating_2026-05-14.csv").exists()
     assert not (output_tree / "state/hk_rs_rating_2026-05-13.csv").exists()
     assert not (output_tree / "state/hk_rs_rating_2026-05-12.csv").exists()
+
+    assert (output_tree / "state/hk_rs_rating_3m_2026-05-15.csv").exists()
+    assert (output_tree / "state/hk_rs_rating_3m_2026-05-14.csv").exists()
+    assert not (output_tree / "state/hk_rs_rating_3m_2026-05-13.csv").exists()
+    assert not (output_tree / "state/hk_rs_rating_3m_2026-05-12.csv").exists()
 
 
 def test_survivors_are_preserved(output_tree: Path) -> None:
