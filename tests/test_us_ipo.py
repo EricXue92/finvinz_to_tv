@@ -137,3 +137,72 @@ def test_filter_drops_when_price_below_threshold():
     )
     assert kept == []
     assert drops["price"] == 1
+
+
+def test_filter_drops_when_avg_vol_below_threshold():
+    from us_ipo import filter_us_ipo_candidates
+    klines = {"LOWVOL": _make_kline([25.0] * 25, volumes=[100_000.0] * 25)}  # 100K < 500K
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"LOWVOL": 5e9},
+        rs_table_3m_full=None, spy_kline=None, settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["avg_vol"] == 1
+
+
+def test_filter_drops_when_dvol_below_threshold():
+    from us_ipo import filter_us_ipo_candidates
+    # price=$15 × avg_vol=600K = $9M dollar vol < $100M
+    klines = {"LOWDV": _make_kline([15.0] * 25, volumes=[600_000.0] * 25)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"LOWDV": 5e9},
+        rs_table_3m_full=None, spy_kline=None, settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["dvol"] == 1
+
+
+def test_filter_drops_when_adr_below_threshold():
+    from us_ipo import filter_us_ipo_candidates
+    # Flat closes with tiny H/L spread → ADR < 4%
+    closes = [25.0] * 25
+    highs = [25.05] * 25
+    lows = [24.95] * 25
+    klines = {"FLAT": _make_kline(closes, highs=highs, lows=lows, volumes=[5_000_000.0] * 25)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"FLAT": 5e9},
+        rs_table_3m_full=None, spy_kline=None, settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["adr"] == 1
+
+
+def test_filter_drops_when_below_sma50():
+    from us_ipo import filter_us_ipo_candidates
+    # First 49 closes = 30 (avg pulls sma50 high), last close = 25 below sma50
+    closes = [30.0] * 49 + [25.0]
+    klines = {"DEC": _make_kline(closes, highs=[c * 1.05 for c in closes],
+                                  lows=[c * 0.95 for c in closes],
+                                  volumes=[5_000_000.0] * 50)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"DEC": 5e9},
+        rs_table_3m_full=None, spy_kline=None, settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["sma50"] == 1
+
+
+def test_filter_keeps_clean_20_to_49_day_ticker():
+    from us_ipo import filter_us_ipo_candidates
+    # 30 行,price=25,vol=1M,wide H/L → 全部 ≥20-day gate pass; < 50 → SMA 跳过
+    closes = [25.0] * 30
+    highs = [27.0] * 30
+    lows = [23.0] * 30
+    klines = {"FRESH": _make_kline(closes, highs=highs, lows=lows,
+                                    volumes=[5_000_000.0] * 30)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines, finviz_caps={"FRESH": 5e9},
+        rs_table_3m_full=None, spy_kline=None, settings=_us_settings_default(),
+    )
+    assert kept == ["FRESH"]
+    assert sum(drops.values()) == 0
