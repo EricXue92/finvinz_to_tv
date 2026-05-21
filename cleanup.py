@@ -51,6 +51,10 @@ _RETENTION_RULES: tuple[_Rule, ...] = (
     # fetch fallback in rs_rating.py (_FALLBACK_MAX_AGE_DAYS = 3).
     _Rule("state", re.compile(rf"^rs_rating_{_DATE_U}\.csv$"),
           "%Y_%m_%d", 4),
+    # rs_rating_3m_*.csv: US 3M RS cache (us_rs_3m.py, date uses ISO dashes).
+    # Same 4-day window as the 12M counterpart.
+    _Rule("state", re.compile(rf"^rs_rating_3m_{_DATE_D}\.csv$"),
+          "%Y-%m-%d", 4),
 )
 
 

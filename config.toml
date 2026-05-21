@@ -20,6 +20,17 @@ adr_days = 20
 min_rs_percentile = 90          # Leaders only — IBD RS percentile gate (top 10%)
 min_rs_percentile_longs = 90    # Longs (5 splits) + RS group + US Shorts — IBD RS percentile gate (top 10%)
 
+# 第二层 3M RS 闸门 (本地算法, vs SPY) — 仅作用于 Leaders / 条件 RS 组 / Shorts
+# 三个纯走势型组。Longs 5 splits 保持 12M-only。设为 0 关闭整个 3M 层。
+min_rs_percentile_3m = 90
+
+# US IPO ladder 阈值 (镜像 HK conditional ladder)
+# 仅作用于 IPO 候选 (Finviz 屏过但 yfinance 历史不足的 ticker)
+min_market_cap = 300_000_000     # USD; 对齐 Finviz cap_smallover
+min_price = 10.0                 # USD; 对齐 Finviz sh_price_o10
+min_avg_volume = 500_000         # 20-day shares/day; 对齐 Finviz sh_avgvol_o500
+# min_dollar_volume / min_adr_percent 复用上方既有 [settings] 值
+
 # --- Futu (富途牛牛) 自动同步 ---
 # 需要本地运行 FutuOpenD,且分组需在富途客户端预先手动建好(API 不能新建分组)
 [futu]

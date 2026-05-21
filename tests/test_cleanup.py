@@ -162,3 +162,18 @@ def test_malformed_date_in_filename_is_skipped(
         cleanup_old_outputs(output_tree, date(2026, 5, 15))
     assert (output_tree / "TV/US/2026_02_30_Leaders.txt").exists()
     assert any("malformed date" in r.message for r in caplog.records)
+
+
+def test_cleanup_keeps_recent_rs_rating_3m(tmp_path):
+    """rs_rating_3m_*.csv follows the same 4-day window as rs_rating_*.csv.
+    Note: 3M cache uses dash-separated date format (vs underscore for 12M)."""
+    state = tmp_path / "output" / "state"
+    state.mkdir(parents=True)
+    keep = state / "rs_rating_3m_2026-05-20.csv"  # 1 day old
+    drop = state / "rs_rating_3m_2026-05-10.csv"  # 11 days old
+    keep.write_text("ticker,raw_score,rs_percentile\nAAA,0.2,95\n")
+    drop.write_text("ticker,raw_score,rs_percentile\nAAA,0.2,95\n")
+
+    cleanup_old_outputs(tmp_path / "output", date(2026, 5, 21))
+    assert keep.exists()
+    assert not drop.exists()
