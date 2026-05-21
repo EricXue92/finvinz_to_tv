@@ -94,3 +94,32 @@ def test_compute_rs_table_with_3m_weights_logs_label(caplog):
     with caplog.at_level("INFO"):
         compute_rs_table(klines, hsi, weights=WEIGHTS_3M, label="3M")
     assert any("[HK RS 3M]" in r.message for r in caplog.records)
+
+
+from datetime import date as _date
+
+from hk_rs import cache_path, save_cache, load_cache
+
+
+def test_cache_path_default_suffix_unchanged(tmp_path):
+    p = cache_path(_date(2026, 5, 21), tmp_path)
+    assert p == tmp_path / "state" / "hk_rs_rating_2026-05-21.csv"
+
+
+def test_cache_path_with_3m_suffix(tmp_path):
+    p = cache_path(_date(2026, 5, 21), tmp_path, suffix="3m")
+    assert p == tmp_path / "state" / "hk_rs_rating_3m_2026-05-21.csv"
+
+
+def test_save_and_load_3m_cache_roundtrip(tmp_path):
+    df = pd.DataFrame({"rs_percentile": [95, 50]}, index=["HK.00001", "HK.00002"])
+    df.index.name = "code"
+    save_cache(df, _date(2026, 5, 21), tmp_path, suffix="3m")
+
+    loaded = load_cache(_date(2026, 5, 21), tmp_path, suffix="3m")
+    assert loaded is not None
+    assert list(loaded.index) == ["HK.00001", "HK.00002"]
+    assert loaded.loc["HK.00001", "rs_percentile"] == 95
+
+    # 默认 suffix 路径不应找到这个文件
+    assert load_cache(_date(2026, 5, 21), tmp_path) is None

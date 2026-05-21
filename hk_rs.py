@@ -126,18 +126,25 @@ def filter_by_rs(
     return out
 
 
-def cache_path(today: date, output_dir: Path) -> Path:
-    return output_dir / "state" / f"hk_rs_rating_{today.isoformat()}.csv"
+def cache_path(today: date, output_dir: Path, suffix: str = "") -> Path:
+    """Default suffix '' → hk_rs_rating_<date>.csv (12M, legacy path).
+    suffix='3m' → hk_rs_rating_3m_<date>.csv."""
+    stem = f"hk_rs_rating_{('' + suffix + '_') if suffix else ''}{today.isoformat()}"
+    return output_dir / "state" / f"{stem}.csv"
 
 
-def save_cache(table: pd.DataFrame, today: date, output_dir: Path) -> None:
-    p = cache_path(today, output_dir)
+def save_cache(
+    table: pd.DataFrame, today: date, output_dir: Path, suffix: str = ""
+) -> None:
+    p = cache_path(today, output_dir, suffix=suffix)
     p.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(p, index_label="code")
 
 
-def load_cache(today: date, output_dir: Path) -> pd.DataFrame | None:
-    p = cache_path(today, output_dir)
+def load_cache(
+    today: date, output_dir: Path, suffix: str = ""
+) -> pd.DataFrame | None:
+    p = cache_path(today, output_dir, suffix=suffix)
     if not p.exists():
         return None
     try:
