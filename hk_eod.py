@@ -828,21 +828,30 @@ def run_hk_eod(
     metrics = build_metrics_frame(klines, caps)
     logger.info(f"  Metrics: {len(metrics)} tickers with usable history")
 
-    # --- RS table ---
-    # today_iso comes from main.py as 'YYYY_MM_DD' (filename-friendly), which
-    # pd.Timestamp can't parse. Use the actual current date for the cache key
-    # — when use_yesterday is True we still cache under today's date because
-    # the cache is keyed by run-day, not by data-day.
-    from hk_rs import compute_rs_table, filter_by_rs, save_cache, load_cache
+    # --- RS tables (12M + 3M) ---
+    # 双闸门: 先过 12M RS >= threshold, 再过 3M RS >= threshold_3m.
+    # 两张表用同一次 HSI fetch 计算，分别落盘到 hk_rs_rating_<date>.csv
+    # 与 hk_rs_rating_3m_<date>.csv。"missing -> passthrough" 策略两层都遵守。
+    # 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
+    from hk_rs import (
+        compute_rs_table, filter_by_rs, save_cache, load_cache,
+        WEIGHTS_12M, WEIGHTS_3M,
+    )
     today_d = date.today()
-    rs_table = load_cache(today_d, output_dir)
-    if rs_table is None and klines:
+    rs_table_12m = load_cache(today_d, output_dir)
+    rs_table_3m  = load_cache(today_d, output_dir, suffix="3m")
+    need_compute = (rs_table_12m is None or rs_table_3m is None) and bool(klines)
+    if need_compute:
         hsi_kline = fetch_hsi_kline_yf(period="2y")
         if hsi_kline is not None and not hsi_kline.empty:
             if use_yesterday:
                 hsi_kline = hsi_kline[hsi_kline["time_key"].dt.date < today_d].reset_index(drop=True)
-            rs_table = compute_rs_table(klines, hsi_kline)
-            save_cache(rs_table, today_d, output_dir)
+            if rs_table_12m is None:
+                rs_table_12m = compute_rs_table(klines, hsi_kline, weights=WEIGHTS_12M, label="12M")
+                save_cache(rs_table_12m, today_d, output_dir)
+            if rs_table_3m is None:
+                rs_table_3m = compute_rs_table(klines, hsi_kline, weights=WEIGHTS_3M, label="3M")
+                save_cache(rs_table_3m, today_d, output_dir, suffix="3m")
         else:
             logger.warning("[HK Longs] HSI k-line fetch failed — RS gate disabled")
 
@@ -869,19 +878,21 @@ def run_hk_eod(
 
     raw = apply_strategy_filters(metrics, hk_settings, hk_longs, hk_leaders, rs_enabled)
 
-    # --- RS percentile gate (after raw masks) ---
-    threshold = int(hk_settings.get("min_rs_percentile_longs", 90))
-    pre_rs_counts = {n: len(c) for n, c in raw.items()}
-    raw = {
-        name: filter_by_rs(codes_list, rs_table, threshold)
-        for name, codes_list in raw.items()
-    }
-    post_rs_counts = {n: len(c) for n, c in raw.items()}
-    rs_drops = {n: pre_rs_counts[n] - post_rs_counts[n] for n in raw}
+    # --- RS double gate (12M ∩ 3M) ---
+    threshold_12m = int(hk_settings.get("min_rs_percentile_longs", 90))
+    threshold_3m  = int(hk_settings.get("min_rs_percentile_longs_3m", 90))
+    pre_counts   = {n: len(c) for n, c in raw.items()}
+    after_12m    = {n: filter_by_rs(c, rs_table_12m, threshold_12m) for n, c in raw.items()}
+    after_3m     = {n: filter_by_rs(c, rs_table_3m,  threshold_3m)  for n, c in after_12m.items()}
+    raw = after_3m
     logger.info(
-        f"[HK Longs] RS>={threshold} gate: "
-        + ", ".join(f"{n} {pre_rs_counts[n]}→{post_rs_counts[n]} (-{rs_drops[n]})" for n in HK_STRATEGY_PRIORITY)
+        f"[HK Longs] RS 12m>={threshold_12m} ∩ 3m>={threshold_3m}: "
+        + ", ".join(
+            f"{n} {pre_counts[n]}→{len(after_12m[n])}→{len(after_3m[n])}"
+            for n in HK_STRATEGY_PRIORITY
+        )
     )
+    post_rs_counts = {n: len(c) for n, c in raw.items()}
 
     # --- Within-day cross-strategy priority dedup ---
     # RS is the conditional weak-market scan; the entire point is to
