@@ -17,11 +17,25 @@ adr_days = 20
 # Set either to 0 to disable that tier; the GitHub fetch is skipped only
 # when both are 0. Tickers missing from the table (recent IPOs without
 # 12 months of history, foreign listings) are kept, not dropped.
+#
+# 闸门作用范围 (12M ∩ 3M 组合):
+#   Longs 5 splits (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers)
+#     → 仅 12M (min_rs_percentile_longs)
+#   Leaders                  → 12M (min_rs_percentile) + 3M (min_rs_percentile_3m)
+#   条件 RS 组 (SPY+QQQ ≤ -1.2%) → 12M (min_rs_percentile_longs) + 3M (min_rs_percentile_3m)
+#   US Shorts                → 12M (min_rs_percentile_longs) + 3M (min_rs_percentile_3m)
+#   US IPO ladder (≥64天部分)  → 仅 3M (反查 Fred6725 raw_score 分布)
+#
+# 调节建议:
+#   - 放宽 Leaders/RS/Shorts → 调低 min_rs_percentile_3m (85/80/0)
+#   - 收紧 Longs 5 splits   → 调高 min_rs_percentile_longs (Longs 不走 3M)
+#   - 完全关闭 3M 层         → min_rs_percentile_3m = 0 (跳过 yfinance batch)
 min_rs_percentile = 90          # Leaders only — IBD RS percentile gate (top 10%)
 min_rs_percentile_longs = 90    # Longs (5 splits) + RS group + US Shorts — IBD RS percentile gate (top 10%)
 
 # 第二层 3M RS 闸门 (本地算法, vs SPY) — 仅作用于 Leaders / 条件 RS 组 / Shorts
-# 三个纯走势型组。Longs 5 splits 保持 12M-only。设为 0 关闭整个 3M 层。
+# 三个纯走势型组 + IPO ladder 的 ≥64天部分。Longs 5 splits 保持 12M-only。
+# 设为 0 关闭整个 3M 层 (跳过 ~6100 ticker 的 yfinance batch)。
 min_rs_percentile_3m = 90
 
 # US IPO ladder 阈值 (镜像 HK conditional ladder)
