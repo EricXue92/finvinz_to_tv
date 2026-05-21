@@ -78,3 +78,44 @@ def test_load_rs_lookup_missing_cache_returns_passthrough(tmp_path: Path, monkey
     (tmp_path / "output" / "state").mkdir(parents=True)
     lookup = orch._load_rs_lookup("us", "2026_05_07")
     assert lookup("AAPL") is None
+
+
+def test_load_rs_lookup_hk_ignores_3m_cache_when_only_3m_present(
+    tmp_path: Path, monkeypatch
+):
+    """If only the 3M cache file is present (no 12M file), the HK lookup
+    must NOT silently use the 3M values — it should return an all-None
+    lookup. Defends against future regression where a refactor turns the
+    candidate list into a glob."""
+    state_dir = tmp_path / "output" / "state"
+    state_dir.mkdir(parents=True)
+    csv_3m = state_dir / "hk_rs_rating_3m_2026-05-07.csv"
+    with csv_3m.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["ticker", "percentile"])
+        writer.writerow(["HK.00700", 92])
+    monkeypatch.setattr(orch, "PROJECT_ROOT", tmp_path)
+    lookup = orch._load_rs_lookup("hk", "2026_05_07")
+    # 12M 表不存在 → 即使 3M 表里有 0700，日报也不应读到它
+    assert lookup("0700.HK") is None
+
+
+def test_load_rs_lookup_hk_uses_12m_cache_when_both_present(
+    tmp_path: Path, monkeypatch
+):
+    """12M and 3M caches coexist; lookup must read the 12M file."""
+    state_dir = tmp_path / "output" / "state"
+    state_dir.mkdir(parents=True)
+    csv_12m = state_dir / "hk_rs_rating_2026-05-07.csv"
+    with csv_12m.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["ticker", "percentile"])
+        writer.writerow(["HK.00700", 92])
+    csv_3m = state_dir / "hk_rs_rating_3m_2026-05-07.csv"
+    with csv_3m.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["ticker", "percentile"])
+        writer.writerow(["HK.00700", 77])  # 不同分数，确认读的是 12M
+    monkeypatch.setattr(orch, "PROJECT_ROOT", tmp_path)
+    lookup = orch._load_rs_lookup("hk", "2026_05_07")
+    assert lookup("0700.HK") == 92  # 12M 表的值，不是 3M 表的 77
