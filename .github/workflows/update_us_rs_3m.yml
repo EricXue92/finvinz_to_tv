@@ -35,5 +35,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add data/us_rs_3m/
-          git diff --staged --quiet || git commit -m "chore(us_rs_3m): publish $(date -u +%Y-%m-%d) table"
-          git push
+          if git diff --staged --quiet; then
+            echo "Nothing to commit (script failed or produced no new file)"
+            exit 0
+          fi
+          git commit -m "chore(us_rs_3m): publish $(date -u +%Y-%m-%d) table"
+          # Retry once with rebase if someone pushed to main during our
+          # ~14-min compute window. The rebase is guaranteed trivial — we
+          # only added a new file in data/us_rs_3m/ — so the second push
+          # succeeds.
+          git push || (git pull --rebase origin main && git push)

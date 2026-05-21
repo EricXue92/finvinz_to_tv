@@ -151,3 +151,60 @@ def test_build_3m_table_local_cache_short_circuit_skips_http(
     table = us_rs_3m.build_3m_table(tmp_path, today)
     assert table is not None
     assert list(table.index) == ["AAPL", "MSFT"]
+
+
+def test_build_3m_table_saturday_walkback_logs_info_not_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog
+) -> None:
+    """Saturday local run walks back 1 day to Friday's CSV — cloud cron is
+    Mon-Fri so Saturday's file is never produced. This is the expected
+    weekday case; log at INFO not WARNING (would otherwise look like
+    degraded mode every single Sat run)."""
+    import logging
+
+    saturday = date(2026, 5, 23)
+    assert saturday.weekday() == 5, "test relies on 2026-05-23 being a Saturday"
+    fixture = pd.read_csv(io.StringIO(_FIXTURE_CSV), index_col="ticker")
+
+    def _fake_fetch(url, timeout=30):
+        if "2026-05-22" in url:  # Friday's date — succeeds
+            return fixture
+        return None  # Saturday's URL — 404
+
+    monkeypatch.setattr(us_rs_3m, "_fetch_cloud_csv", _fake_fetch)
+    with caplog.at_level(logging.INFO, logger="us_rs_3m"):
+        table = us_rs_3m.build_3m_table(tmp_path, saturday)
+
+    assert table is not None
+    # No WARNING from the fetch path (passthrough warning would only fire if all
+    # 4 fetches returned None).
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert not warnings, f"unexpected warnings: {[r.message for r in warnings]}"
+    # An INFO mentioning Saturday should have been logged.
+    info_msgs = [r.message for r in caplog.records if r.levelname == "INFO"]
+    assert any("Saturday" in m for m in info_msgs), f"missing Saturday note in: {info_msgs}"
+
+
+def test_build_3m_table_non_saturday_walkback_still_warns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog
+) -> None:
+    """Regression guard: a 1-day walkback on a NON-Saturday (e.g. cloud cron
+    missed Monday) should still log WARNING — that case is genuinely stale."""
+    import logging
+
+    tuesday = date(2026, 5, 26)
+    assert tuesday.weekday() == 1, "test relies on 2026-05-26 being a Tuesday"
+    fixture = pd.read_csv(io.StringIO(_FIXTURE_CSV), index_col="ticker")
+
+    def _fake_fetch(url, timeout=30):
+        if "2026-05-25" in url:  # Monday — succeeds
+            return fixture
+        return None  # Tuesday 404 (cron failed)
+
+    monkeypatch.setattr(us_rs_3m, "_fetch_cloud_csv", _fake_fetch)
+    with caplog.at_level(logging.INFO, logger="us_rs_3m"):
+        table = us_rs_3m.build_3m_table(tmp_path, tuesday)
+
+    assert table is not None
+    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("stale fallback" in m for m in warnings), f"expected stale warning, got: {warnings}"
