@@ -16,23 +16,34 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def _score_from_kline(df: pd.DataFrame) -> tuple[float | None, str]:
-    """Compute 0.4*R3 + 0.2*R6 + 0.2*R9 + 0.2*R12 from a k-line DataFrame
-    sorted ascending by ``time_key``. Returns ``(score, reason)`` — score is
-    None on rejection. Reason is one of:
-      ``ok``, ``no_data``, ``short_history`` (< 253 rows = < 12 months),
+# Weight tuples: (months, weight). months 决定回看偏移 (months * 21 个交易日)；
+# weight 按 IBD 风格压在最短窗口上，重叠窗口产生隐式时间衰减。
+WEIGHTS_12M: list[tuple[int, float]] = [(3, 0.4), (6, 0.2), (9, 0.2), (12, 0.2)]
+WEIGHTS_3M:  list[tuple[int, float]] = [(1, 0.5), (2, 0.3), (3, 0.2)]
+
+
+def _score_from_kline(
+    df: pd.DataFrame,
+    weights: list[tuple[int, float]] = WEIGHTS_12M,
+) -> tuple[float | None, str]:
+    """Compute Σ wᵢ·Rᵢ from a k-line DataFrame sorted ascending by ``time_key``.
+    Returns ``(score, reason)`` — score is None on rejection. Reason is one of:
+      ``ok``, ``no_data``, ``short_history`` (insufficient rows for max lookback),
       ``zero_last``, ``zero_past``.
+
+    Minimum rows = ``max(months for months, _ in weights) * 21 + 1``.
     """
     if df is None or df.empty:
         return None, "no_data"
-    if len(df) < 253:
+    max_months = max(m for m, _ in weights)
+    min_rows = max_months * 21 + 1
+    if len(df) < min_rows:
         return None, "short_history"
     closes = df["close"].astype(float).values
     last = closes[-1]
     if last <= 0:
         return None, "zero_last"
 
-    weights = [(3, 0.4), (6, 0.2), (9, 0.2), (12, 0.2)]
     score = 0.0
     for months, w in weights:
         idx = -1 - months * 21

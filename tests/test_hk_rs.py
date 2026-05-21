@@ -42,3 +42,31 @@ def test_filter_by_rs_passthrough_for_missing():
 def test_filter_by_rs_none_table_passthrough():
     out = filter_by_rs(["HK.AAA", "HK.BBB"], None, threshold=90)
     assert out == ["HK.AAA", "HK.BBB"]
+
+
+from hk_rs import WEIGHTS_12M, WEIGHTS_3M, _score_from_kline
+
+
+def test_score_from_kline_default_weights_unchanged():
+    # 260 行平盘 + 末尾跳 +20% → 12M 分数应等于 0.4·0.2 + 0.2·0.2 + 0.2·0.2 + 0.2·0.2 = 0.20
+    df = _flat_then_jump(100.0, jump_pct=20, n=260)
+    score, reason = _score_from_kline(df)  # 默认 WEIGHTS_12M
+    assert reason == "ok"
+    assert abs(score - 0.20) < 1e-9
+
+
+def test_score_from_kline_3m_weights_short_history_ok():
+    # 70 行平盘 + 末尾跳 +10% → 3M 算法仅需 max(3)*21 + 1 = 64 行
+    # 分数 = 0.5·0.1 + 0.3·0.1 + 0.2·0.1 = 0.10
+    df = _flat_then_jump(100.0, jump_pct=10, n=70)
+    score, reason = _score_from_kline(df, weights=WEIGHTS_3M)
+    assert reason == "ok"
+    assert abs(score - 0.10) < 1e-9
+
+
+def test_score_from_kline_3m_weights_reject_when_below_min_rows():
+    # 60 行 < 64 → short_history
+    df = _flat_then_jump(100.0, jump_pct=10, n=60)
+    score, reason = _score_from_kline(df, weights=WEIGHTS_3M)
+    assert score is None
+    assert reason == "short_history"
