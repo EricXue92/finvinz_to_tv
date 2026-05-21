@@ -1035,87 +1035,30 @@ def run_hk_eod(
         futu_sync(config, futu_key[name], tv, "HK")
 
     # --- HK IPO sidecar ---
-    # Mirrors the US IPO sidecar contract: catch tickers in the HKEX Main
-    # Board universe that yfinance returned but with insufficient history
-    # for the IBD 12-month RS calc (< 253 rows). These are almost always
-    # fresh HK IPOs that aged into yfinance but haven't accumulated 12mo
-    # of data yet. NOT RS-gated.
+    # Tickers with insufficient history for the IBD 12-month RS calc
+    # (< 253 rows). Filtered through filter_hk_ipo_candidates (see its
+    # docstring for the gate ladder). Independent cross-day master at
+    # output/state/eod_seen_HKIPO.txt — a ticker collected today as IPO
+    # still lands in its proper long-side group on the first day it has
+    # enough history (the long-side master eod_seen_HK.txt is separate).
     #
-    # Filters apply *conditionally* — each gate fires only when the IPO
-    # has accumulated enough history for that window:
-    #   - cap >= HK$300M           (always — Futu snapshot, day 1)
-    #   - price >= HK$20           (always — last close, day 1)
-    #   - avg_vol >= 500K          (only if >= 20 trading days)
-    #   - $vol   >= HK$100M        (only if >= 20 trading days)
-    #   - ADR%   >= 4.0%           (only if >= 20 trading days)
-    #   - above SMA50              (only if >= 50 trading days)
-    #   - above SMA200             (only if >= 200 trading days)
-    # Gates never short-circuit on absent data — a true day-1 IPO clears
-    # everything except cap+price; a 60-day IPO clears the 20-/50-day
-    # gates plus cap+price; a 220-day IPO clears all of them. Tickers
-    # graduate into the long-side flow at 253 rows.
-    #
-    # Independent cross-day master at output/state/eod_seen_HKIPO.txt — a
-    # ticker collected today as an IPO drop still lands in its proper
-    # long-side group on the first day it has enough history (the long-
-    # side master eod_seen_HK.txt is separate, so no cross-contamination).
-    ipo_cap = hk_settings.get("min_market_cap", 300_000_000)
-    ipo_min_price = hk_settings.get("min_price", 20.0)
-    ipo_min_avg_vol = hk_settings.get("min_avg_volume", 500_000)
-    ipo_min_dvol = hk_settings.get("min_dollar_volume", 100_000_000)
-    # IPO ADR matches the long-side floor (3.5%, tuned down from 4.0% in
-    # PR #10 to fit HK blue-chip volatility). Keeps IPO consistent with
-    # the rest of the HK long-side baseline so promotion at 253 rows is
-    # seamless — a ticker that just made it into IPO doesn't get cut by
-    # an unexpectedly looser ADR gate the next day.
-    ipo_min_adr = hk_settings.get("min_adr_percent", 3.5)
-    ipo_codes: list[str] = []
-    ipo_dropped = {"cap": 0, "price": 0, "avg_vol": 0, "dvol": 0,
-                   "adr": 0, "sma50": 0, "sma200": 0}
-    for code, df in klines.items():
-        if len(df) >= 253:
-            continue  # full history; goes through normal long-side flow
-        if code not in metrics.index:
-            continue
-        row = metrics.loc[code]
-        if not (pd.notna(row["market_cap"]) and row["market_cap"] >= ipo_cap):
-            ipo_dropped["cap"] += 1
-            continue
-        if not (pd.notna(row["last_price"]) and row["last_price"] >= ipo_min_price):
-            ipo_dropped["price"] += 1
-            continue
-        # 20-day-conditional gates (avg_vol, $vol, ADR). build_metrics_frame
-        # leaves these NaN when the ticker has < 20 rows.
-        if pd.notna(row["avg_vol_20d"]) and row["avg_vol_20d"] < ipo_min_avg_vol:
-            ipo_dropped["avg_vol"] += 1
-            continue
-        if pd.notna(row["avg_dollar_vol_20d"]) and row["avg_dollar_vol_20d"] < ipo_min_dvol:
-            ipo_dropped["dvol"] += 1
-            continue
-        if pd.notna(row["adr_pct"]) and row["adr_pct"] < ipo_min_adr:
-            ipo_dropped["adr"] += 1
-            continue
-        # 50-day-conditional: above-SMA50 only required when sma50 is
-        # computable (>= 50 rows). build_metrics_frame's `above_sma50`
-        # is False whenever n < 50, so we read sma50 directly to detect
-        # availability.
-        if pd.notna(row["sma50"]) and not bool(row["above_sma50"]):
-            ipo_dropped["sma50"] += 1
-            continue
-        # 200-day-conditional: same shape for SMA200.
-        if pd.notna(row["sma200"]) and not bool(row["above_sma200"]):
-            ipo_dropped["sma200"] += 1
-            continue
-        ipo_codes.append(code)
+    # 2026-05-21 tightening: added (1) hard minimum 20 trading days, and
+    # (2) 3M RS >= min_rs_percentile_longs_3m at len(df) >= 64. See
+    # filter_hk_ipo_candidates for the full ladder.
+    ipo_codes, ipo_dropped = filter_hk_ipo_candidates(
+        klines, metrics, rs_table_3m, hk_settings
+    )
 
     ipo_seen_path = eod_seen_path(output_dir, "HKIPO")
     ipo_seen = load_seen(ipo_seen_path)
     ipo_tv = sorted(_to_tv(c) for c in ipo_codes)
+    rs_3m_threshold = int(hk_settings.get("min_rs_percentile_longs_3m", 90))
     logger.info(
         f"[HK IPO] {len(ipo_codes)} candidates after conditional filters "
-        f"(cap>={ipo_cap:,.0f}, price>={ipo_min_price}, "
-        f"+if 20d: avg_vol>={ipo_min_avg_vol:,.0f} & $vol>={ipo_min_dvol:,.0f} & ADR>={ipo_min_adr}%, "
-        f"+if 50d: above SMA50, +if 200d: above SMA200); "
+        f"(>=20d hist; cap>={hk_settings.get('min_market_cap', 300_000_000):,.0f}, "
+        f"price>={hk_settings.get('min_price', 20.0)}, "
+        f"+if 20d: avg_vol/dvol/ADR, +if 50d: SMA50, +if 200d: SMA200, "
+        f"+if 64d: RS_3M>={rs_3m_threshold}); "
         f"raw klines<253: {sum(1 for df in klines.values() if len(df) < 253)}; "
         f"dropped: {ipo_dropped}"
     )
