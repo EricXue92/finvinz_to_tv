@@ -101,8 +101,6 @@ def filter_us_ipo_candidates(
           compute IPO 3M score vs SPY; rank against
           rs_table_3m_full['raw_score'] distribution;
           pct < min_rs_percentile_3m                   → drops['rs_3m']
-          (3M RS body is implemented in Task 11; this commit ships the
-          placeholder that does NOT drop on RS.)
     """
     min_cap = float(settings.get("min_market_cap", 300_000_000))
     min_price = float(settings.get("min_price", 10.0))
@@ -118,6 +116,24 @@ def filter_us_ipo_candidates(
         "sma50": 0, "sma200": 0,
         "rs_3m": 0,
     }
+
+    # Hoist the SPY score + sorted distribution above the loop — both are
+    # invariant across tickers, and re-running _score_from_kline / sort_values
+    # per-IPO is wasted work.
+    rs_gate_ready = (
+        rs_threshold > 0
+        and rs_table_3m_full is not None
+        and not rs_table_3m_full.empty
+        and spy_kline is not None
+    )
+    if rs_gate_ready:
+        from us_rs_3m import _score_from_kline
+        _spy_score, _ = _score_from_kline(spy_kline)
+        _spy_score = _spy_score if _spy_score is not None else 0.0
+        _rs_distribution = (
+            rs_table_3m_full["raw_score"].astype(float).sort_values().values
+        )
+
     metrics = _build_ipo_metrics(klines, finviz_caps)
     if metrics.empty:
         # All k-lines were empty/None or len<2 — count as min_history drops
@@ -158,28 +174,17 @@ def filter_us_ipo_candidates(
             drops["sma200"] += 1
             continue
         # 3M RS gate — only fires for n >= 64 with a usable table.
-        if (
-            len(df) >= 64
-            and rs_threshold > 0
-            and rs_table_3m_full is not None
-            and not rs_table_3m_full.empty
-            and spy_kline is not None
-        ):
-            from us_rs_3m import _score_from_kline
-            spy_score, _ = _score_from_kline(spy_kline)
-            spy_score = spy_score if spy_score is not None else 0.0
-            ipo_score, ipo_reason = _score_from_kline(df)
+        if rs_gate_ready and len(df) >= 64:
+            ipo_score, _ = _score_from_kline(df)
             if ipo_score is None:
                 # Should be impossible (we already gated on len(df) >= 64),
-                # but log defensively and drop into rs_3m bucket.
+                # but drop defensively into rs_3m bucket.
                 drops["rs_3m"] += 1
                 continue
-            relative_score = ipo_score - spy_score
-            distribution = rs_table_3m_full["raw_score"].astype(float).sort_values().values
-            # Percentile of relative_score against Fred6725 distribution.
+            relative_score = ipo_score - _spy_score
             # searchsorted("right") gives the count of distribution <= score.
-            rank = np.searchsorted(distribution, relative_score, side="right")
-            pct = int(round(rank / max(len(distribution), 1) * 99))
+            rank = np.searchsorted(_rs_distribution, relative_score, side="right")
+            pct = int(round(rank / max(len(_rs_distribution), 1) * 99))
             if pct < rs_threshold:
                 drops["rs_3m"] += 1
                 continue
