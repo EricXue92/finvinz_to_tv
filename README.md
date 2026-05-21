@@ -2,7 +2,7 @@
 
 Multi-source momentum and short screeners (US via Finviz, intraday gaps via Futu snapshots) that emit TradingView- and Webull-importable watchlists, auto-sync to Futu (富途牛牛) custom groups via OpenAPI, and produce daily CANSLIM-style research briefs via Claude Sonnet 4.6. Methodology based on Oliver Kell and Kristjan Kullamägi.
 
-> **Status (2026-05-07):** US + HK. US uses Finviz + yfinance + IBD RS CSV. HK uses yfinance for k-line + HSI history (the original Futu-only spec was rolled back when Futu's free/Lv1 tier was found to cap 12-month history at ~12% of the Main Board universe). Futu still handles HK market caps, the live HSI day-change snapshot for the conditional RS trigger, and watchlist sync. HK pipeline runs in its own scheduled slot at 20:00 HKT (US runs at 10:00 HKT) — both write per-market logs. After each EOD run the wrapper scripts also invoke `--mode report` for that market, generating a CANSLIM Markdown + standalone-HTML brief for the day's newly-detected long-side tickers.
+> **Status (2026-05-21):** US + HK. US uses Finviz + yfinance + IBD RS CSV (12M) + local 3M RS computation vs SPY. HK uses yfinance for k-line + HSI history (the original Futu-only spec was rolled back when Futu's free/Lv1 tier was found to cap 12-month history at ~12% of the Main Board universe). Futu still handles HK market caps, the live HSI day-change snapshot for the conditional RS trigger, and watchlist sync. Both markets now use a **12M ∩ 3M RS double gate** on Leaders/RS/Shorts (Longs 5 splits stay 12M-only) and a **depth-conditional IPO ladder** for sub-12-month tickers. HK pipeline runs in its own scheduled slot at 20:00 HKT (US runs at 10:00 HKT) — both write per-market logs. After each EOD run the wrapper scripts also invoke `--mode report` for that market, generating a CANSLIM Markdown + standalone-HTML brief for the day's newly-detected long-side tickers.
 
 ## Screeners
 
@@ -14,12 +14,23 @@ Applied after the Finviz screen, before any expensive yfinance work. Configurabl
 
 | Gate | Scope | Threshold | Source |
 |---|---|---|---|
-| **IBD RS Percentile (Leaders)** | Leaders | ≥ 90 (top 10%; missing tickers KEPT) | [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY, refreshed weekday ~01:30 UTC |
-| **IBD RS Percentile (Longs/RS/US Shorts)** | Longs (5 splits) + RS group + US Shorts | ≥ 90 (top 10%; missing tickers KEPT) | same source as above |
+| **IBD RS Percentile 12M (Leaders)** | Leaders | ≥ 90 (top 10%; missing tickers KEPT) | [Fred6725/rs-log](https://github.com/Fred6725/relative-strength), `RS = 0.4·P3 + 0.2·P6 + 0.2·P9 + 0.2·P12` normalised against SPY, refreshed weekday ~01:30 UTC |
+| **IBD RS Percentile 12M (Longs/RS/US Shorts)** | Longs (5 splits) + RS group + US Shorts | ≥ 90 (top 10%; missing tickers KEPT) | same source as above |
+| **IBD RS Percentile 3M (Leaders/RS/US Shorts)** | Leaders + RS group + US Shorts (NOT Longs) | ≥ 90 (top 10%; missing tickers KEPT) | computed locally in `us_rs_3m.py`: `RS_3M = 0.5·R21 + 0.3·R42 + 0.2·R63` vs SPY, universe = Fred6725 ticker list (~6100), cached to `output/state/rs_rating_3m_<date>.csv` with `raw_score` for IPO out-of-universe lookup |
 | **Dollar Volume** | Longs + Leaders | Price × 20-day avg volume ≥ $100M | yfinance daily |
 | **ADR%** | Longs + Leaders | mean(`(High − Low) / Close`) × 100 over 20 completed bars ≥ 4.0% | yfinance daily |
 
-**RS scope:** All US long-side EOD groups plus US Shorts gate at RS ≥ 90 — the IBD top decile is the leadership cohort on both directions (a parabolic blow-off short candidate is by definition high-RS). HK Shorts, Morning Gap, and IPO are NOT RS-gated: HK tickers aren't in the US RS table; Morning Gap is intraday discovery; IPO is by definition pre-RS-rating (sub-12-month history).
+**RS scope (two-layer gate):**
+
+| Group | 12M gate | 3M gate |
+|---|---|---|
+| Longs 5 splits (EarningsGap/HighVolume/GapUp/NewHigh52W/TopGainers) | `min_rs_percentile_longs` | — (12M only) |
+| Leaders | `min_rs_percentile` | `min_rs_percentile_3m` |
+| Conditional RS group | `min_rs_percentile_longs` | `min_rs_percentile_3m` |
+| US Shorts | `min_rs_percentile_longs` | `min_rs_percentile_3m` |
+| US IPO ladder (≥ 64 days) | — | `min_rs_percentile_3m` (via `np.searchsorted` against Fred6725 `raw_score`) |
+
+Semantics: 12M ≥ 90 = "long-term leader"; 3M ≥ 90 = "still leading recently". Intersection = "old leader still leading". **Longs 5 splits stay 12M-only** by design — they already have strong event filters (EarningsGap / RVol surge / GapUp / 52W high / Top Gainer) and stacking 3M would over-tighten the universe. Set `min_rs_percentile_3m = 0` to disable the entire 3M layer (skips the ~6100-ticker yfinance batch). HK Shorts and Morning Gap are NOT RS-gated.
 
 ADR% replaces the legacy Finviz `beta > 1.5` filter — beta measures multi-year correlation with the broad market and was excluding mid/large-cap catalyst names that were actually in-play. ADR% (Kullamägi-style) directly measures whether a stock is currently moving.
 
@@ -35,13 +46,13 @@ Oliver Kell momentum/breakout setups. Priority order — earlier wins, each tick
 | 4 | `NewHigh52W` | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200 |
 | 5 | `TopGainers` | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers |
 
-All 5 also pass the global Dollar Volume / ADR% gates and IBD RS ≥ 90.
+All 5 also pass the global Dollar Volume / ADR% gates and IBD RS 12M ≥ 90. **No 3M layer on Longs** (the event filters already select for fresh momentum).
 
 ### Leaders (5 strategies, merged)
 
 Long-term trend leaders above SMA50 + SMA200. All five share the same base filters and differ only in performance window.
 
-**Base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200, plus the global gates.
+**Base filters:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200, plus the global gates **including the 12M ∩ 3M RS double gate** (both ≥ 90).
 
 | Strategy | Performance threshold |
 |---|---|
@@ -55,7 +66,7 @@ Long-term trend leaders above SMA50 + SMA200. All five share the same base filte
 
 Kullamägi parabolic blow-off setups. Two-phase: Finviz Ownership pre-filter, then yfinance post-processing on a single shared download.
 
-**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month avg), Cap > $300M. Then IBD RS ≥ 90 (cuts before the yfinance batch).
+**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month avg), Cap > $300M. Then **IBD RS 12M ∩ 3M ≥ 90** (cuts before the yfinance batch).
 
 **Phase 2 — yfinance + Futu cap snapshot, in order: performance → dollar volume → ADR% → consecutive up days.**
 
@@ -75,15 +86,29 @@ Cap is sourced from Futu (truncation-free) rather than Finviz's coarse `"6.96M"`
 
 Oliver Kell's relative-strength approach. **Runs only when SPY *and* QQQ are both down > 1.5%** on the day — surfaces stocks holding up in a weak market.
 
-Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, IBD RS ≥ 90.
+Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 12M ∩ 3M ≥ 90** (double gate).
 
 ### IPO (auto-collected sidecar)
 
-Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get dropped by yfinance for **insufficient daily history** — typical for stocks IPO'd within the last ~20 trading days. They cleared price/volume on Finviz and are worth watching while they age in.
+Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get dropped by yfinance for insufficient daily history — typical for stocks IPO'd within the last few months. The candidate set is then run through a depth-conditional ladder (mirror of HK `filter_hk_ipo_candidates`, implementation in `us_ipo.filter_us_ipo_candidates`) so a day-30 IPO can still surface while a day-200 IPO is held to nearly the full long-side baseline:
+
+| Gate | Threshold | Condition |
+|---|---|---|
+| min history | ≥ 20 trading days | always (drops day 1-19 — too noisy on volume) |
+| cap | ≥ $300M | always (cap from Finviz captured during screener pass) |
+| price | ≥ $10 | always |
+| avg vol | ≥ 500K shares/day | only if ≥ 20 days |
+| $vol | ≥ $100M | only if ≥ 20 days |
+| ADR% | ≥ 4.0% | only if ≥ 20 days |
+| above SMA50 | — | only if ≥ 50 days |
+| above SMA200 | — | only if ≥ 200 days |
+| 3M RS | ≥ 90 (vs Fred6725 raw_score distribution) | only if ≥ 64 days |
+
+Thresholds match the US Longs baseline so promotion at full history is seamless. The 3M RS gate is special: IPO candidates aren't in the Fred6725 universe (< 120 days), so the ladder computes their score locally and ranks via `np.searchsorted` against the Fred6725 `raw_score` distribution — "where would this IPO rank if it joined the universe today". When `min_rs_percentile_3m = 0` the RS gate is skipped entirely.
 
 - Output: `output/TV/US/<date>_IPO.txt` + Webull mirror + Futu group `IPO`
-- Has its own cross-day master `output/state/eod_seen_IPO.txt`. Once a ticker has enough yfinance bars to pass DV/ADR/RVol, it lands in its proper long-side group on the first qualifying day.
-- Triggered by yfinance "insufficient data" / "insufficient volume data" / "insufficient daily bars for ADR%" / "failed to process" warnings. Real ADR%/dollar-volume rejections (data was sufficient, just below threshold) are NOT collected.
+- Cross-day master: `output/state/eod_seen_IPO.txt` (independent of `eod_seen_US.txt`, so a promoted ticker lands in its proper long-side group on the first qualifying day)
+- Guard: tickers present in the 12M Fred6725 RS table have ≥ 12mo of history and can't be fresh IPOs — those drops are flagged as transient yfinance gaps and excluded from the IPO bucket before the ladder.
 
 ### HK Shorts
 
@@ -210,7 +235,8 @@ output/
     ├── eod_seen_IPO.txt       # US IPO sidecar (independent — promoted into US groups when ready)
     ├── eod_seen_HKIPO.txt     # HK IPO sidecar (independent — promoted into HK groups when ready)
     ├── morning_gap_seen_<date>.txt  # per-day MorningGap dedup
-    ├── rs_rating_<date>.csv         # US IBD RS percentile cache (Fred6725/rs-log)
+    ├── rs_rating_<date>.csv         # US 12M IBD RS percentile cache (Fred6725/rs-log)
+    ├── rs_rating_3m_<date>.csv      # US 3M RS cache (raw_score + percentile, vs SPY, local)
     └── hk_rs_rating_<date>.csv      # HK RS percentile cache (computed locally vs HSI)
 ```
 
