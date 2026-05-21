@@ -70,3 +70,70 @@ def test_build_ipo_metrics_skips_single_row():
     caps = {"ONEROW": 1e9}
     metrics = _build_ipo_metrics(klines, caps)
     assert metrics.empty
+
+
+def _us_settings_default():
+    return {
+        "min_market_cap": 300_000_000,
+        "min_price": 10.0,
+        "min_avg_volume": 500_000,
+        "min_dollar_volume": 100_000_000,
+        "min_adr_percent": 4.0,
+        "min_rs_percentile_3m": 90,
+    }
+
+
+def test_filter_drops_when_history_below_20_days():
+    from us_ipo import filter_us_ipo_candidates
+    klines = {"NEW1": _make_kline([25.0] * 15)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines,
+        finviz_caps={"NEW1": 5e9},
+        rs_table_3m_full=None,
+        spy_kline=None,
+        settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["min_history"] == 1
+
+
+def test_filter_drops_when_cap_below_threshold():
+    from us_ipo import filter_us_ipo_candidates
+    klines = {"SMALL": _make_kline([25.0] * 25)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines,
+        finviz_caps={"SMALL": 100_000_000},
+        rs_table_3m_full=None,
+        spy_kline=None,
+        settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["cap"] == 1
+
+
+def test_filter_drops_when_cap_missing():
+    from us_ipo import filter_us_ipo_candidates
+    klines = {"NOCAP": _make_kline([25.0] * 25)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines,
+        finviz_caps={},
+        rs_table_3m_full=None,
+        spy_kline=None,
+        settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["cap"] == 1
+
+
+def test_filter_drops_when_price_below_threshold():
+    from us_ipo import filter_us_ipo_candidates
+    klines = {"PENNY": _make_kline([5.0] * 25)}
+    kept, drops = filter_us_ipo_candidates(
+        klines=klines,
+        finviz_caps={"PENNY": 5e9},
+        rs_table_3m_full=None,
+        spy_kline=None,
+        settings=_us_settings_default(),
+    )
+    assert kept == []
+    assert drops["price"] == 1

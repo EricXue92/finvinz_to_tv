@@ -76,3 +76,89 @@ def _build_ipo_metrics(
         if col in result.columns:
             result[col] = result[col].map(bool).astype(object)
     return result
+
+
+def filter_us_ipo_candidates(
+    klines: dict[str, pd.DataFrame],
+    finviz_caps: dict[str, float],
+    rs_table_3m_full: pd.DataFrame | None,
+    spy_kline: pd.DataFrame | None,
+    settings: dict,
+) -> tuple[list[str], dict[str, int]]:
+    """Filter US IPO candidates through the depth-conditional ladder.
+
+    Drop buckets (first hit wins, mirrors HK filter_hk_ipo_candidates):
+      - len(df) < 20                                   → drops['min_history']
+      - cap < min_market_cap                           → drops['cap']
+      - price < min_price                              → drops['price']
+      - if n >= 20:
+          avg_vol_20d < min_avg_volume                 → drops['avg_vol']
+          avg_dollar_vol_20d < min_dollar_volume       → drops['dvol']
+          adr_pct < min_adr_percent                    → drops['adr']
+      - if n >= 50: not above SMA50                    → drops['sma50']
+      - if n >= 200: not above SMA200                  → drops['sma200']
+      - if n >= 64 and rs_table_3m_full and threshold>0:
+          compute IPO 3M score vs SPY; rank against
+          rs_table_3m_full['raw_score'] distribution;
+          pct < min_rs_percentile_3m                   → drops['rs_3m']
+          (3M RS body is implemented in Task 11; this commit ships the
+          placeholder that does NOT drop on RS.)
+    """
+    min_cap = float(settings.get("min_market_cap", 300_000_000))
+    min_price = float(settings.get("min_price", 10.0))
+    min_avg_vol = float(settings.get("min_avg_volume", 500_000))
+    min_dvol = float(settings.get("min_dollar_volume", 100_000_000))
+    min_adr = float(settings.get("min_adr_percent", 4.0))
+    rs_threshold = int(settings.get("min_rs_percentile_3m", 0))
+
+    drops: dict[str, int] = {
+        "min_history": 0,
+        "cap": 0, "price": 0,
+        "avg_vol": 0, "dvol": 0, "adr": 0,
+        "sma50": 0, "sma200": 0,
+        "rs_3m": 0,
+    }
+    metrics = _build_ipo_metrics(klines, finviz_caps)
+    if metrics.empty:
+        # All k-lines were empty/None or len<2 — count as min_history drops
+        drops["min_history"] = len(klines)
+        return [], drops
+
+    kept: list[str] = []
+    for t, df in klines.items():
+        if df is None or df.empty or len(df) < 20:
+            drops["min_history"] += 1
+            continue
+        if t not in metrics.index:
+            drops["min_history"] += 1
+            continue
+        row = metrics.loc[t]
+        cap = row["market_cap"]
+        if not (pd.notna(cap) and cap >= min_cap):
+            drops["cap"] += 1
+            continue
+        price = row["last_price"]
+        if not (pd.notna(price) and price >= min_price):
+            drops["price"] += 1
+            continue
+        # >= 20 day metrics — guaranteed non-NaN since len(df) >= 20
+        if pd.notna(row["avg_vol_20d"]) and row["avg_vol_20d"] < min_avg_vol:
+            drops["avg_vol"] += 1
+            continue
+        if pd.notna(row["avg_dollar_vol_20d"]) and row["avg_dollar_vol_20d"] < min_dvol:
+            drops["dvol"] += 1
+            continue
+        if pd.notna(row["adr_pct"]) and row["adr_pct"] < min_adr:
+            drops["adr"] += 1
+            continue
+        if pd.notna(row["sma50"]) and not bool(row["above_sma50"]):
+            drops["sma50"] += 1
+            continue
+        if pd.notna(row["sma200"]) and not bool(row["above_sma200"]):
+            drops["sma200"] += 1
+            continue
+        # 3M RS gate placeholder — Task 11 will fill in the body. Until then,
+        # tickers with >= 64 days pass through here without RS check.
+        kept.append(t)
+
+    return kept, drops
