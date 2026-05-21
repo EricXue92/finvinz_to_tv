@@ -163,6 +163,66 @@ def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int)
     return _impl(data, tickers, period=period, min_rows=min_rows)
 
 
+def fetch_universe_from_rs_csv(rs_table_12m: dict[str, int] | None) -> list[str]:
+    """Return the ticker list from the Fred6725 12M table.
+
+    We piggyback on the existing 12M fetch (already done at top of EOD)
+    instead of re-downloading the CSV. ``rs_table_12m`` is the dict
+    returned by ``rs_rating.fetch_rs_table``.
+    """
+    if not rs_table_12m:
+        return []
+    return sorted(rs_table_12m.keys())
+
+
+def _fetch_spy_kline(period: str = "6mo") -> pd.DataFrame | None:
+    """Fetch SPY closes via the same retrying yfinance helper as the universe.
+    Returns a DataFrame with time_key + close, or None on failure.
+    """
+    klines = fetch_us_klines_yf(["SPY"], period=period, batch_size=1)
+    return klines.get("SPY")
+
+
+def build_3m_table(
+    output_dir: Path,
+    today: date,
+    rs_table_12m: dict[str, int] | None = None,
+) -> pd.DataFrame | None:
+    """Orchestrator: load cache or (universe → fetch → compute → save).
+
+    Returns None when both cache and fetch fail. Universe is derived from
+    the Fred6725 12M table (must be passed in by the EOD pipeline).
+    """
+    cached = load_cache(today, output_dir)
+    if cached is not None and not cached.empty:
+        logger.info(f"[US RS 3M] Using cached table: {len(cached)} tickers")
+        return cached
+
+    tickers = fetch_universe_from_rs_csv(rs_table_12m)
+    if not tickers:
+        logger.warning("[US RS 3M] No universe (Fred6725 12M table empty/None); skipping 3M build")
+        return None
+
+    klines = fetch_us_klines_yf(tickers, period="6mo")
+    if not klines:
+        logger.warning("[US RS 3M] yfinance batch returned no data; 3M layer will passthrough")
+        return None
+
+    spy = _fetch_spy_kline(period="6mo")
+    if spy is None:
+        logger.warning("[US RS 3M] SPY fetch failed; computing absolute scores (un-relativised)")
+        spy = pd.DataFrame({"time_key": [], "close": []})
+
+    table = compute_us_rs_3m_table(klines, spy)
+    if table.empty:
+        logger.warning("[US RS 3M] No tickers scored; 3M layer will passthrough")
+        return None
+
+    save_cache(table, today, output_dir)
+    logger.info(f"[US RS 3M] Built {len(table)} ticker table → cache")
+    return table
+
+
 def fetch_us_klines_yf(
     tickers: list[str],
     period: str = "6mo",

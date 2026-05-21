@@ -219,3 +219,53 @@ def test_fetch_us_klines_yf_single_ticker(monkeypatch):
 def test_fetch_us_klines_yf_empty_input():
     import us_rs_3m
     assert us_rs_3m.fetch_us_klines_yf([], period="6mo") == {}
+
+
+import pytest
+
+
+def test_build_3m_table_orchestration(monkeypatch, tmp_path):
+    """Verify build_3m_table composes universe→fetch→compute→cache."""
+    import us_rs_3m
+
+    def _fake_universe(rs_table_12m):
+        return ["AAA", "BBB", "CCC"]
+
+    def _fake_fetch(tickers, period="6mo", batch_size=500):
+        return {
+            t: _flat_then_jump(100.0, jump_pct=5 + i * 5, n=70)
+            for i, t in enumerate(tickers)
+        }
+
+    def _fake_spy(period="6mo"):
+        return _flat_then_jump(400.0, jump_pct=0, n=70)
+
+    monkeypatch.setattr(us_rs_3m, "fetch_universe_from_rs_csv", _fake_universe, raising=False)
+    monkeypatch.setattr(us_rs_3m, "fetch_us_klines_yf", _fake_fetch)
+    monkeypatch.setattr(us_rs_3m, "_fetch_spy_kline", _fake_spy, raising=False)
+
+    table = us_rs_3m.build_3m_table(tmp_path, _date(2026, 5, 21), rs_table_12m={"AAA": 99, "BBB": 90, "CCC": 50})
+    assert table is not None
+    assert set(table.index) == {"AAA", "BBB", "CCC"}
+    # Cache written
+    cache = tmp_path / "state" / "rs_rating_3m_2026-05-21.csv"
+    assert cache.exists()
+
+
+def test_build_3m_table_uses_cache(monkeypatch, tmp_path):
+    """Re-running on the same day reads cache instead of refetching."""
+    import us_rs_3m
+
+    df = pd.DataFrame({
+        "raw_score": [0.2, 0.1],
+        "rs_percentile": [95, 50],
+    }, index=["AAA", "BBB"])
+    us_rs_3m.save_cache(df, _date(2026, 5, 21), tmp_path)
+
+    def _no_fetch_allowed(*args, **kwargs):
+        pytest.fail("fetch should not be called when cache exists")
+
+    monkeypatch.setattr(us_rs_3m, "fetch_us_klines_yf", _no_fetch_allowed)
+    table = us_rs_3m.build_3m_table(tmp_path, _date(2026, 5, 21))
+    assert table is not None
+    assert "AAA" in table.index
