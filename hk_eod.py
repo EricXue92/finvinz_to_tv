@@ -674,6 +674,7 @@ def filter_hk_ipo_candidates(
 
     过滤阶梯（同一 ticker 按顺序走，命中任一即 drop 并计数）：
       - len(df) < 20          → drops['min_history']     (新增 day-20 floor)
+      - code not in metrics   → drops['no_metrics']      (上游 build_metrics_frame 已剔)
       - cap < min_market_cap  → drops['cap']
       - price < min_price     → drops['price']
       - if has 20-day metrics:
@@ -703,6 +704,7 @@ def filter_hk_ipo_candidates(
     kept: list[str] = []
     drops: dict[str, int] = {
         "min_history": 0,
+        "no_metrics": 0,
         "cap": 0, "price": 0,
         "avg_vol": 0, "dvol": 0, "adr": 0,
         "sma50": 0, "sma200": 0,
@@ -716,6 +718,7 @@ def filter_hk_ipo_candidates(
             drops["min_history"] += 1
             continue
         if code not in metrics.index:
+            drops["no_metrics"] += 1
             continue
         row = metrics.loc[code]
         if not (pd.notna(row["market_cap"]) and row["market_cap"] >= ipo_cap):
@@ -724,10 +727,7 @@ def filter_hk_ipo_candidates(
         if not (pd.notna(row["last_price"]) and row["last_price"] >= ipo_min_price):
             drops["price"] += 1
             continue
-        # 20-day-conditional gates — build_metrics_frame 在 < 20 行时把这三个字段
-        # 置 NaN，所以 pd.notna 检查既挡掉短历史 ticker 的 KeyError 又保留了
-        # "未达 20 天的 IPO 不走这三条闸门" 的旧语义。但因为 len(df) < 20 已被
-        # 砍掉，这里实际上一定有 20-day metrics。
+        # 20-day metrics: guaranteed non-NaN since len(df) >= 20 above.
         if pd.notna(row["avg_vol_20d"]) and row["avg_vol_20d"] < ipo_min_avg_vol:
             drops["avg_vol"] += 1
             continue

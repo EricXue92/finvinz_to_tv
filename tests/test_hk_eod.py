@@ -279,3 +279,21 @@ def test_filter_hk_ipo_skips_rs_gate_when_table_is_none():
     assert kept == ["HK.D"]
     assert drops["rs_3m"] == 0
     assert drops["rs_3m_missing"] == 0
+
+
+def test_filter_hk_ipo_counts_no_metrics_when_code_missing_from_metrics_frame():
+    # ticker has 30 rows of klines but is not in the metrics frame
+    # (build_metrics_frame upstream dropped it for cap NaN, market_cap missing, etc.)
+    # → counted in drops['no_metrics'], not in drops['min_history'] / cap / price
+    closes = [25.0] * 30
+    klines = {"HK.MISS": _make_kline(closes)}
+    metrics = pd.DataFrame.from_dict(
+        {"HK.OTHER": _ipo_metrics_row()}, orient="index"
+    )
+    kept, drops = filter_hk_ipo_candidates(
+        klines, metrics, rs_table_3m=None, hk_settings=_hk_settings_default()
+    )
+    assert kept == []
+    assert drops["no_metrics"] == 1
+    assert drops["min_history"] == 0
+    assert drops["cap"] == 0
