@@ -163,6 +163,50 @@ def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int)
     return _impl(data, tickers, period=period, min_rows=min_rows)
 
 
+def fetch_us_klines_yf(
+    tickers: list[str],
+    period: str = "6mo",
+    batch_size: int = 500,
+) -> dict[str, pd.DataFrame]:
+    """Batch-download daily closes for US tickers via yfinance.
+
+    Returns ``{ticker: DataFrame[time_key, close]}``. Tickers that fail the
+    batch retry or come back as all-NaN are silently dropped (callers treat
+    them as "not in 3M table" via the kept-as-missing policy).
+
+    Mirrors hk_eod.fetch_hk_klines_yf structure: 500-ticker batches with
+    threads=True, no inter-batch sleep (yfinance handles rate-limits via
+    its own backoff).
+    """
+    if not tickers:
+        return {}
+
+    result: dict[str, pd.DataFrame] = {}
+    n_batches = (len(tickers) - 1) // batch_size + 1
+    for bidx, start in enumerate(range(0, len(tickers), batch_size), start=1):
+        batch = tickers[start:start + batch_size]
+        logger.info(f"[US RS 3M] yfinance batch {bidx}/{n_batches} ({len(batch)} tickers)...")
+        batch_data = _yf_download_with_retry(
+            batch, period=period, progress=False, group_by="ticker", threads=True,
+        )
+        if batch_data is None or batch_data.empty:
+            logger.warning(f"[US RS 3M]   batch failed; skipping {len(batch)} tickers")
+            continue
+        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=64)
+        for t in batch:
+            try:
+                closes = batch_data[t]["Close"].dropna()
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+            if closes.empty:
+                continue
+            result[t] = pd.DataFrame({
+                "time_key": closes.index,
+                "close": closes.values,
+            })
+    return result
+
+
 def fetch_universe_from_rs_csv(rs_table_12m: dict[str, int] | None) -> list[str]:
     """Return the ticker list from the Fred6725 12M table.
 
@@ -221,47 +265,3 @@ def build_3m_table(
     save_cache(table, today, output_dir)
     logger.info(f"[US RS 3M] Built {len(table)} ticker table → cache")
     return table
-
-
-def fetch_us_klines_yf(
-    tickers: list[str],
-    period: str = "6mo",
-    batch_size: int = 500,
-) -> dict[str, pd.DataFrame]:
-    """Batch-download daily closes for US tickers via yfinance.
-
-    Returns ``{ticker: DataFrame[time_key, close]}``. Tickers that fail the
-    batch retry or come back as all-NaN are silently dropped (callers treat
-    them as "not in 3M table" via the kept-as-missing policy).
-
-    Mirrors hk_eod.fetch_hk_klines_yf structure: 500-ticker batches with
-    threads=True, no inter-batch sleep (yfinance handles rate-limits via
-    its own backoff).
-    """
-    if not tickers:
-        return {}
-
-    result: dict[str, pd.DataFrame] = {}
-    n_batches = (len(tickers) - 1) // batch_size + 1
-    for bidx, start in enumerate(range(0, len(tickers), batch_size), start=1):
-        batch = tickers[start:start + batch_size]
-        logger.info(f"[US RS 3M] yfinance batch {bidx}/{n_batches} ({len(batch)} tickers)...")
-        batch_data = _yf_download_with_retry(
-            batch, period=period, progress=False, group_by="ticker", threads=True,
-        )
-        if batch_data is None or batch_data.empty:
-            logger.warning(f"[US RS 3M]   batch failed; skipping {len(batch)} tickers")
-            continue
-        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=64)
-        for t in batch:
-            try:
-                closes = batch_data[t]["Close"].dropna()
-            except (KeyError, TypeError, ValueError, AttributeError):
-                continue
-            if closes.empty:
-                continue
-            result[t] = pd.DataFrame({
-                "time_key": closes.index,
-                "close": closes.values,
-            })
-    return result
