@@ -1761,16 +1761,12 @@ def main() -> int:
             _futu_sync(config, "rs", sorted_rs, "US")
 
         # --- Write IPO list ---
-        # Tickers dropped by yfinance across the long-side pipeline
-        # (insufficient/no/failed daily history) — almost always fresh IPOs
-        # that passed Finviz but lack the 20+ bars needed for DV/ADR/RVol.
-        # Separate cross-day master so a ticker still lands in its proper
-        # long-side group on the first day it has enough yfinance data.
-        # Guard: a ticker present in the IBD RS table has ≥12mo of price
-        # history per IBD's source, so it CANNOT be a fresh IPO — its
-        # yfinance drop was a transient gap (rate limit / hiccup), not a
-        # data-availability issue. Drop those from ipo_drops so a flake
-        # doesn't permanently brand them as IPOs in the cross-day master.
+        # Tickers dropped by yfinance across the long-side pipeline are
+        # passed through a depth-conditional ladder (mirror of HK's
+        # filter_hk_ipo_candidates): 20-day floor, cap/price/vol/dv/ADR,
+        # SMA50/200, 3M RS ≥ 90. Guard: tickers in the 12M RS table cannot
+        # be fresh IPOs (need ≥12mo history) — those drops are transient
+        # yfinance gaps and excluded before the ladder.
         if rs_table and ipo_drops:
             non_ipo = {t for t in ipo_drops if t.upper() in rs_table}
             if non_ipo:
@@ -1779,7 +1775,31 @@ def main() -> int:
                     f"(transient yfinance gaps, not IPOs): {sorted(non_ipo)}"
                 )
                 ipo_drops -= non_ipo
-        sorted_ipo = sorted(ipo_drops)
+
+        ipo_kept: list[str] = []
+        if ipo_drops:
+            import us_ipo
+            ipo_tickers = sorted(ipo_drops)
+            logger.info(f"[IPO] Fetching k-lines for {len(ipo_tickers)} candidates...")
+            ipo_klines = us_rs_3m.fetch_us_klines_yf(
+                ipo_tickers, period="1y", batch_size=500, include_ohlcv=True,
+            )
+            spy_kline = None
+            if rs_table_3m is not None and min_rs_percentile_3m > 0:
+                # Reuse SPY data (single ticker, yfinance caches it briefly).
+                spy_kline = us_rs_3m._fetch_spy_kline(period="6mo")
+            ipo_kept, ipo_drop_counts = us_ipo.filter_us_ipo_candidates(
+                klines=ipo_klines,
+                finviz_caps=ipo_finviz_caps,
+                rs_table_3m_full=rs_table_3m,
+                spy_kline=spy_kline,
+                settings=settings,
+            )
+            logger.info(
+                f"[IPO] {len(ipo_kept)}/{len(ipo_tickers)} kept; drops={ipo_drop_counts}"
+            )
+
+        sorted_ipo = sorted(ipo_kept)
         sorted_ipo = _dedup_seen("[IPO]", sorted_ipo, ipo_seen, ipo_seen_path)
         dated = us_output_dir / f"{today}_IPO.txt"
         write_watchlist(sorted_ipo, dated, fmt)
