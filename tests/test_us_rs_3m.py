@@ -163,3 +163,34 @@ def test_save_and_load_cache_roundtrip(tmp_path):
     assert list(loaded.index) == ["AAA", "BBB"]
     assert loaded.loc["AAA", "rs_percentile"] == 95
     assert abs(loaded.loc["AAA", "raw_score"] - 0.2) < 1e-9
+
+
+def test_fetch_us_klines_yf_shapes(monkeypatch):
+    """Smoke test that the fetcher returns the right DataFrame shape.
+
+    We don't hit real yfinance — we stub _yf_download_with_retry to return
+    a yfinance-shaped multiindex DataFrame.
+    """
+    import us_rs_3m
+
+    def _fake_download(tickers, **kwargs):
+        # Mimic yfinance batch shape: MultiIndex columns (ticker, field)
+        idx = pd.date_range(end="2026-05-21", periods=80, freq="B")
+        cols = pd.MultiIndex.from_product(
+            [tickers, ["Open", "High", "Low", "Close", "Volume"]]
+        )
+        data = pd.DataFrame(100.0, index=idx, columns=cols)
+        return data
+
+    monkeypatch.setattr("us_rs_3m._yf_download_with_retry", _fake_download, raising=False)
+    klines = us_rs_3m.fetch_us_klines_yf(["AAPL", "MSFT"], period="6mo", batch_size=500)
+    assert set(klines.keys()) == {"AAPL", "MSFT"}
+    for t, df in klines.items():
+        assert "close" in df.columns
+        assert "time_key" in df.columns
+        assert len(df) == 80
+
+
+def test_fetch_us_klines_yf_empty_input():
+    import us_rs_3m
+    assert us_rs_3m.fetch_us_klines_yf([], period="6mo") == {}

@@ -141,3 +141,59 @@ def load_cache(today: date, output_dir: Path) -> pd.DataFrame | None:
         return pd.read_csv(p, index_col="ticker")
     except Exception:
         return None
+
+
+def _yf_download_with_retry(tickers, **kwargs):
+    """Indirection layer so tests can monkeypatch this attribute.
+
+    At runtime, lazily import the helper from main.py (avoids circular import:
+    main.py imports from us_rs_3m).
+    """
+    from main import _yf_download_with_retry as _impl
+    return _impl(tickers, **kwargs)
+
+
+def fetch_us_klines_yf(
+    tickers: list[str],
+    period: str = "6mo",
+    batch_size: int = 500,
+) -> dict[str, pd.DataFrame]:
+    """Batch-download daily closes for US tickers via yfinance.
+
+    Returns ``{ticker: DataFrame[time_key, close]}``. Tickers that fail the
+    batch retry or come back as all-NaN are silently dropped (callers treat
+    them as "not in 3M table" via the kept-as-missing policy).
+
+    Mirrors hk_eod.fetch_hk_klines_yf structure: 500-ticker batches with
+    threads=True, no inter-batch sleep (yfinance handles rate-limits via
+    its own backoff).
+    """
+    if not tickers:
+        return {}
+
+    result: dict[str, pd.DataFrame] = {}
+    n_batches = (len(tickers) - 1) // batch_size + 1
+    for bidx, start in enumerate(range(0, len(tickers), batch_size), start=1):
+        batch = tickers[start:start + batch_size]
+        logger.info(f"[US RS 3M] yfinance batch {bidx}/{n_batches} ({len(batch)} tickers)...")
+        batch_data = _yf_download_with_retry(
+            batch, period=period, progress=False, group_by="ticker", threads=True,
+        )
+        if batch_data is None or batch_data.empty:
+            logger.warning(f"[US RS 3M]   batch failed; skipping {len(batch)} tickers")
+            continue
+        for t in batch:
+            try:
+                if len(batch) == 1:
+                    closes = batch_data["Close"].dropna()
+                else:
+                    closes = batch_data[t]["Close"].dropna()
+            except (KeyError, AttributeError):
+                continue
+            if closes.empty:
+                continue
+            result[t] = pd.DataFrame({
+                "time_key": closes.index,
+                "close": closes.values,
+            })
+    return result
