@@ -197,7 +197,15 @@ def fetch_us_klines_yf(
         if batch_data is None or batch_data.empty:
             logger.warning(f"[US RS 3M]   batch failed; skipping {len(batch)} tickers")
             continue
-        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=64)
+        # min_rows=20 mirrors hk_eod.fetch_hk_klines_yf — this is a "batch
+        # quality floor" (retry tickers whose batch result is essentially
+        # empty, < 20 of ~126 trading days for period="6mo"), NOT the 3M
+        # algorithm's 64-row scoring minimum. min_rows=64 here was a 2026-
+        # 05-21 mis-tune that flagged ~90% of tickers (including AAPL/MSFT)
+        # as sparse on routine yfinance NaN noise, sending the retry phase
+        # into a 5+ hour spiral. _score_from_kline enforces the real 64-row
+        # cut at scoring time.
+        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=20)
         for t in batch:
             try:
                 closes = batch_data[t]["Close"].dropna()
