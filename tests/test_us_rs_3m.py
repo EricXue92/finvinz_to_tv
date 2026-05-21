@@ -156,7 +156,6 @@ def test_save_and_load_cache_roundtrip(tmp_path):
         "raw_score": [0.2, 0.05],
         "rs_percentile": [95, 50],
     }, index=["AAA", "BBB"])
-    df.index.name = "ticker"
     save_cache(df, _date(2026, 5, 21), tmp_path)
 
     loaded = load_cache(_date(2026, 5, 21), tmp_path)
