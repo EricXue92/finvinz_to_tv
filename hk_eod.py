@@ -920,8 +920,14 @@ def run_hk_eod(
     futu_caps_by_tv = (
         get_market_caps_futu(tv_codes, market="HK", host=host, port=port) or {}
     )
-    # Re-key from "HKEX:0700" back to "HK.00700" so it lines up with klines
-    caps = {f"HK.0{tv.replace('HKEX:', '')}": v for tv, v in futu_caps_by_tv.items()}
+    # Re-key from "HKEX:700" back to "HK.00700" so it lines up with klines.
+    # zfill(5) handles every HK numeric code uniformly: sub-1000 names like
+    # 0522 (ASMPT) and 0700 (Tencent) need 2-3 leading zeros, not just one;
+    # 5-digit codes (80100, etc.) must not gain a 6th leading zero.
+    caps = {
+        f"HK.{tv.replace('HKEX:', '').zfill(5)}": v
+        for tv, v in futu_caps_by_tv.items()
+    }
 
     logger.info("[HK Longs] Building metrics frame...")
     metrics = build_metrics_frame(klines, caps)
