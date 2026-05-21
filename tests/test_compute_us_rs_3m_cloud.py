@@ -1,0 +1,121 @@
+"""Tests for scripts/compute_us_rs_3m_cloud.py — the GH Actions entrypoint.
+
+These tests fully monkeypatch out the external dependencies (Fred6725 CSV
+fetch, yfinance batch download, SPY fetch) so the unit tests are fast and
+deterministic. The script itself is small — its real integration test is
+the workflow's first `workflow_dispatch` run.
+"""
+
+from __future__ import annotations
+
+import sys
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+# scripts/ is not a package; tests need a path hack to import.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+
+import compute_us_rs_3m_cloud as cloud  # noqa: E402
+
+
+def _flat_then_jump(start: float, jump_pct: float, n: int = 70) -> pd.DataFrame:
+    closes = [start] * (n - 1) + [start * (1 + jump_pct / 100)]
+    return pd.DataFrame({
+        "time_key": pd.date_range(end="2026-05-21", periods=n, freq="B"),
+        "close": closes,
+    })
+
+
+def test_main_writes_csv_and_exits_zero_when_coverage_above_threshold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Happy path: 3/3 universe scored → CSV written → exit 0."""
+    monkeypatch.setattr(cloud, "fetch_rs_table", lambda *a, **kw: {"AAA": 99, "BBB": 90, "CCC": 50})
+    monkeypatch.setattr(cloud, "_fetch_spy_kline", lambda **kw: _flat_then_jump(400.0, 0))
+    monkeypatch.setattr(
+        cloud, "fetch_us_klines_yf",
+        lambda tickers, **kw: {t: _flat_then_jump(100.0, jump_pct=5 + i * 5) for i, t in enumerate(tickers)},
+    )
+    monkeypatch.setattr(cloud, "_DATA_DIR", tmp_path / "data" / "us_rs_3m")
+    monkeypatch.setattr(cloud, "_today", lambda: date(2026, 5, 22))
+
+    exit_code = cloud.main()
+
+    assert exit_code == 0
+    csv = tmp_path / "data" / "us_rs_3m" / "2026-05-22.csv"
+    assert csv.exists()
+    df = pd.read_csv(csv, index_col="ticker")
+    assert set(df.index) == {"AAA", "BBB", "CCC"}
+    assert "raw_score" in df.columns
+    assert "rs_percentile" in df.columns
+
+
+def test_main_exits_nonzero_when_coverage_below_threshold(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """1 of 5 universe tickers scored = 20% coverage → exit 1, no CSV."""
+    monkeypatch.setattr(cloud, "fetch_rs_table", lambda *a, **kw: {"A": 99, "B": 90, "C": 50, "D": 30, "E": 10})
+    monkeypatch.setattr(cloud, "_fetch_spy_kline", lambda **kw: _flat_then_jump(400.0, 0))
+    monkeypatch.setattr(
+        cloud, "fetch_us_klines_yf",
+        lambda tickers, **kw: {"A": _flat_then_jump(100.0, 5)},  # 1/5 only
+    )
+    monkeypatch.setattr(cloud, "_DATA_DIR", tmp_path / "data" / "us_rs_3m")
+    monkeypatch.setattr(cloud, "_today", lambda: date(2026, 5, 22))
+
+    exit_code = cloud.main()
+
+    assert exit_code == 1
+    csv = tmp_path / "data" / "us_rs_3m" / "2026-05-22.csv"
+    assert not csv.exists(), "no CSV should be written when coverage guard trips"
+
+
+def test_main_exits_nonzero_when_fred6725_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fred6725 CSV unavailable → exit 1, no compute attempted."""
+    monkeypatch.setattr(cloud, "fetch_rs_table", lambda *a, **kw: None)
+    monkeypatch.setattr(cloud, "_DATA_DIR", tmp_path / "data" / "us_rs_3m")
+    monkeypatch.setattr(cloud, "_today", lambda: date(2026, 5, 22))
+
+    # If main() doesn't short-circuit on None universe, the test would also
+    # need to mock _fetch_spy_kline / fetch_us_klines_yf. The assertion that
+    # exit_code == 1 with NO further mocks means the short-circuit works.
+    exit_code = cloud.main()
+
+    assert exit_code == 1
+    csv = tmp_path / "data" / "us_rs_3m" / "2026-05-22.csv"
+    assert not csv.exists()
+
+
+def test_main_prunes_files_older_than_retention_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """After a successful write, files older than 14 days are deleted."""
+    data_dir = tmp_path / "data" / "us_rs_3m"
+    data_dir.mkdir(parents=True)
+    # 13 days old → keep; 15 days old → prune; non-date filename → keep.
+    (data_dir / "2026-05-09.csv").write_text("ticker,raw_score,rs_percentile\n")  # 13 days old
+    (data_dir / "2026-05-07.csv").write_text("ticker,raw_score,rs_percentile\n")  # 15 days old
+    (data_dir / "README.md").write_text("docs")  # non-date, keep
+
+    monkeypatch.setattr(cloud, "fetch_rs_table", lambda *a, **kw: {"AAA": 99, "BBB": 90, "CCC": 50})
+    monkeypatch.setattr(cloud, "_fetch_spy_kline", lambda **kw: _flat_then_jump(400.0, 0))
+    monkeypatch.setattr(
+        cloud, "fetch_us_klines_yf",
+        lambda tickers, **kw: {t: _flat_then_jump(100.0, 5 + i * 5) for i, t in enumerate(tickers)},
+    )
+    monkeypatch.setattr(cloud, "_DATA_DIR", data_dir)
+    monkeypatch.setattr(cloud, "_today", lambda: date(2026, 5, 22))
+
+    exit_code = cloud.main()
+
+    assert exit_code == 0
+    assert (data_dir / "2026-05-22.csv").exists(), "today's file written"
+    assert (data_dir / "2026-05-09.csv").exists(), "13-day-old file kept"
+    assert not (data_dir / "2026-05-07.csv").exists(), "15-day-old file pruned"
+    assert (data_dir / "README.md").exists(), "non-date file untouched"

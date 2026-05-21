@@ -1,0 +1,39 @@
+name: Update US 3M RS Table
+
+on:
+  schedule:
+    - cron: '0 1 * * 1-5'      # 01:00 UTC Mon-Fri = 09:00 HKT (~1h before local 10:00 launchd run)
+  workflow_dispatch:           # manual trigger for debugging + first seed
+
+permissions:
+  contents: write              # commit the daily CSV back to main
+
+jobs:
+  build-3m-table:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60        # Fred6725 budget is 90 for 6800; ours is ~5900
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Verify curl_cffi active
+        run: uv run python -c "import curl_cffi; import yfinance; print('curl_cffi', curl_cffi.__version__, '/ yfinance', yfinance.__version__)"
+
+      - name: Compute 3M RS table
+        run: uv run python scripts/compute_us_rs_3m_cloud.py
+
+      - name: Commit and push
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add data/us_rs_3m/
+          git diff --staged --quiet || git commit -m "chore(us_rs_3m): publish $(date -u +%Y-%m-%d) table"
+          git push
