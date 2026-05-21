@@ -420,6 +420,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "curl-cffi" },
     { name = "finviz" },
     { name = "futu-api" },
     { name = "httpx" },
@@ -437,6 +438,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40.0" },
+    { name = "curl-cffi", specifier = ">=0.6.0" },
     { name = "finviz", specifier = ">=2.0.0" },
     { name = "futu-api", specifier = ">=9.3.5308" },
     { name = "httpx", specifier = ">=0.27.0" },

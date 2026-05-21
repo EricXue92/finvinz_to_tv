@@ -249,14 +249,20 @@ def _trim_today(series, market_open: bool, today_date):
     return series
 
 
-def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int) -> None:
+def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int) -> bool:
     """Patch tickers that came back sparse from a batch yf.download by re-downloading
     each one individually and writing the result back into the batch DataFrame.
     yfinance batch responses occasionally drop legitimate tickers (all-NaN columns)
     due to transient Yahoo errors; the single-ticker retry usually recovers them.
-    No-op for single-ticker batches (column shape is different)."""
+    No-op for single-ticker batches (column shape is different).
+
+    Returns True when the batch looks rate-limited (sparse > 50% of tickers,
+    individual retry skipped). The caller can use this signal to back off
+    longer between batches; existing callers that ignore the return value
+    keep working unchanged.
+    """
     if len(tickers) <= 1:
-        return
+        return False
 
     sparse = []
     for t in tickers:
@@ -269,7 +275,25 @@ def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int)
             sparse.append(t)
 
     if not sparse:
-        return
+        return False
+
+    # Heuristic: when more than half of the batch comes back sparse, this
+    # is almost certainly a Yahoo rate-limit signal (not the usual ~20%
+    # NaN noise from individual ticker hiccups). Individual retries will
+    # all fail too while throttled AND they hammer Yahoo with hundreds of
+    # back-to-back single-ticker calls, making the throttle worse. Skip
+    # the retry and tell the caller to back off; the caller's inter-batch
+    # sleep alone is not enough — Yahoo's throttle window is typically
+    # ≥ 30s. (2026-05-21: batch 4 of US RS 3M had 499/500 sparse and the
+    # retry loop flushed 499 silent failures in ~1s; batches 3-10 then
+    # cascaded with 5s spacing because the 30s cooldown only fired on
+    # *fully* empty responses, not on "structurally there but 99% NaN".)
+    if len(sparse) > len(tickers) * 0.5:
+        logger.warning(
+            f"  yfinance: {len(sparse)}/{len(tickers)} sparse — likely rate-limited, "
+            f"skipping individual retry"
+        )
+        return True
 
     logger.info(f"  yfinance: retrying {len(sparse)} sparse ticker(s) individually: {','.join(sparse)}")
     for t in sparse:
@@ -286,6 +310,7 @@ def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int)
                     data[(t, field)] = flat[field].reindex(data.index)
         except Exception as e:
             logger.warning(f"  yfinance: single retry failed for {t}: {e}")
+    return False
 
 
 def load_config(config_path: Path) -> dict:

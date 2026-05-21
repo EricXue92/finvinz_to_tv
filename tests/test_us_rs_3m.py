@@ -268,6 +268,36 @@ def test_build_3m_table_orchestration(monkeypatch, tmp_path):
     assert cache.exists()
 
 
+def test_build_3m_table_refuses_to_cache_sparse_coverage(monkeypatch, tmp_path):
+    """Coverage < 50% of universe → return None, do NOT write cache.
+
+    A severely partial table (e.g. Yahoo throttled mid-loop on 2026-05-21:
+    1301 of 5878 tickers scored) produces percentiles that are not
+    interchangeable with the full distribution; freezing the day on it
+    would warp every downstream RS gate.
+    """
+    import us_rs_3m
+
+    def _fake_universe(rs_table_12m):
+        return ["A", "B", "C", "D", "E"]  # universe of 5
+
+    def _fake_fetch(tickers, period="6mo", batch_size=500):
+        # Only 1 of 5 tickers scoreable → 20% coverage, below the 50% gate.
+        return {"A": _flat_then_jump(100.0, jump_pct=5, n=70)}
+
+    def _fake_spy(period="6mo"):
+        return _flat_then_jump(400.0, jump_pct=0, n=70)
+
+    monkeypatch.setattr(us_rs_3m, "fetch_universe_from_rs_csv", _fake_universe, raising=False)
+    monkeypatch.setattr(us_rs_3m, "fetch_us_klines_yf", _fake_fetch)
+    monkeypatch.setattr(us_rs_3m, "_fetch_spy_kline", _fake_spy, raising=False)
+
+    table = us_rs_3m.build_3m_table(tmp_path, _date(2026, 5, 21), rs_table_12m={"A": 99})
+    assert table is None
+    cache = tmp_path / "state" / "rs_rating_3m_2026-05-21.csv"
+    assert not cache.exists(), "warped partial table must not be cached"
+
+
 def test_build_3m_table_uses_cache(monkeypatch, tmp_path):
     """Re-running on the same day reads cache instead of refetching."""
     import us_rs_3m

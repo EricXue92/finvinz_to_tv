@@ -13,6 +13,7 @@ The 3M table is consumed twice:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date
 from pathlib import Path
 
@@ -153,11 +154,12 @@ def _yf_download_with_retry(tickers, **kwargs):
     return _impl(tickers, **kwargs)
 
 
-def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int) -> None:
+def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int) -> bool:
     """Indirection layer so tests can monkeypatch this attribute.
 
     At runtime, lazily import the helper from main.py (avoids circular import:
-    main.py imports from us_rs_3m).
+    main.py imports from us_rs_3m). Returns True when the batch looked
+    rate-limited (caller should back off longer).
     """
     from main import _retry_sparse_in_batch as _impl
     return _impl(data, tickers, period=period, min_rows=min_rows)
@@ -166,7 +168,7 @@ def _retry_sparse_in_batch(data, tickers: list[str], period: str, min_rows: int)
 def fetch_us_klines_yf(
     tickers: list[str],
     period: str = "6mo",
-    batch_size: int = 500,
+    batch_size: int = 100,
     include_ohlcv: bool = False,
 ) -> dict[str, pd.DataFrame]:
     """Batch-download daily closes (or full OHLCV) for US tickers via yfinance.
@@ -179,9 +181,18 @@ def fetch_us_klines_yf(
     dropped (callers treat them as "not in 3M table" via the kept-as-missing
     policy).
 
-    Mirrors hk_eod.fetch_hk_klines_yf structure: 500-ticker batches with
-    threads=True, no inter-batch sleep (yfinance handles rate-limits via
-    its own backoff).
+    100-ticker batches with threads=True and a 5s inter-batch pause.
+    Batch size matches Fred6725/relative-strength's reliability sweet spot
+    (their README: "100 is a sweet spot — speed vs reliability"); we
+    previously used 500 like hk_eod, but at US scale (~6000 tickers across
+    60 batches with 100, vs 12 with 500) the smaller batches reduce the
+    blast radius when Yahoo throttles a single response and let curl_cffi's
+    browser-impersonation breathe between calls.
+
+    Defensive layers (kept as belt-and-braces even with curl_cffi):
+    - When a batch returns fully empty after retries → 30s throttle cooldown
+    - When a batch returns ≥50% sparse → also 30s cooldown (signal from
+      _retry_sparse_in_batch); 5s spacing is not enough for Yahoo's window
     """
     if not tickers:
         return {}
@@ -196,6 +207,9 @@ def fetch_us_klines_yf(
         )
         if batch_data is None or batch_data.empty:
             logger.warning(f"[US RS 3M]   batch failed; skipping {len(batch)} tickers")
+            if bidx < n_batches:
+                logger.info("[US RS 3M]   throttle cooldown 30s before next batch...")
+                time.sleep(30)
             continue
         # min_rows=20 mirrors hk_eod.fetch_hk_klines_yf — this is a "batch
         # quality floor" (retry tickers whose batch result is essentially
@@ -205,7 +219,7 @@ def fetch_us_klines_yf(
         # as sparse on routine yfinance NaN noise, sending the retry phase
         # into a 5+ hour spiral. _score_from_kline enforces the real 64-row
         # cut at scoring time.
-        _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=20)
+        throttled = _retry_sparse_in_batch(batch_data, batch, period=period, min_rows=20)
         for t in batch:
             try:
                 closes = batch_data[t]["Close"].dropna()
@@ -231,6 +245,17 @@ def fetch_us_klines_yf(
                     "time_key": closes.index,
                     "close": closes.values,
                 })
+        # Cooldown selection: if the batch came back ≥50% sparse (rate-limit
+        # signal from _retry_sparse_in_batch), back off the full 30s instead
+        # of the normal 5s — Yahoo's throttle window is ≥30s and 5s spacing
+        # just cascades sparse-batches one after another (2026-05-21 20:55:
+        # batches 3-10 all 371-499 sparse with only 5s between).
+        if bidx < n_batches:
+            if throttled:
+                logger.info("[US RS 3M]   throttle cooldown 30s (high-sparse batch)...")
+                time.sleep(30)
+            else:
+                time.sleep(5)
     return result
 
 
@@ -274,19 +299,38 @@ def build_3m_table(
         logger.warning("[US RS 3M] No universe (Fred6725 12M table empty/None); skipping 3M build")
         return None
 
-    klines = fetch_us_klines_yf(tickers, period="6mo")
-    if not klines:
-        logger.warning("[US RS 3M] yfinance batch returned no data; 3M layer will passthrough")
-        return None
-
+    # Fetch SPY FIRST, before the universe loop consumes any of Yahoo's
+    # rate-limit budget. If SPY falls into the throttle tail (as on
+    # 2026-05-21), the whole table degrades to "absolute scores
+    # (un-relativised)" — every ticker's percentile gets warped, not just
+    # the ones we couldn't fetch.
     spy = _fetch_spy_kline(period="6mo")
     if spy is None:
         logger.warning("[US RS 3M] SPY fetch failed; computing absolute scores (un-relativised)")
         spy = pd.DataFrame({"time_key": [], "close": []})
 
+    klines = fetch_us_klines_yf(tickers, period="6mo")
+    if not klines:
+        logger.warning("[US RS 3M] yfinance batch returned no data; 3M layer will passthrough")
+        return None
+
     table = compute_us_rs_3m_table(klines, spy)
     if table.empty:
         logger.warning("[US RS 3M] No tickers scored; 3M layer will passthrough")
+        return None
+
+    # Refuse to cache a severely partial table — percentile ranks in a 1300
+    # ticker subset vs. the 6000-ticker universe are not interchangeable
+    # (a 90th-percentile name in the partial may be 70th in the full set).
+    # Returning None forces the next rerun to retry rather than freezing
+    # the day at a warped distribution.
+    coverage = len(table) / len(tickers) if tickers else 0
+    if coverage < 0.5:
+        logger.warning(
+            f"[US RS 3M] Coverage {len(table)}/{len(tickers)} ({coverage:.1%}) "
+            f"below 50% — refusing to cache warped table; 3M layer will "
+            f"passthrough until a healthier rerun succeeds"
+        )
         return None
 
     save_cache(table, today, output_dir)
