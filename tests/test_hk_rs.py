@@ -70,3 +70,27 @@ def test_score_from_kline_3m_weights_reject_when_below_min_rows():
     score, reason = _score_from_kline(df, weights=WEIGHTS_3M)
     assert score is None
     assert reason == "short_history"
+
+
+def test_compute_rs_table_with_3m_weights_uses_shorter_history():
+    # 5 个 ticker 各有 70 行历史 (< 253，12M 会全部 short_history rejected)，
+    # 但 3M 仅需 64 行 → 全部可打分。
+    klines = {
+        f"HK.000{i:02d}": _flat_then_jump(100.0, jump_pct=5 + i * 2, n=70)
+        for i in range(1, 6)
+    }
+    hsi = _flat_then_jump(20000.0, jump_pct=0, n=70)
+    table = compute_rs_table(klines, hsi, weights=WEIGHTS_3M, label="3M")
+
+    assert set(table.index) == set(klines.keys())
+    assert table["rs_percentile"].between(0, 99).all()
+    # 跳幅最大的应在最高百分位
+    assert table["rs_percentile"].idxmax() == "HK.00005"
+
+
+def test_compute_rs_table_with_3m_weights_logs_label(caplog):
+    klines = {"HK.00001": _flat_then_jump(100.0, jump_pct=5, n=70)}
+    hsi = _flat_then_jump(20000.0, jump_pct=0, n=70)
+    with caplog.at_level("INFO"):
+        compute_rs_table(klines, hsi, weights=WEIGHTS_3M, label="3M")
+    assert any("[HK RS 3M]" in r.message for r in caplog.records)

@@ -59,21 +59,26 @@ def _score_from_kline(
 def compute_rs_table(
     klines: dict[str, pd.DataFrame],
     hsi_kline: pd.DataFrame,
+    weights: list[tuple[int, float]] = WEIGHTS_12M,
+    label: str = "12M",
 ) -> pd.DataFrame:
     """Return DataFrame indexed by Futu code with column ``rs_percentile``
     (0-99). Tickers without enough history are excluded.
 
+    ``weights`` selects the weight tuple (WEIGHTS_12M or WEIGHTS_3M). ``label``
+    is purely cosmetic — it's spliced into the rejection-breakdown log line so
+    a single run computing both 12M and 3M tables produces distinguishable
+    output.
+
     Logs a per-reason rejection breakdown so the operator can tell whether
-    a small RS table is due to (a) Futu not returning enough k-line history
-    for less liquid HK names (``short_history``) versus (b) data hygiene
-    issues (``zero_last`` / ``zero_past``). The 282-out-of-2400 outcome
-    we saw on 2026-05-06 turned out to be ``short_history`` dominated;
-    this logging makes the diagnosis cheap on every run.
+    a small RS table is due to (a) Futu/yfinance not returning enough k-line
+    history for less liquid HK names (``short_history``) versus (b) data
+    hygiene issues (``zero_last`` / ``zero_past``).
     """
-    hsi_score, hsi_reason = _score_from_kline(hsi_kline)
+    hsi_score, hsi_reason = _score_from_kline(hsi_kline, weights=weights)
     if hsi_score is None:
         logger.warning(
-            f"[HK RS] HSI score rejected ({hsi_reason}) — falling back to "
+            f"[HK RS {label}] HSI score rejected ({hsi_reason}) — falling back to "
             f"absolute scores (effectively un-relativised)."
         )
         hsi_score = 0.0
@@ -81,14 +86,14 @@ def compute_rs_table(
     scores: dict[str, float] = {}
     reasons: dict[str, int] = {}
     for code, df in klines.items():
-        s, reason = _score_from_kline(df)
+        s, reason = _score_from_kline(df, weights=weights)
         reasons[reason] = reasons.get(reason, 0) + 1
         if s is None:
             continue
         scores[code] = s - hsi_score
 
     logger.info(
-        f"[HK RS] computed: {len(scores)}/{len(klines)} klines scored. "
+        f"[HK RS {label}] computed: {len(scores)}/{len(klines)} klines scored. "
         f"Reason breakdown: {dict(sorted(reasons.items(), key=lambda x: -x[1]))}"
     )
 
