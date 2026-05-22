@@ -30,7 +30,7 @@ adr_days = 20
 #   - 放宽 Leaders/RS/Shorts → 调低 min_rs_percentile_3m (85/80/0)
 #   - 收紧 Longs 5 splits   → 调高 min_rs_percentile_longs (Longs 不走 3M)
 #   - 完全关闭 3M 层         → min_rs_percentile_3m = 0 (跳过 yfinance batch)
-min_rs_percentile = 90          # Leaders only — IBD RS percentile gate (top 10%)
+min_rs_percentile = 80          # Leaders only — IBD RS percentile gate (top 20%)
 min_rs_percentile_longs = 90    # Longs (5 splits) + RS group + US Shorts — IBD RS percentile gate (top 10%)
 
 # 第二层 3M RS 闸门 (本地算法, vs SPY) — 仅作用于 Leaders / 条件 RS 组 / Shorts
@@ -223,7 +223,7 @@ min_price               = 20.0            # HKD
 #   只看 3M（追加速 momentum）   : 12M=0,  3M=90
 #   只看 12M（退回旧单闸行为）   : 12M=90, 3M=0
 #   完全关 RS 闸门               : 12M=0,  3M=0
-min_rs_percentile_longs    = 90           # 12月 RS 闸门 — 与 HSI 比较，本地 IBD 算法 (top 10%)
+min_rs_percentile_longs    = 80           # 12月 RS 闸门 — 与 HSI 比较，本地 IBD 算法 (top 10%)
 min_rs_percentile_longs_3m = 90           # 3月 RS 闸门 — 0.5·R21+0.3·R42+0.2·R63 vs HSI (top 10%)
 hsi_rs_trigger          = -1.2            # HSI 当日跌幅 ≤ 此值则触发 RS 组
 
