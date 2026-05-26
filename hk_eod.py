@@ -733,7 +733,7 @@ def filter_hk_ipo_candidates(
         if not (pd.notna(row["last_price"]) and row["last_price"] >= ipo_min_price):
             drops["price"] += 1
             continue
-        # 20-day metrics: guaranteed non-NaN since n >= 20 above.
+        # 20-day metrics: guaranteed non-NaN since n_rows >= 20 (checked above).
         if pd.notna(row["avg_vol_20d"]) and row["avg_vol_20d"] < ipo_min_avg_vol:
             drops["avg_vol"] += 1
             continue
