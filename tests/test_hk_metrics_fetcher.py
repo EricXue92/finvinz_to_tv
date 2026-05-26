@@ -144,3 +144,63 @@ def test_build_cache_short_circuit_skips_http(
     # above_sma* still recomputed on the cache path.
     assert frame.loc["HK.00001", "above_sma50"] is True
     assert frame.loc["HK.00700", "above_sma50"] is False
+
+
+# ── round-trip: cloud-publish → CSV → local-restore → cap-join ───────────
+
+from hk_eod import build_metrics_frame  # noqa: E402
+
+
+def _kline(start: float, n: int) -> pd.DataFrame:
+    """Ascending-time OHLCV with a final up-day, deep enough for SMA200."""
+    closes = [start + i * 0.1 for i in range(n)]
+    highs = [c * 1.02 for c in closes]
+    lows = [c * 0.98 for c in closes]
+    vols = [700000 + i for i in range(n)]
+    return pd.DataFrame({
+        "time_key": pd.date_range(end="2026-05-22", periods=n, freq="B"),
+        "open": closes,
+        "high": highs,
+        "low": lows,
+        "close": closes,
+        "volume": vols,
+    })
+
+
+def test_cloud_publish_roundtrip_equals_local_metrics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    today = date(2026, 5, 22)
+    klines = {"HK.00001": _kline(100.0, 260), "HK.00700": _kline(50.0, 80)}
+    caps = {"HK.00001": 5_000_000_000.0, "HK.00700": 8_000_000_000.0}
+
+    # Local reference: what run_hk_eod's fallback path would compute.
+    local = build_metrics_frame(klines, caps)
+
+    # Simulate the cloud publish: empty caps, drop the 3 local-only columns,
+    # write the CSV exactly as compute_hk_rs_cloud.main() does.
+    published = build_metrics_frame(klines, market_caps={}).drop(
+        columns=["market_cap", "above_sma50", "above_sma200"]
+    )
+    csv_path = tmp_path / "data" / "hk_metrics" / "2026-05-22.csv"
+    csv_path.parent.mkdir(parents=True)
+    published.to_csv(csv_path, index_label="code")
+
+    # Local fetch reads that CSV; then run_hk_eod joins Futu caps.
+    on_disk = pd.read_csv(csv_path, index_col="code")
+    monkeypatch.setattr(hk_metrics, "_fetch_cloud_csv", lambda url, timeout=30: on_disk)
+    fetched = hk_metrics.build_hk_metrics_cloud(tmp_path, today)
+    assert fetched is not None
+    fetched["market_cap"] = fetched.index.map(lambda c: caps.get(c, float("nan")))
+
+    # Every column the strategy filters read must match the local reference.
+    for col in [
+        "last_price", "prev_close", "gap_pct", "rvol", "avg_vol_20d",
+        "avg_dollar_vol_20d", "adr_pct", "sma50", "sma200",
+        "above_sma50", "above_sma200", "perf_4w", "perf_13w", "perf_26w",
+        "perf_ytd", "perf_52w", "consecutive_up_days", "market_cap",
+    ]:
+        pd.testing.assert_series_equal(
+            fetched[col].reindex(local.index), local[col],
+            check_names=False, check_dtype=False,
+        )
