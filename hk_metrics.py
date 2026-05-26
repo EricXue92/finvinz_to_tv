@@ -62,6 +62,7 @@ def _restore_above_sma(metrics: pd.DataFrame) -> pd.DataFrame:
     (dropped before publish to dodge bool↔CSV fragility). Stored as Python
     bool (object dtype) to match build_metrics_frame's contract: callers and
     tests rely on ``row["above_sma50"] is False``."""
+    metrics = metrics.copy()
     last = metrics["last_price"]
     for col, sma_col in (("above_sma50", "sma50"), ("above_sma200", "sma200")):
         sma = metrics[sma_col]
