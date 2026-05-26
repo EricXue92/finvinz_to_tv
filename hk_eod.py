@@ -935,30 +935,15 @@ def run_hk_eod(
 
     # --- RS tables (12M + 3M) ---
     # 双闸门: 先过 12M RS >= threshold, 再过 3M RS >= threshold_3m.
-    # 两张表用同一次 HSI fetch 计算，分别落盘到 hk_rs_rating_<date>.csv
-    # 与 hk_rs_rating_3m_<date>.csv。"missing -> passthrough" 策略两层都遵守。
-    # 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
-    from hk_rs import (
-        compute_rs_table, filter_by_rs, save_cache, load_cache,
-        WEIGHTS_12M, WEIGHTS_3M,
-    )
+    # 两张表由 GitHub Actions 在新 IP 上跑全宇宙 (.github/workflows/update_hk_rs.yml)
+    # 并发布到 data/hk_rs/<date>.csv; 本地只做 HTTP 拉取 + 3 天陈旧回退, 命中后
+    # 镜像到 hk_rs_rating_<date>.csv / hk_rs_rating_3m_<date>.csv 供当天重跑短路。
+    # 计算搬到云端是因为家用 IP 抓 ~2400 港股会被 yfinance 限流 (2026-05-25 仅
+    # ~50% 覆盖), 让百分位分布只建立在半个宇宙上。"missing -> passthrough" 策略
+    # 两层都遵守; 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
+    from hk_rs import filter_by_rs, build_hk_rs_tables
     today_d = date.today()
-    rs_table_12m = load_cache(today_d, output_dir)
-    rs_table_3m  = load_cache(today_d, output_dir, suffix="3m")
-    need_compute = (rs_table_12m is None or rs_table_3m is None) and bool(klines)
-    if need_compute:
-        hsi_kline = fetch_hsi_kline_yf(period="2y")
-        if hsi_kline is not None and not hsi_kline.empty:
-            if use_yesterday:
-                hsi_kline = hsi_kline[hsi_kline["time_key"].dt.date < today_d].reset_index(drop=True)
-            if rs_table_12m is None:
-                rs_table_12m = compute_rs_table(klines, hsi_kline, weights=WEIGHTS_12M, label="12M")
-                save_cache(rs_table_12m, today_d, output_dir)
-            if rs_table_3m is None:
-                rs_table_3m = compute_rs_table(klines, hsi_kline, weights=WEIGHTS_3M, label="3M")
-                save_cache(rs_table_3m, today_d, output_dir, suffix="3m")
-        else:
-            logger.warning("[HK Longs] HSI k-line fetch failed — RS gate disabled")
+    rs_table_12m, rs_table_3m = build_hk_rs_tables(output_dir, today_d)
 
     # --- Apply per-strategy filters ---
     # The conditional RS group keys off HSI's "today" day-change. When

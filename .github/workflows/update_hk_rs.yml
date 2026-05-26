@@ -1,0 +1,46 @@
+name: Update HK RS Table
+
+on:
+  schedule:
+    - cron: '0 11 * * 1-5'      # 11:00 UTC Mon-Fri = 19:00 HKT (3h after 16:00 close, ~1h before local 20:00 run)
+  workflow_dispatch:           # manual trigger for debugging + first seed
+
+permissions:
+  contents: write              # commit the daily CSV back to main
+
+jobs:
+  build-hk-rs-table:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30        # ~2,400 HK universe; smaller than the US ~5,900
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Verify curl_cffi active
+        run: uv run python -c "import curl_cffi; import yfinance; print('curl_cffi', curl_cffi.__version__, '/ yfinance', yfinance.__version__)"
+
+      - name: Compute HK RS table
+        run: uv run python scripts/compute_hk_rs_cloud.py
+
+      - name: Commit and push
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add data/hk_rs/
+          if git diff --staged --quiet; then
+            echo "Nothing to commit (script failed or produced no new file)"
+            exit 0
+          fi
+          git commit -m "chore(hk_rs): publish $(date -u +%Y-%m-%d) table"
+          # Retry once with rebase if someone pushed to main during our
+          # compute window. The rebase is guaranteed trivial — we only
+          # added a new file in data/hk_rs/ — so the second push succeeds.
+          git push || (git pull --rebase origin main && git push)
