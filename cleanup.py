@@ -47,6 +47,10 @@ _RETENTION_RULES: tuple[_Rule, ...] = (
           "%Y-%m-%d", 2),
     _Rule("state", re.compile(rf"^hk_rs_rating_{_DATE_D}\.csv$"),
           "%Y-%m-%d", 2),
+    # hk_metrics_*.csv: HK long-side metrics state cache (hk_metrics.py, ISO
+    # dashes). 2-day window — only today's cache is ever read (no walk-back).
+    _Rule("state", re.compile(rf"^hk_metrics_{_DATE_D}\.csv$"),
+          "%Y-%m-%d", 2),
     # rs_rating_*.csv: 4-day window preserves the documented 3-day GitHub
     # fetch fallback in rs_rating.py (_FALLBACK_MAX_AGE_DAYS = 3).
     _Rule("state", re.compile(rf"^rs_rating_{_DATE_U}\.csv$"),
