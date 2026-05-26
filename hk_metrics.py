@@ -101,7 +101,16 @@ def build_hk_metrics_cloud(output_dir: Path, today: date) -> pd.DataFrame | None
         )
         return None
 
+    try:
+        restored = _restore_above_sma(df)
+    except Exception as e:
+        logger.warning(
+            f"[HK metrics] Cloud CSV schema mismatch ({type(e).__name__}: {e}); "
+            "falling back to local fetch"
+        )
+        return None
+
     cache.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(cache, index_label="code")
     logger.info(f"[HK metrics] Fetched cloud CSV: {len(df)} tickers")
-    return _restore_above_sma(df)
+    return restored

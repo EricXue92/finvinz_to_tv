@@ -204,3 +204,17 @@ def test_cloud_publish_roundtrip_equals_local_metrics(
             fetched[col].reindex(local.index), local[col],
             check_names=False, check_dtype=False,
         )
+
+
+def test_build_returns_none_on_schema_drift_and_does_not_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A cloud CSV missing columns _restore_above_sma needs must degrade to
+    None (caller falls back to local fetch), not raise — and must NOT be cached."""
+    today = date(2026, 5, 22)
+    bad = pd.DataFrame({"gap_pct": [1.0]}, index=["HK.00001"])  # no last_price/sma50/sma200
+    bad.index.name = "code"
+    monkeypatch.setattr(hk_metrics, "_fetch_cloud_csv", lambda url, timeout=30: bad)
+    frame = hk_metrics.build_hk_metrics_cloud(tmp_path, today)
+    assert frame is None
+    assert not (tmp_path / "state" / "hk_metrics_2026-05-22.csv").exists()
