@@ -195,7 +195,7 @@ def test_cloud_publish_roundtrip_equals_local_metrics(
 
     # Every column the strategy filters read must match the local reference.
     for col in [
-        "last_price", "prev_close", "gap_pct", "rvol", "avg_vol_20d",
+        "n_rows", "last_price", "prev_close", "gap_pct", "rvol", "avg_vol_20d",
         "avg_dollar_vol_20d", "adr_pct", "sma50", "sma200",
         "above_sma50", "above_sma200", "perf_4w", "perf_13w", "perf_26w",
         "perf_ytd", "perf_52w", "consecutive_up_days", "market_cap",

@@ -173,6 +173,7 @@ def test_main_also_writes_metrics_csv_without_cap_or_bool_columns(
     # k-line-derived columns present; cap + bool columns dropped.
     assert "last_price" in df.columns
     assert "gap_pct" in df.columns
+    assert "n_rows" in df.columns  # published — drives the IPO history-depth buckets
     assert "market_cap" not in df.columns
     assert "above_sma50" not in df.columns
     assert "above_sma200" not in df.columns
