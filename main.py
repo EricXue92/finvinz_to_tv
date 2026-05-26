@@ -1453,11 +1453,13 @@ def main() -> int:
     # catalyst-driven volatility regardless of multi-year market correlation.
     min_adr_percent = settings.get("min_adr_percent", 0)
     adr_days = settings.get("adr_days", 20)
-    # Two-tier IBD RS Rating gate, applied right after run_screener (before
-    # yfinance dollar-volume) to cut downstream work by ~10x. Leaders uses
-    # min_rs_percentile (top 10%); Longs (every split) and the conditional
-    # RS group share min_rs_percentile_longs (top 20%). Either knob = 0
-    # disables that tier. Source: Fred6725/rs-log (refreshed weekday ~01:30 UTC).
+    # IBD RS Rating gate, applied right after run_screener (before yfinance
+    # dollar-volume) to cut downstream work by ~10x. Leaders use
+    # min_rs_percentile (default 80 = top 20%); Longs (every split), the
+    # conditional RS group, and US Shorts share min_rs_percentile_longs
+    # (default 90 = top 10%). min_rs_percentile_3m adds a 3M layer on Leaders /
+    # RS group / Shorts (double gate). Any knob = 0 disables that tier.
+    # 12M source: Fred6725/rs-log (refreshed weekday ~01:30 UTC).
     min_rs_percentile = settings.get("min_rs_percentile", 0)
     min_rs_percentile_longs = settings.get("min_rs_percentile_longs", 0)
     min_rs_percentile_3m = settings.get("min_rs_percentile_3m", 0)
