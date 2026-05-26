@@ -34,7 +34,7 @@ jobs:
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add data/hk_rs/
+          git add data/hk_rs/ data/hk_metrics/
           if git diff --staged --quiet; then
             echo "Nothing to commit (script failed or produced no new file)"
             exit 0

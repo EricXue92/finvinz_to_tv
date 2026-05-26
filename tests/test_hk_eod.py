@@ -32,6 +32,7 @@ def test_build_metrics_frame_basic():
     df = build_metrics_frame(klines, caps)
 
     row = df.loc["HK.00001"]
+    assert int(row["n_rows"]) == len(closes)  # 252
     assert row["market_cap"] == 5_000_000_000.0
     assert row["last_price"] == pytest.approx(52.5)
     assert row["prev_close"] == pytest.approx(50.0)
@@ -144,6 +145,7 @@ from hk_eod import filter_hk_ipo_candidates
 
 
 def _ipo_metrics_row(
+    n_rows,
     market_cap=5e9,
     last_price=25.0,
     avg_vol_20d=1_000_000.0,
@@ -154,8 +156,12 @@ def _ipo_metrics_row(
     above_sma50=True,
     above_sma200=True,
 ):
-    """Returns a metrics-frame row dict that PASSES all baseline gates."""
+    """Returns a metrics-frame row dict that PASSES all baseline gates.
+
+    ``n_rows`` is the k-line history depth — the IPO filter buckets on this
+    column (formerly derived from the raw klines dict's ``len(df)``)."""
     return dict(
+        n_rows=n_rows,
         market_cap=market_cap,
         last_price=last_price,
         avg_vol_20d=avg_vol_20d,
@@ -180,26 +186,23 @@ def _hk_settings_default():
 
 
 def test_filter_hk_ipo_drops_when_history_below_20_days():
-    # 15 行历史 < 20 → 立刻砍掉，不进入任何 metric 闸门
-    closes = [25.0] * 15
-    klines = {"HK.NEW1": _make_kline(closes)}
+    # n_rows=15 < 20 → 立刻砍掉，不进入任何 metric 闸门
     metrics = pd.DataFrame.from_dict(
-        {"HK.NEW1": _ipo_metrics_row()}, orient="index"
+        {"HK.NEW1": _ipo_metrics_row(n_rows=15)}, orient="index"
     )
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=None, hk_settings=_hk_settings_default()
+        metrics, rs_table_3m=None, hk_settings=_hk_settings_default()
     )
     assert kept == []
     assert drops["min_history"] == 1
 
 
 def test_filter_hk_ipo_keeps_20_to_49_days_without_rs_check():
-    # 30 行历史 — 过 20-day floor，未达 64 天 RS 触发线 → 走现有阶梯放行
-    closes = [25.0] * 30
-    klines = {"HK.MID": _make_kline(closes)}
+    # n_rows=30 — 过 20-day floor，未达 64 天 RS 触发线 → 走现有阶梯放行
     # 短历史：SMA50/SMA200 都是 NaN，above_sma 字段为 False（与 build_metrics_frame 一致）
     metrics = pd.DataFrame.from_dict(
         {"HK.MID": _ipo_metrics_row(
+            n_rows=30,
             sma50=float("nan"), sma200=float("nan"),
             above_sma50=False, above_sma200=False,
         )},
@@ -208,7 +211,7 @@ def test_filter_hk_ipo_keeps_20_to_49_days_without_rs_check():
     # 即使 rs_table_3m 里把 HK.MID 设成 RS=10，<64 天的 ticker 也不走 RS 检查
     rs_table = pd.DataFrame({"rs_percentile": [10]}, index=["HK.MID"])
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
+        metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
     )
     assert kept == ["HK.MID"]
     assert drops["rs_3m"] == 0
@@ -216,87 +219,61 @@ def test_filter_hk_ipo_keeps_20_to_49_days_without_rs_check():
 
 
 def test_filter_hk_ipo_keeps_when_rs_3m_at_or_above_threshold():
-    # 70 行历史 ≥ 64 → 触发 3M RS 闸门；表内 percentile = 95 ≥ 90 → 保留
-    closes = [25.0] * 70
-    klines = {"HK.A": _make_kline(closes)}
+    # n_rows=70 ≥ 64 → 触发 3M RS 闸门；表内 percentile = 95 ≥ 90 → 保留
     metrics = pd.DataFrame.from_dict(
-        {"HK.A": _ipo_metrics_row(sma200=float("nan"), above_sma200=False)},
+        {"HK.A": _ipo_metrics_row(n_rows=70, sma200=float("nan"), above_sma200=False)},
         orient="index",
     )
     rs_table = pd.DataFrame({"rs_percentile": [95]}, index=["HK.A"])
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
+        metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
     )
     assert kept == ["HK.A"]
     assert drops["rs_3m"] == 0
 
 
 def test_filter_hk_ipo_drops_when_rs_3m_below_threshold():
-    # 70 行历史 ≥ 64 → 触发 3M RS 闸门；表内 percentile = 80 < 90 → drop
-    closes = [25.0] * 70
-    klines = {"HK.B": _make_kline(closes)}
+    # n_rows=70 ≥ 64 → 触发 3M RS 闸门；表内 percentile = 80 < 90 → drop
     metrics = pd.DataFrame.from_dict(
-        {"HK.B": _ipo_metrics_row(sma200=float("nan"), above_sma200=False)},
+        {"HK.B": _ipo_metrics_row(n_rows=70, sma200=float("nan"), above_sma200=False)},
         orient="index",
     )
     rs_table = pd.DataFrame({"rs_percentile": [80]}, index=["HK.B"])
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
+        metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
     )
     assert kept == []
     assert drops["rs_3m"] == 1
 
 
 def test_filter_hk_ipo_drops_when_64days_but_missing_from_rs_table():
-    # 70 行历史 ≥ 64 → 触发 3M RS 闸门；但 ticker 不在表里 → drop（rs_3m_missing）
+    # n_rows=70 ≥ 64 → 触发 3M RS 闸门；但 ticker 不在表里 → drop（rs_3m_missing）
     # 这种情况一般是 _score_from_kline 因 zero_last/zero_past 排掉了
-    closes = [25.0] * 70
-    klines = {"HK.C": _make_kline(closes)}
     metrics = pd.DataFrame.from_dict(
-        {"HK.C": _ipo_metrics_row(sma200=float("nan"), above_sma200=False)},
+        {"HK.C": _ipo_metrics_row(n_rows=70, sma200=float("nan"), above_sma200=False)},
         orient="index",
     )
     rs_table = pd.DataFrame({"rs_percentile": [95]}, index=["HK.OTHER"])  # 不含 HK.C
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
+        metrics, rs_table_3m=rs_table, hk_settings=_hk_settings_default()
     )
     assert kept == []
     assert drops["rs_3m_missing"] == 1
 
 
 def test_filter_hk_ipo_skips_rs_gate_when_table_is_none():
-    # 70 行历史 ≥ 64 但 rs_table_3m=None (HSI fetch 失败) → 回退到只有 metric 闸门
+    # n_rows=70 ≥ 64 但 rs_table_3m=None (HSI fetch 失败) → 回退到只有 metric 闸门
     # day-20 floor 仍生效，但 RS 闸门跳过
-    closes = [25.0] * 70
-    klines = {"HK.D": _make_kline(closes)}
     metrics = pd.DataFrame.from_dict(
-        {"HK.D": _ipo_metrics_row(sma200=float("nan"), above_sma200=False)},
+        {"HK.D": _ipo_metrics_row(n_rows=70, sma200=float("nan"), above_sma200=False)},
         orient="index",
     )
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=None, hk_settings=_hk_settings_default()
+        metrics, rs_table_3m=None, hk_settings=_hk_settings_default()
     )
     assert kept == ["HK.D"]
     assert drops["rs_3m"] == 0
     assert drops["rs_3m_missing"] == 0
-
-
-def test_filter_hk_ipo_counts_no_metrics_when_code_missing_from_metrics_frame():
-    # ticker has 30 rows of klines but is not in the metrics frame
-    # (build_metrics_frame upstream dropped it for cap NaN, market_cap missing, etc.)
-    # → counted in drops['no_metrics'], not in drops['min_history'] / cap / price
-    closes = [25.0] * 30
-    klines = {"HK.MISS": _make_kline(closes)}
-    metrics = pd.DataFrame.from_dict(
-        {"HK.OTHER": _ipo_metrics_row()}, orient="index"
-    )
-    kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=None, hk_settings=_hk_settings_default()
-    )
-    assert kept == []
-    assert drops["no_metrics"] == 1
-    assert drops["min_history"] == 0
-    assert drops["cap"] == 0
 
 
 def test_filter_hk_ipo_threshold_zero_disables_entire_3m_gate():
@@ -304,15 +281,10 @@ def test_filter_hk_ipo_threshold_zero_disables_entire_3m_gate():
     # - percentile 任意低都不算 drop
     # - 不在表里也不算 drop
     # 这与 filter_by_rs 的 threshold<=0 短路一致.
-    closes = [25.0] * 70
-    klines = {
-        "HK.LOW": _make_kline(closes),   # 70 行, RS = 10 (会被默认阈值砍)
-        "HK.MISS": _make_kline(closes),  # 70 行, 不在表里 (会被默认阈值砍)
-    }
     metrics = pd.DataFrame.from_dict(
         {
-            "HK.LOW":  _ipo_metrics_row(sma200=float("nan"), above_sma200=False),
-            "HK.MISS": _ipo_metrics_row(sma200=float("nan"), above_sma200=False),
+            "HK.LOW":  _ipo_metrics_row(n_rows=70, sma200=float("nan"), above_sma200=False),
+            "HK.MISS": _ipo_metrics_row(n_rows=70, sma200=float("nan"), above_sma200=False),
         },
         orient="index",
     )
@@ -320,7 +292,7 @@ def test_filter_hk_ipo_threshold_zero_disables_entire_3m_gate():
     settings = _hk_settings_default()
     settings["min_rs_percentile_longs_3m"] = 0
     kept, drops = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m=rs_table, hk_settings=settings
+        metrics, rs_table_3m=rs_table, hk_settings=settings
     )
     assert set(kept) == {"HK.LOW", "HK.MISS"}
     assert drops["rs_3m"] == 0

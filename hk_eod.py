@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from futu_sync import get_market_caps_futu
+from hk_metrics import build_hk_metrics_cloud
 
 logger = logging.getLogger(__name__)
 
@@ -440,9 +441,13 @@ def build_metrics_frame(
     code. Tickers without enough history for a given metric get NaN/False.
 
     Columns:
-      market_cap, last_price, prev_close, gap_pct, rvol, avg_vol_20d,
+      n_rows, market_cap, last_price, prev_close, gap_pct, rvol, avg_vol_20d,
       avg_dollar_vol_20d, adr_pct, sma50, sma200, above_sma50, above_sma200,
       perf_4w, perf_13w, perf_26w, perf_ytd, perf_52w, consecutive_up_days
+
+    ``n_rows`` is the per-ticker k-line row count — it is published on the
+    cloud metrics CSV (not in the drop list) so the HK IPO sidecar can bucket
+    by history depth on both the cloud and local-fallback paths.
     """
     rows: list[dict] = []
     today_year = pd.Timestamp.today().year
@@ -506,6 +511,7 @@ def build_metrics_frame(
 
         rows.append({
             "code": code,
+            "n_rows": n,
             "market_cap": market_caps.get(code, float("nan")),
             "last_price": last,
             "prev_close": prev,
@@ -665,16 +671,19 @@ def dedup_by_priority(
 
 
 def filter_hk_ipo_candidates(
-    klines: dict[str, pd.DataFrame],
     metrics: pd.DataFrame,
     rs_table_3m: pd.DataFrame | None,
     hk_settings: dict,
 ) -> tuple[list[str], dict[str, int]]:
     """筛选 HK IPO 候选 (< 253 行历史的 HKEX 主板 ticker)。
 
+    历史深度现在取自 ``metrics['n_rows']``，不再接收 klines —— 直接遍历
+    metrics 帧。这样云端 (data/hk_metrics/<date>.csv) 与本地回退两条路径
+    都能跑 IPO（n_rows 随 metrics 一起发布/回填）。`'no_metrics'` 桶已移除：
+    既然直接遍历 metrics，不可能出现 code 不在 metrics 里的情况。
+
     过滤阶梯（同一 ticker 按顺序走，命中任一即 drop 并计数）：
-      - len(df) < 20          → drops['min_history']     (新增 day-20 floor)
-      - code not in metrics   → drops['no_metrics']      (上游 build_metrics_frame 已剔)
+      - n_rows < 20           → drops['min_history']     (day-20 floor)
       - cap < min_market_cap  → drops['cap']
       - price < min_price     → drops['price']
       - if has 20-day metrics:
@@ -683,7 +692,7 @@ def filter_hk_ipo_candidates(
           ADR%   < min_adr_percent       → drops['adr']
       - if has SMA50: not above SMA50    → drops['sma50']
       - if has SMA200: not above SMA200  → drops['sma200']
-      - if len(df) >= 64 and rs_table_3m is not None:        (新增 3M RS 闸门)
+      - if n_rows >= 64 and rs_table_3m is not None:        (3M RS 闸门)
           ticker not in rs_table_3m      → drops['rs_3m_missing']
           rs_percentile < threshold      → drops['rs_3m']
 
@@ -704,30 +713,27 @@ def filter_hk_ipo_candidates(
     kept: list[str] = []
     drops: dict[str, int] = {
         "min_history": 0,
-        "no_metrics": 0,
         "cap": 0, "price": 0,
         "avg_vol": 0, "dvol": 0, "adr": 0,
         "sma50": 0, "sma200": 0,
         "rs_3m": 0, "rs_3m_missing": 0,
     }
 
-    for code, df in klines.items():
-        if len(df) >= 253:
+    for code in metrics.index:
+        row = metrics.loc[code]
+        n = int(row["n_rows"])
+        if n >= 253:
             continue  # 完整历史 — 由长线流水线处理
-        if len(df) < 20:
+        if n < 20:
             drops["min_history"] += 1
             continue
-        if code not in metrics.index:
-            drops["no_metrics"] += 1
-            continue
-        row = metrics.loc[code]
         if not (pd.notna(row["market_cap"]) and row["market_cap"] >= ipo_cap):
             drops["cap"] += 1
             continue
         if not (pd.notna(row["last_price"]) and row["last_price"] >= ipo_min_price):
             drops["price"] += 1
             continue
-        # 20-day metrics: guaranteed non-NaN since len(df) >= 20 above.
+        # 20-day metrics: guaranteed non-NaN since n_rows >= 20 (checked above).
         if pd.notna(row["avg_vol_20d"]) and row["avg_vol_20d"] < ipo_min_avg_vol:
             drops["avg_vol"] += 1
             continue
@@ -744,10 +750,10 @@ def filter_hk_ipo_candidates(
         if pd.notna(row["sma200"]) and not bool(row["above_sma200"]):
             drops["sma200"] += 1
             continue
-        # 3M RS gate — 仅当 len(df) >= 64 (即 3M RS 算法可计算)、表存在、且
+        # 3M RS gate — 仅当 n_rows >= 64 (即 3M RS 算法可计算)、表存在、且
         # 阈值 > 0 时触发。threshold=0 关闭整个闸门 (与 filter_by_rs 行为一致)。
         if (
-            len(df) >= 64
+            n >= 64
             and rs_3m_threshold > 0
             and rs_table_3m is not None
             and not rs_table_3m.empty
@@ -862,75 +868,95 @@ def run_hk_eod(
             logger.warning(f"[HK Shorts] Failed: {e}")
 
     # --- HK Long-side ---
-    # Data source: yfinance for k-line + HSI (deeper history than Futu Lv1
-    # gives for less liquid HK names — see PR #7 diagnostic that found
-    # only 282/2400 made it past the 12-month threshold via Futu). Futu
-    # is still used for market caps + the live HSI day-change snapshot.
-    logger.info("[HK Longs] Fetching universe...")
-    codes_4d = fetch_hkex_equities()
-    logger.info(f"  Universe: {len(codes_4d)} codes")
+    # Data source for the fallback path: yfinance for k-line + HSI (deeper
+    # history than Futu Lv1 gives for less liquid HK names — see PR #7
+    # diagnostic that found only 282/2400 made it past the 12-month threshold
+    # via Futu). Futu is still used for market caps + the live HSI day-change
+    # snapshot. The cloud-first path skips the local yfinance download entirely.
 
-    logger.info("[HK Longs] Fetching daily OHLCV via yfinance (~5-10 min)...")
-    klines = fetch_hk_klines_yf(codes_4d, period="2y")
+    # Cloud-first: the RS workflow already fetched every HK k-line; it also
+    # publishes a metrics frame (data/hk_metrics/<date>.csv). Pull that to
+    # skip the local ~2,400-ticker yfinance download (which throttles to
+    # ~66% coverage). On any miss, fall back to the local live fetch — a
+    # stale frame would carry wrong gap_pct/rvol, so there is no walk-back.
+    today_d = date.today()
+    metrics = build_hk_metrics_cloud(output_dir, today_d)
 
-    # Log k-line history-depth distribution to surface any data tier issues.
-    # The IBD 12-month RS calc needs >= 253 rows; we expect the >=253 bucket
-    # to be the dominant share of the universe under yfinance.
-    if klines:
-        lens = sorted(len(df) for df in klines.values())
-        n = len(lens)
-        ge253 = sum(1 for l in lens if l >= 253)
-        ge200 = sum(1 for l in lens if l >= 200)
-        ge100 = sum(1 for l in lens if l >= 100)
-        ge20 = sum(1 for l in lens if l >= 20)
-        median = lens[n // 2] if n else 0
+    if metrics is not None:
         logger.info(
-            f"[HK Longs] k-line depth: n={n}, median={median} rows; "
-            f">=253: {ge253} ({100*ge253//max(n,1)}%), >=200: {ge200}, "
-            f">=100: {ge100}, >=20: {ge20}"
+            f"[HK Longs] Using cloud metrics: {len(metrics)} tickers "
+            "(local k-line fetch skipped)"
         )
-
-    # --- Trim incomplete today's bar if running before 20:00 HKT ---
-    # The 20:00 HKT slot is when HK k-line is finalized (market closed at
-    # 16:00, +4 hours of slack). Any earlier run sees a partial bar — during
-    # market hours it's a moving snapshot; immediately post-close (16:00–
-    # 20:00) Futu hasn't always settled the day's bar. So unless we're past
-    # 20:00 HKT, drop today's bar from every k-line and use yesterday's
-    # close as "the latest bar". Weekend runs trim a date with no bar
-    # anyway, so this is a no-op then.
-    hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
-    use_yesterday = hkt_now.hour < 20
-    if use_yesterday and klines:
-        today_d_local = hkt_now.date()
-        trimmed = 0
-        for code, df in list(klines.items()):
-            mask = df["time_key"].dt.date < today_d_local
-            if (~mask).any():
-                trimmed += 1
-            klines[code] = df[mask].reset_index(drop=True)
-        logger.info(
-            f"[HK Longs] Pre-20:00 HKT run (now {hkt_now.strftime('%H:%M')}); "
-            f"trimmed today's incomplete bar from {trimmed} tickers — "
-            f"using previous-day close as 'latest'."
+        # Cloud metrics are always settled-close (published at 19:00 HKT);
+        # the pre-20:00 bar-trim is not needed and use_yesterday stays False.
+        use_yesterday = False
+        logger.info("[HK Longs] Fetching market caps via Futu snapshot...")
+        tv_codes = [_to_tv(c) for c in metrics.index]
+        futu_caps_by_tv = (
+            get_market_caps_futu(tv_codes, market="HK", host=host, port=port) or {}
         )
+        caps = {
+            f"HK.{tv.replace('HKEX:', '').zfill(5)}": v
+            for tv, v in futu_caps_by_tv.items()
+        }
+        metrics["market_cap"] = metrics.index.map(lambda c: caps.get(c, float("nan")))
+    else:
+        logger.warning(
+            "[HK Longs] Cloud metrics unavailable; falling back to local "
+            "yfinance fetch (throttle-prone, partial coverage)"
+        )
+        logger.info("[HK Longs] Fetching universe...")
+        codes_4d = fetch_hkex_equities()
+        logger.info(f"  Universe: {len(codes_4d)} codes")
 
-    logger.info("[HK Longs] Fetching market caps via Futu snapshot...")
-    # get_market_caps_futu wants TV format input; we pass it and re-key back to Futu format
-    tv_codes = [_to_tv(c) for c in klines.keys()]
-    futu_caps_by_tv = (
-        get_market_caps_futu(tv_codes, market="HK", host=host, port=port) or {}
-    )
-    # Re-key from "HKEX:700" back to "HK.00700" so it lines up with klines.
-    # zfill(5) handles every HK numeric code uniformly: sub-1000 names like
-    # 0522 (ASMPT) and 0700 (Tencent) need 2-3 leading zeros, not just one;
-    # 5-digit codes (80100, etc.) must not gain a 6th leading zero.
-    caps = {
-        f"HK.{tv.replace('HKEX:', '').zfill(5)}": v
-        for tv, v in futu_caps_by_tv.items()
-    }
+        logger.info("[HK Longs] Fetching daily OHLCV via yfinance (~5-10 min)...")
+        klines = fetch_hk_klines_yf(codes_4d, period="2y")
 
-    logger.info("[HK Longs] Building metrics frame...")
-    metrics = build_metrics_frame(klines, caps)
+        if klines:
+            lens = sorted(len(df) for df in klines.values())
+            n = len(lens)
+            ge253 = sum(1 for l in lens if l >= 253)
+            ge200 = sum(1 for l in lens if l >= 200)
+            ge100 = sum(1 for l in lens if l >= 100)
+            ge20 = sum(1 for l in lens if l >= 20)
+            median = lens[n // 2] if n else 0
+            logger.info(
+                f"[HK Longs] k-line depth: n={n}, median={median} rows; "
+                f">=253: {ge253} ({100*ge253//max(n,1)}%), >=200: {ge200}, "
+                f">=100: {ge100}, >=20: {ge20}"
+            )
+
+        # Trim incomplete today's bar if running before 20:00 HKT (only the
+        # local-fetch path needs this — cloud metrics are always settled-close).
+        hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+        use_yesterday = hkt_now.hour < 20
+        if use_yesterday and klines:
+            today_d_local = hkt_now.date()
+            trimmed = 0
+            for code, df in list(klines.items()):
+                mask = df["time_key"].dt.date < today_d_local
+                if (~mask).any():
+                    trimmed += 1
+                klines[code] = df[mask].reset_index(drop=True)
+            logger.info(
+                f"[HK Longs] Pre-20:00 HKT run (now {hkt_now.strftime('%H:%M')}); "
+                f"trimmed today's incomplete bar from {trimmed} tickers — "
+                f"using previous-day close as 'latest'."
+            )
+
+        logger.info("[HK Longs] Fetching market caps via Futu snapshot...")
+        tv_codes = [_to_tv(c) for c in klines.keys()]
+        futu_caps_by_tv = (
+            get_market_caps_futu(tv_codes, market="HK", host=host, port=port) or {}
+        )
+        caps = {
+            f"HK.{tv.replace('HKEX:', '').zfill(5)}": v
+            for tv, v in futu_caps_by_tv.items()
+        }
+
+        logger.info("[HK Longs] Building metrics frame...")
+        metrics = build_metrics_frame(klines, caps)
+
     logger.info(f"  Metrics: {len(metrics)} tickers with usable history")
 
     # --- RS tables (12M + 3M) ---
@@ -942,7 +968,6 @@ def run_hk_eod(
     # ~50% 覆盖), 让百分位分布只建立在半个宇宙上。"missing -> passthrough" 策略
     # 两层都遵守; 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
     from hk_rs import filter_by_rs, build_hk_rs_tables
-    today_d = date.today()
     rs_table_12m, rs_table_3m = build_hk_rs_tables(output_dir, today_d)
 
     # --- Apply per-strategy filters ---
@@ -1043,7 +1068,7 @@ def run_hk_eod(
     # (2) 3M RS >= min_rs_percentile_longs_3m at len(df) >= 64. See
     # filter_hk_ipo_candidates for the full ladder.
     ipo_codes, ipo_dropped = filter_hk_ipo_candidates(
-        klines, metrics, rs_table_3m, hk_settings
+        metrics, rs_table_3m, hk_settings
     )
 
     ipo_seen_path = eod_seen_path(output_dir, "HKIPO")
@@ -1056,7 +1081,7 @@ def run_hk_eod(
         f"price>={hk_settings.get('min_price', 20.0)}, "
         f"+if 20d: avg_vol/dvol/ADR, +if 50d: SMA50, +if 200d: SMA200, "
         f"+if 64d: RS_3M>={rs_3m_threshold}); "
-        f"raw klines<253: {sum(1 for df in klines.values() if len(df) < 253)}; "
+        f"raw metrics<253: {int((metrics['n_rows'] < 253).sum())}; "
         f"dropped: {ipo_dropped}"
     )
     ipo_tv = dedup_seen("[HK IPO]", ipo_tv, ipo_seen, ipo_seen_path)

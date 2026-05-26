@@ -18,10 +18,11 @@ uv run pytest tests/ -v
 ## Layout
 
 `main.py` (US EOD + morning-gap), `hk_eod.py` (HK pipeline), `rs_rating.py` /
-`us_rs_3m.py` / `hk_rs.py` (RS table fetchers), `futu_sync.py`, `notify.py`,
-`us_ipo.py`, `report/`, `cleanup.py`. Sources: Finviz, HKEX list, Futu snapshots,
-yfinance. Output: `output/TV/{US,HK}/` (TradingView, comma-sep) mirrored to
-`output/Webull/{US,HK}/` (newline-sep), then Futu sync.
+`us_rs_3m.py` / `hk_rs.py` (RS table fetchers), `hk_metrics.py` (HK metrics frame
+fetcher — cloud-published `data/hk_metrics/`, local-fetch fallback), `futu_sync.py`,
+`notify.py`, `us_ipo.py`, `report/`, `cleanup.py`. Sources: Finviz, HKEX list,
+Futu snapshots, yfinance. Output: `output/TV/{US,HK}/` (TradingView, comma-sep)
+mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
 
 ## Invariants (don't break these)
 
@@ -47,7 +48,10 @@ yfinance. Output: `output/TV/{US,HK}/` (TradingView, comma-sep) mirrored to
 Percentile tables are computed daily on **GitHub Actions** and published as CSVs;
 the local pipeline only fetches them. US: `Fred6725/rs-log` (12M, vs SPY) +
 `data/us_rs_3m/` (3M). HK: `data/hk_rs/` (12M+3M, vs HSI). Defaults 90, set 0 to
-disable a tier.
+disable a tier. The HK metrics frame is now also cloud-published (`data/hk_metrics/`,
+same workflow) and fetched locally via `hk_metrics.build_hk_metrics_cloud`, so
+discovery runs on the full universe on the happy path; a cloud miss falls back to the
+local (throttle-prone) k-line fetch.
 
 - US Longs: 12M only. US Leaders + RS + Shorts, and all HK long-side: 12M ∩ 3M.
 - Not gated: HK Shorts, Morning Gap. IPO: conditional 3M only (≥ 64-day history).

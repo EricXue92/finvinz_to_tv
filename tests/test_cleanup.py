@@ -177,3 +177,17 @@ def test_cleanup_keeps_recent_rs_rating_3m(tmp_path):
     cleanup_old_outputs(tmp_path / "output", date(2026, 5, 21))
     assert keep.exists()
     assert not drop.exists()
+
+
+def test_cleanup_removes_old_hk_metrics_state_cache(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir(parents=True)
+    (state / "hk_metrics_2026-05-26.csv").write_text("code,last_price\n")   # today
+    (state / "hk_metrics_2026-05-25.csv").write_text("code,last_price\n")   # yesterday
+    (state / "hk_metrics_2026-05-20.csv").write_text("code,last_price\n")   # 6 days old
+
+    cleanup_old_outputs(tmp_path, date(2026, 5, 26))
+
+    assert (state / "hk_metrics_2026-05-26.csv").exists()      # today kept
+    assert (state / "hk_metrics_2026-05-25.csv").exists()      # yesterday kept (2-day window)
+    assert not (state / "hk_metrics_2026-05-20.csv").exists()  # 6-day pruned

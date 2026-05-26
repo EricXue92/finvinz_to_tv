@@ -32,6 +32,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 import pandas as pd  # noqa: E402
 
 from hk_eod import (  # noqa: E402
+    build_metrics_frame,
     fetch_hk_klines_yf,
     fetch_hkex_equities,
     fetch_hsi_kline_yf,
@@ -46,6 +47,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("compute_hk_rs_cloud")
 
 _DATA_DIR = _REPO_ROOT / "data" / "hk_rs"
+_METRICS_DIR = _REPO_ROOT / "data" / "hk_metrics"
 _RETENTION_DAYS = 14
 _COVERAGE_THRESHOLD = 0.5
 
@@ -55,17 +57,17 @@ def _today() -> date:
     return date.today()
 
 
-def _prune_old_files(today: date) -> int:
-    """Delete <YYYY-MM-DD>.csv files in _DATA_DIR older than _RETENTION_DAYS.
+def _prune_old_files(data_dir: Path, today: date) -> int:
+    """Delete <YYYY-MM-DD>.csv files in data_dir older than _RETENTION_DAYS.
 
     Returns the count of pruned files. Non-date filenames (README.md,
     .gitkeep) are left untouched.
     """
-    if not _DATA_DIR.exists():
+    if not data_dir.exists():
         return 0
     cutoff = today - timedelta(days=_RETENTION_DAYS)
     pruned = 0
-    for p in _DATA_DIR.glob("*.csv"):
+    for p in data_dir.glob("*.csv"):
         try:
             file_date = datetime.strptime(p.stem, "%Y-%m-%d").date()
         except ValueError:
@@ -133,8 +135,20 @@ def main() -> int:
         f"k-line coverage {coverage:.1%}) → {out_path}"
     )
 
-    # 8. Prune old files.
-    pruned = _prune_old_files(today)
+    # 7b. Publish the k-line-derived metrics frame off the SAME klines.
+    #     market_cap needs Futu (absent in CI) → dropped, filled locally.
+    #     above_sma50/200 dropped (bool↔CSV fragility) → recomputed locally.
+    metrics = build_metrics_frame(klines, market_caps={}).drop(
+        columns=["market_cap", "above_sma50", "above_sma200"],
+        errors="ignore",
+    )
+    _METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    metrics_path = _METRICS_DIR / f"{today.isoformat()}.csv"
+    metrics.to_csv(metrics_path, index_label="code")
+    logger.info(f"[Cloud HK RS] Wrote {len(metrics)} metrics rows → {metrics_path}")
+
+    # 8. Prune old files in both published dirs.
+    pruned = _prune_old_files(_DATA_DIR, today) + _prune_old_files(_METRICS_DIR, today)
     logger.info(f"[Cloud HK RS] Pruned {pruned} files older than {_RETENTION_DAYS} days")
 
     return 0
