@@ -139,7 +139,8 @@ def main() -> int:
     #     market_cap needs Futu (absent in CI) → dropped, filled locally.
     #     above_sma50/200 dropped (bool↔CSV fragility) → recomputed locally.
     metrics = build_metrics_frame(klines, market_caps={}).drop(
-        columns=["market_cap", "above_sma50", "above_sma200"]
+        columns=["market_cap", "above_sma50", "above_sma200"],
+        errors="ignore",
     )
     _METRICS_DIR.mkdir(parents=True, exist_ok=True)
     metrics_path = _METRICS_DIR / f"{today.isoformat()}.csv"

@@ -115,6 +115,11 @@ def test_main_prunes_files_older_than_retention_window(
     (data_dir / "2026-05-07.csv").write_text("code,rs_percentile_12m,rs_percentile_3m\n")  # 15 days
     (data_dir / "README.md").write_text("docs")  # non-date, keep
 
+    metrics_dir = tmp_path / "data" / "hk_metrics"
+    metrics_dir.mkdir(parents=True)
+    (metrics_dir / "2026-05-09.csv").write_text("code,last_price\n")  # 13 days, keep
+    (metrics_dir / "2026-05-07.csv").write_text("code,last_price\n")  # 15 days, prune
+
     universe = ["0001", "0700", "9999"]
     monkeypatch.setattr(cloud, "fetch_hkex_equities", lambda: universe)
     monkeypatch.setattr(cloud, "fetch_hsi_kline_yf", lambda **kw: _flat_then_jump(20000.0, 0))
@@ -125,7 +130,7 @@ def test_main_prunes_files_older_than_retention_window(
         },
     )
     monkeypatch.setattr(cloud, "_DATA_DIR", data_dir)
-    monkeypatch.setattr(cloud, "_METRICS_DIR", tmp_path / "data" / "hk_metrics")
+    monkeypatch.setattr(cloud, "_METRICS_DIR", metrics_dir)
     monkeypatch.setattr(cloud, "_today", lambda: date(2026, 5, 22))
 
     exit_code = cloud.main()
@@ -135,6 +140,8 @@ def test_main_prunes_files_older_than_retention_window(
     assert (data_dir / "2026-05-09.csv").exists(), "13-day-old file kept"
     assert not (data_dir / "2026-05-07.csv").exists(), "15-day-old file pruned"
     assert (data_dir / "README.md").exists(), "non-date file untouched"
+    assert (metrics_dir / "2026-05-09.csv").exists(), "13-day-old metrics file kept"
+    assert not (metrics_dir / "2026-05-07.csv").exists(), "15-day-old metrics file pruned"
 
 
 def test_main_also_writes_metrics_csv_without_cap_or_bool_columns(
