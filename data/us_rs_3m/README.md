@@ -17,6 +17,9 @@ One CSV per weekday, named `<YYYY-MM-DD>.csv` (ISO date, dashes).
 | `ticker` | string (index) | NASDAQ/NYSE symbol, uppercase |
 | `raw_score` | float | `Σ wᵢ·Rᵢ - SPY_score` where `WEIGHTS_3M = [(1,0.5),(2,0.3),(3,0.2)]` |
 | `rs_percentile` | int (0-99) | rank of `raw_score` across the universe |
+| `rs_below_ma` | int (0/1) | RS line (price/SPY) below its own EMA21 on the latest bar |
+| `rs_days_below_ma` | int | trailing consecutive sessions the RS line stayed below its MA |
+| `rs_frac_below_ma` | float 0-1 | fraction of the last 20 sessions the RS line was below its MA |
 
 The `raw_score` column is preserved so the IPO ladder (`us_ipo.py`) can `np.searchsorted` against the full distribution to score out-of-universe tickers.
 
