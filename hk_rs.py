@@ -214,23 +214,47 @@ def _split_combined(combined: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
     return _one("rs_percentile_12m"), _one("rs_percentile_3m")
 
 
+_RS_LINE_COLS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
+
+
+def _extract_rs_line(combined: pd.DataFrame) -> pd.DataFrame:
+    """Pull the RS-line columns out of the combined cloud CSV (if present).
+    Rows where rs_below_ma is NaN (short history / pre-feature CSVs) are
+    dropped, mirroring the per-column NaN handling in _split_combined."""
+    present = [c for c in _RS_LINE_COLS if c in combined.columns]
+    if "rs_below_ma" not in present:
+        return pd.DataFrame(columns=_RS_LINE_COLS)
+    out = combined[present].dropna(subset=["rs_below_ma"]).copy()
+    out["rs_below_ma"] = out["rs_below_ma"].astype(int)
+    if "rs_days_below_ma" in out:
+        out["rs_days_below_ma"] = out["rs_days_below_ma"].astype(int)
+    return out
+
+
 def build_hk_rs_tables(
     output_dir: Path,
     today: date,
-) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
-    """Load today's HK RS tables (12M + 3M) from the cloud-published CSV.
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
+    """Load today's HK RS tables (12M + 3M + RS-line) from the cloud-published CSV.
 
-    Returns ``(table_12m, table_3m)``; each is indexed by Futu code with a
-    single ``rs_percentile`` column (the shape ``filter_by_rs`` and the HK
-    IPO ladder expect). Both are None only when no usable CSV exists within
+    Returns ``(table_12m, table_3m, rs_line_tbl)``; ``table_12m`` and
+    ``table_3m`` are each indexed by Futu code with a single
+    ``rs_percentile`` column (the shape ``filter_by_rs`` and the HK IPO
+    ladder expect). ``rs_line_tbl`` carries the RS-line trend columns
+    (``rs_below_ma``, ``rs_days_below_ma``, ``rs_frac_below_ma``) indexed by
+    Futu code — None when the data are unavailable (cache-hit, stale
+    fallback that pre-dates the feature, or all fetches failed).
+
+    All three are None only when no usable CSV exists within
     ``_FALLBACK_MAX_AGE_DAYS`` — callers then degrade via filter_by_rs's
     missing→passthrough policy.
 
     Strategy mirrors ``us_rs_3m.build_3m_table``:
-      1. Local cache hit (both 12M + 3M present for today) → return immediately.
+      1. Local cache hit (both 12M + 3M present for today) → return immediately
+         (rs_line_tbl is None because local caches don't carry those columns).
       2. HTTP fetch today's combined cloud CSV; walk back up to
          _FALLBACK_MAX_AGE_DAYS if not yet published.
-      3. All fail → (None, None).
+      3. All fail → (None, None, None).
 
     Compute moved off-host (.github/workflows/update_hk_rs.yml) because the
     home-IP yfinance fetch of the ~2,400 HK universe gets throttled, leaving
@@ -243,7 +267,7 @@ def build_hk_rs_tables(
             f"[HK RS] Using cached tables: 12M {len(cached_12m)}, "
             f"3M {len(cached_3m)} tickers"
         )
-        return cached_12m, cached_3m
+        return cached_12m, cached_3m, None
 
     for delta in range(_FALLBACK_MAX_AGE_DAYS + 1):
         target_date = today - timedelta(days=delta)
@@ -268,11 +292,11 @@ def build_hk_rs_tables(
                 f"using stale fallback from {target_date.isoformat()} "
                 f"({delta} day(s) old)"
             )
-        return table_12m, table_3m
+        return table_12m, table_3m, _extract_rs_line(combined)
 
     logger.warning(
         f"[HK RS] No cloud CSV within {_FALLBACK_MAX_AGE_DAYS} days; RS gate "
         "will passthrough "
         "(check https://github.com/EricXue92/finvinz_to_tv/actions)"
     )
-    return None, None
+    return None, None, None

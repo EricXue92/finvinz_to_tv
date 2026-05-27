@@ -968,7 +968,7 @@ def run_hk_eod(
     # ~50% 覆盖), 让百分位分布只建立在半个宇宙上。"missing -> passthrough" 策略
     # 两层都遵守; 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
     from hk_rs import filter_by_rs, build_hk_rs_tables
-    rs_table_12m, rs_table_3m = build_hk_rs_tables(output_dir, today_d)
+    rs_table_12m, rs_table_3m, rs_line_tbl = build_hk_rs_tables(output_dir, today_d)
 
     # --- Apply per-strategy filters ---
     # The conditional RS group keys off HSI's "today" day-change. When
