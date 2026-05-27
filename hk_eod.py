@@ -653,6 +653,23 @@ def _leader_threshold(leaders_cfg: list[dict], key: str) -> float:
     return float("inf")
 
 
+def _rs_line_group_note(codes, rs_line_tbl) -> str:
+    """' | RS↓N' where N = how many of `codes` have their RS line below its MA.
+    Empty string when the table is absent or no code is below — keeps the
+    summary line clean. `codes` are Futu codes (rs_line_tbl index format)."""
+    if rs_line_tbl is None or getattr(rs_line_tbl, "empty", True):
+        return ""
+    if "rs_below_ma" not in rs_line_tbl.columns:
+        return ""
+    n = 0
+    for c in codes:
+        if c in rs_line_tbl.index:
+            v = rs_line_tbl.loc[c, "rs_below_ma"]
+            if not pd.isna(v) and int(v) == 1:
+                n += 1
+    return f" | RS↓{n}" if n else ""
+
+
 def dedup_by_priority(
     raw: dict[str, list[str]],
     priority: list[str] | None = None,
@@ -1104,6 +1121,7 @@ def run_hk_eod(
             continue
         masked = len(dedup.get(n, [])) - written  # dropped by the cross-day master
         note = f"  [{masked} already-seen]" if masked > 0 else ""
+        note += _rs_line_group_note(dedup.get(n, []), rs_line_tbl)
         logger.info(
             f"[HK Longs]   {n:<11} "
             f"{pre_counts.get(n, 0):>3} → {post_rs_counts.get(n, 0):>3} → "
