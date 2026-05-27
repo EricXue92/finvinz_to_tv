@@ -1754,6 +1754,7 @@ def main() -> int:
         # --- Write Longs (one file per strategy; Leaders/RS dedup already applied to union) ---
         # Filename matches Futu group name (PascalCase).
         futu_groups_cfg = (config.get("futu") or {}).get("groups") or {}
+        written_longs: dict[str, list[str]] = {}
         for key, name, tickers in longs_dedup:
             futu_key = f"longs_{key}"
             file_stem = futu_groups_cfg.get(futu_key) or key  # fallback to key if unmapped
@@ -1764,6 +1765,7 @@ def main() -> int:
             logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
             _write_webull(sorted_t, dated, output_dir)
             _futu_sync(config, futu_key, sorted_t, "US")
+            written_longs[key] = sorted_t
 
         # --- Write Leaders ---
         if config.get("leaders"):
@@ -1786,6 +1788,21 @@ def main() -> int:
             logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
             _write_webull(sorted_rs, dated, output_dir)
             _futu_sync(config, "rs", sorted_rs, "US")
+
+        # --- RS-line trend annotation (log only, no output change) ---
+        import rs_line
+        for _key, _tickers in written_longs.items():
+            _s = rs_line.summarize_rs_line(_tickers, rs_table_3m)
+            if _s:
+                logger.info(f"[Longs/{_key}] {_s}")
+        if config.get("leaders"):
+            _s = rs_line.summarize_rs_line(sorted_leaders, rs_table_3m)
+            if _s:
+                logger.info(f"[Leaders] {_s}")
+        if rs_ran:
+            _s = rs_line.summarize_rs_line(sorted_rs, rs_table_3m)
+            if _s:
+                logger.info(f"[RS] {_s}")
 
         # --- Write IPO list ---
         # Tickers dropped by yfinance across the long-side pipeline are

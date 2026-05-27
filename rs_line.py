@@ -114,3 +114,31 @@ def params_from_config(config: dict) -> dict:
 
 def is_enabled(config: dict) -> bool:
     return bool((config.get("rs_line", {}) or {}).get("enabled", True))
+
+
+def summarize_rs_line(ids, features: pd.DataFrame | None) -> str | None:
+    """One-line RS-line summary for a list of ids against a features frame.
+    Returns None when no usable feature data exists (annotation skipped).
+    Ids missing from the frame are treated as 'unknown' and omitted from counts.
+    """
+    if features is None or features.empty or "rs_below_ma" not in features.columns:
+        return None
+    above = 0
+    below: list[tuple[str, int, float]] = []
+    for i in ids:
+        if i not in features.index:
+            continue
+        val = features.loc[i, "rs_below_ma"]
+        if pd.isna(val):
+            continue
+        if int(val) == 1:
+            d = features.loc[i, "rs_days_below_ma"]
+            f = features.loc[i, "rs_frac_below_ma"]
+            below.append((i, int(d) if pd.notna(d) else 0, float(f) if pd.notna(f) else 0.0))
+        else:
+            above += 1
+    if above == 0 and not below:
+        return None
+    detail = ", ".join(f"{i}({d}d,{f:.0%})" for i, d, f in sorted(below, key=lambda x: -x[1]))
+    tail = f" — below: {detail}" if below else ""
+    return f"RS-line: {above} above MA, {len(below)} below{tail}"

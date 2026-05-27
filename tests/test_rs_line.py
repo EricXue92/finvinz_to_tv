@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from rs_line import compute_rs_line_features, params_from_config
+from rs_line import compute_rs_line_features, params_from_config, summarize_rs_line
 
 
 def _kline(closes, start="2026-01-01"):
@@ -102,3 +102,23 @@ def test_params_from_config_defaults_and_overrides():
         "ma_length": 50, "ma_type": "sma",
         "persistence_window": 30, "min_history": 60,
     }
+
+
+def test_summarize_counts_and_lists_below():
+    feats = pd.DataFrame.from_dict(
+        {"AAA": (0, 0, 0.05), "BBB": (1, 14, 0.90), "CCC": (1, 3, 0.40)},
+        orient="index", columns=["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"],
+    )
+    s = summarize_rs_line(["AAA", "BBB", "CCC"], feats)
+    assert "1 above MA" in s
+    assert "2 below" in s
+    assert "BBB" in s and "14d" in s   # most-persistent listed first
+
+
+def test_summarize_handles_missing_and_none():
+    assert summarize_rs_line(["X"], None) is None
+    feats = pd.DataFrame(columns=["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"])
+    assert summarize_rs_line(["X"], feats) is None
+    feats2 = pd.DataFrame.from_dict({"AAA": (0, 0, 0.0)}, orient="index",
+                                    columns=["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"])
+    assert "1 above MA, 0 below" in summarize_rs_line(["AAA", "ZZZ"], feats2)
