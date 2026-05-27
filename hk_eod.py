@@ -1090,3 +1090,28 @@ def run_hk_eod(
     logger.info(f"[HK IPO] {len(ipo_tv)} -> {dated_ipo}")
     write_webull(ipo_tv, dated_ipo, output_dir)
     futu_sync(config, "hk_ipo", ipo_tv, "HK")
+
+    # --- Per-category headline summary ---
+    # One aligned line per group so the operator can see at a glance how many
+    # each strategy produced and *why* a group is empty (RS-gated vs deduped),
+    # without stitching together the per-stage funnel lines above.
+    logger.info("[HK Longs] ── summary (found → RS-gate → within-dedup → written) ──")
+    for n in HK_STRATEGY_PRIORITY:
+        written = len(final.get(n, []))
+        if n == "RS" and not rs_enabled:
+            reason = "yesterday-close run" if use_yesterday else f"HSI day-change > {rs_trigger}"
+            logger.info(f"[HK Longs]   {n:<11} skipped ({reason})")
+            continue
+        masked = len(dedup.get(n, [])) - written  # dropped by the cross-day master
+        note = f"  [{masked} already-seen]" if masked > 0 else ""
+        logger.info(
+            f"[HK Longs]   {n:<11} "
+            f"{pre_counts.get(n, 0):>3} → {post_rs_counts.get(n, 0):>3} → "
+            f"{len(dedup.get(n, [])):>3} → {written:>3}{note}"
+        )
+    ipo_masked = len(ipo_codes) - len(ipo_tv)
+    ipo_note = f"  [{ipo_masked} already-seen]" if ipo_masked > 0 else ""
+    logger.info(
+        f"[HK Longs]   {'IPO':<11} {len(ipo_codes):>3} found"
+        f"        → {len(ipo_tv):>3}{ipo_note}"
+    )
