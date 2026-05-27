@@ -116,7 +116,7 @@ def is_enabled(config: dict) -> bool:
     return bool((config.get("rs_line", {}) or {}).get("enabled", True))
 
 
-def summarize_rs_line(ids, features: pd.DataFrame | None) -> str | None:
+def summarize_rs_line(ids: list[str], features: pd.DataFrame | None) -> str | None:
     """One-line RS-line summary for a list of ids against a features frame.
     Returns None when no usable feature data exists (annotation skipped).
     Ids missing from the frame are treated as 'unknown' and omitted from counts.

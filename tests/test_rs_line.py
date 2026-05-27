@@ -122,3 +122,13 @@ def test_summarize_handles_missing_and_none():
     feats2 = pd.DataFrame.from_dict({"AAA": (0, 0, 0.0)}, orient="index",
                                     columns=["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"])
     assert "1 above MA, 0 below" in summarize_rs_line(["AAA", "ZZZ"], feats2)
+
+
+def test_summarize_all_below_none_above():
+    feats = pd.DataFrame.from_dict(
+        {"AAA": (1, 5, 0.7), "BBB": (1, 9, 0.8)},
+        orient="index", columns=["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"],
+    )
+    s = summarize_rs_line(["AAA", "BBB"], feats)
+    assert "0 above MA, 2 below" in s
+    assert s.index("BBB") < s.index("AAA")   # 9d before 5d

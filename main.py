@@ -1790,6 +1790,10 @@ def main() -> int:
             _futu_sync(config, "rs", sorted_rs, "US")
 
         # --- RS-line trend annotation (log only, no output change) ---
+        # rs_table_3m is the cloud-published 3M CSV frame, which carries the
+        # rs_below_ma/rs_days_below_ma/rs_frac_below_ma columns (added cloud-side);
+        # we READ them here, never compute locally. Silent until the cloud seeds
+        # a CSV carrying those columns (summarize_rs_line returns None meanwhile).
         import rs_line
         for _key, _tickers in written_longs.items():
             _s = rs_line.summarize_rs_line(_tickers, rs_table_3m)
