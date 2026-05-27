@@ -119,3 +119,30 @@ def test_main_prunes_files_older_than_retention_window(
     assert (data_dir / "2026-05-09.csv").exists(), "13-day-old file kept"
     assert not (data_dir / "2026-05-07.csv").exists(), "15-day-old file pruned"
     assert (data_dir / "README.md").exists(), "non-date file untouched"
+
+
+def test_csv_has_rs_line_columns(tmp_path, monkeypatch):
+    """The published US CSV gains the three rs_line columns."""
+    import pandas as pd
+    import scripts.compute_us_rs_3m_cloud as mod
+
+    n = 80
+    idx = pd.bdate_range("2026-01-01", periods=n)
+    def _kl(start_price, slope):
+        return pd.DataFrame({"time_key": idx,
+                             "close": [start_price + slope * i for i in range(n)]})
+    klines = {"AAA": _kl(100, 1.0), "BBB": _kl(200, -1.0)}  # AAA up, BBB down
+    spy = pd.DataFrame({"time_key": idx, "close": [100.0] * n})
+
+    monkeypatch.setattr(mod, "fetch_rs_table", lambda *a, **k: {"AAA": 90, "BBB": 80})
+    monkeypatch.setattr(mod, "_fetch_spy_kline", lambda **k: spy)
+    monkeypatch.setattr(mod, "fetch_us_klines_yf", lambda *a, **k: klines)
+    monkeypatch.setattr(mod, "_DATA_DIR", tmp_path)
+    monkeypatch.setattr(mod, "_today", lambda: __import__("datetime").date(2026, 5, 27))
+
+    assert mod.main() == 0
+    out = pd.read_csv(tmp_path / "2026-05-27.csv", index_col="ticker")
+    for col in ("rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"):
+        assert col in out.columns
+    assert int(out.loc["BBB", "rs_below_ma"]) == 1   # falling line below MA
+    assert int(out.loc["AAA", "rs_below_ma"]) == 0   # rising line above MA
