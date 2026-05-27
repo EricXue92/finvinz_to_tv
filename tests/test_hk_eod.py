@@ -297,3 +297,16 @@ def test_filter_hk_ipo_threshold_zero_disables_entire_3m_gate():
     assert set(kept) == {"HK.LOW", "HK.MISS"}
     assert drops["rs_3m"] == 0
     assert drops["rs_3m_missing"] == 0
+
+
+def test_hk_rs_line_group_note():
+    import pandas as pd
+    from hk_eod import _rs_line_group_note
+    tline = pd.DataFrame.from_dict(
+        {"HK.00001": (0, 0, 0.0), "HK.00002": (1, 12, 0.85)},
+        orient="index", columns=["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"],
+    )
+    assert _rs_line_group_note(["HK.00001", "HK.00002"], tline) == " | RS↓1"
+    assert _rs_line_group_note(["HK.00001"], tline) == ""   # none below → no note
+    assert _rs_line_group_note(["HK.00001"], None) == ""     # no table → no note
+    assert _rs_line_group_note([], tline) == ""              # empty group → no note

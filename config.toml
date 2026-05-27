@@ -33,6 +33,19 @@ min_price      = 10.0            # USD; = Finviz sh_price_o10
 min_avg_volume = 500_000         # 20日股/天; = Finviz sh_avgvol_o500
 # min_dollar_volume / min_adr_percent 复用上方 [settings] 值
 
+# RS line 趋势标注 (TraderLion 式 RS line = 价/指数, vs 它自己的 EMA)。
+# 云端 (update_us_rs_3m / update_hk_rs) 从已有 k 线算 rs_below_ma /
+# rs_days_below_ma / rs_frac_below_ma 三列, 本地只读列做日志标注 —— v1 不改
+# .txt / dedup 输出。判据 = RS line 持续待在它均线下方 (位置+持续性, 不看均线斜率)。
+[rs_line]
+enabled = true
+ma_length = 21          # 对齐 TraderLion RS-line 均线 (用户确认 EMA21)
+ma_type = "ema"         # "ema" | "sma"
+persistence_window = 20 # 占比测度的回看交易日数
+min_history = 42        # 对齐后不足此根数 → unknown (排除, 不标注)
+# v1 只标注。漂移阈值故意留空, 待观察真实分布后在 v2 加:
+#   drop_days_below = ...   # 连续在均线下方天数
+#   drop_frac_below = ...   # persistence_window 内占比
 
 # ════════════════════════════════════════════════════════════
 #  美股 (US)

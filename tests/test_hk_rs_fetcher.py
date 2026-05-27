@@ -115,7 +115,7 @@ def test_build_uses_today_cloud_csv_and_mirrors_to_local_caches(
         return fixture
 
     monkeypatch.setattr(hk_rs, "_fetch_cloud_csv", _fake_fetch)
-    table_12m, table_3m = hk_rs.build_hk_rs_tables(tmp_path, today)
+    table_12m, table_3m, _rs_line = hk_rs.build_hk_rs_tables(tmp_path, today)
     assert table_12m is not None and table_3m is not None
     assert list(table_12m.index) == ["HK.00001", "HK.00700"]
     assert list(table_3m.index) == ["HK.00001", "HK.00700", "HK.09999"]
@@ -138,7 +138,7 @@ def test_build_walks_back_to_stale_fallback_and_does_not_cache(
         return None
 
     monkeypatch.setattr(hk_rs, "_fetch_cloud_csv", _fake_fetch)
-    table_12m, table_3m = hk_rs.build_hk_rs_tables(tmp_path, today)
+    table_12m, table_3m, _rs_line = hk_rs.build_hk_rs_tables(tmp_path, today)
     assert table_12m is not None and table_3m is not None
     assert len(calls) == 4  # today, -1, -2, -3
     assert "2026-05-22" in calls[0]
@@ -153,7 +153,7 @@ def test_build_returns_none_pair_when_all_fetches_fail(
 ) -> None:
     today = date(2026, 5, 22)
     monkeypatch.setattr(hk_rs, "_fetch_cloud_csv", lambda *a, **kw: None)
-    table_12m, table_3m = hk_rs.build_hk_rs_tables(tmp_path, today)
+    table_12m, table_3m, _rs_line = hk_rs.build_hk_rs_tables(tmp_path, today)
     assert table_12m is None and table_3m is None
 
 
@@ -173,7 +173,7 @@ def test_build_local_cache_short_circuit_skips_http(
         pytest.fail("_fetch_cloud_csv should not be called when both caches hit")
 
     monkeypatch.setattr(hk_rs, "_fetch_cloud_csv", _fail_on_fetch)
-    table_12m, table_3m = hk_rs.build_hk_rs_tables(tmp_path, today)
+    table_12m, table_3m, _rs_line = hk_rs.build_hk_rs_tables(tmp_path, today)
     assert table_12m is not None and table_3m is not None
     assert list(table_12m.index) == ["HK.00001", "HK.00700"]
 
@@ -188,6 +188,28 @@ def test_build_partial_cache_does_not_short_circuit(
     hk_rs.save_cache(cache_12m, today, tmp_path)
     fixture = pd.read_csv(io.StringIO(_FIXTURE_CSV), index_col="code")
     monkeypatch.setattr(hk_rs, "_fetch_cloud_csv", lambda *a, **kw: fixture)
-    table_12m, table_3m = hk_rs.build_hk_rs_tables(tmp_path, today)
+    table_12m, table_3m, _rs_line = hk_rs.build_hk_rs_tables(tmp_path, today)
     # Fetched fixture wins (3 rows in 3M), not the 1-row partial cache.
     assert list(table_3m.index) == ["HK.00001", "HK.00700", "HK.09999"]
+
+
+def test_build_returns_rs_line_frame(tmp_path, monkeypatch):
+    import pandas as pd
+    import hk_rs
+
+    combined = pd.DataFrame({
+        "code": ["HK.00001", "HK.00002"],
+        "rs_percentile_12m": [95, 80],
+        "rs_percentile_3m": [92, 70],
+        "rs_below_ma": [0, 1],
+        "rs_days_below_ma": [0, 14],
+        "rs_frac_below_ma": [0.1, 0.9],
+    }).set_index("code")
+    monkeypatch.setattr(hk_rs, "_fetch_cloud_csv", lambda url, **k: combined)
+
+    t12, t3, tline = hk_rs.build_hk_rs_tables(tmp_path, __import__("datetime").date(2026, 5, 27))
+    assert tline is not None
+    assert int(tline.loc["HK.00002", "rs_below_ma"]) == 1
+    assert "rs_frac_below_ma" in tline.columns
+    assert tline["rs_days_below_ma"].dtype == "int64"
+    assert tline["rs_below_ma"].dtype == "int64"

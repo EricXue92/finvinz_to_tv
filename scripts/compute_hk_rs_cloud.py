@@ -29,7 +29,10 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT))
 
+import tomllib  # noqa: E402
+
 import pandas as pd  # noqa: E402
+from rs_line import compute_rs_line_features, is_enabled, params_from_config  # noqa: E402
 
 from hk_eod import (  # noqa: E402
     build_metrics_frame,
@@ -124,6 +127,19 @@ def main() -> int:
         "rs_percentile_3m": table_3m["rs_percentile"] if not table_3m.empty else pd.Series(dtype="float64"),
     })
     combined.index.name = "code"
+
+    # RS-line-vs-MA features (TraderLion-style) on close/HSI, merged in —
+    # best-effort/annotation-only: a config read failure must NOT fail the run.
+    _cfg = {}
+    try:
+        with open(_REPO_ROOT / "config.toml", "rb") as f:
+            _cfg = tomllib.load(f)
+    except Exception as exc:
+        logger.warning(f"[Cloud HK RS] config.toml unreadable ({exc}); skipping RS-line features")
+    if _cfg and is_enabled(_cfg) and hsi_kline is not None and not hsi_kline.empty:
+        feats = compute_rs_line_features(klines, hsi_kline, **params_from_config(_cfg))
+        combined = combined.join(feats, how="left")
+        logger.info(f"[Cloud HK RS] RS-line features merged for {len(feats)} codes")
 
     # 7. Write today's CSV.
     _DATA_DIR.mkdir(parents=True, exist_ok=True)

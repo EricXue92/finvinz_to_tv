@@ -58,6 +58,13 @@ local (throttle-prone) k-line fetch.
 - **Do NOT make fetch failure hard-fail:** walk back ≤ 3 days of stale cache, then
   pass through (no gate) with a warning. Tickers **missing** from the table are
   KEPT, not dropped.
+- **RS-line trend (annotate-only, v1):** cloud scripts publish `rs_below_ma` /
+  `rs_days_below_ma` / `rs_frac_below_ma` (TraderLion-style RS line = price/index
+  vs its own EMA21) as extra columns in `data/{us_rs_3m,hk_rs}/<date>.csv`. The
+  EOD log annotates long-side survivors whose RS line is persistently below its
+  MA; **no `.txt`/dedup effect**. Computed cloud-side only (local never refetches
+  klines). Config: `[rs_line]`. Spec:
+  `docs/superpowers/specs/2026-05-27-rs-line-trend-filter-design.md`.
 
 ## Futu sync
 

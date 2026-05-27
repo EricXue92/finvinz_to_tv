@@ -177,3 +177,30 @@ def test_main_also_writes_metrics_csv_without_cap_or_bool_columns(
     assert "market_cap" not in df.columns
     assert "above_sma50" not in df.columns
     assert "above_sma200" not in df.columns
+
+
+def test_hk_csv_has_rs_line_columns(tmp_path, monkeypatch):
+    import pandas as pd
+    # reuse the module alias already imported at top of this file (do NOT add a new import)
+
+    n = 300  # HK needs 12M history for percentile; plenty for EMA21 too
+    idx = pd.bdate_range("2025-01-01", periods=n)
+    def _kl(start, slope):
+        c = [start + slope * i for i in range(n)]
+        return pd.DataFrame({"time_key": idx, "open": c, "high": c, "low": c,
+                             "close": c, "volume": [1_000_000] * n})
+    klines = {"HK.00001": _kl(100, 1.0), "HK.00002": _kl(300, -0.5)}
+    hsi = pd.DataFrame({"time_key": idx, "close": [20000.0] * n})
+
+    monkeypatch.setattr(cloud, "fetch_hkex_equities", lambda *a, **k: ["HK.00001", "HK.00002"])
+    monkeypatch.setattr(cloud, "fetch_hsi_kline_yf", lambda *a, **k: hsi)
+    monkeypatch.setattr(cloud, "fetch_hk_klines_yf", lambda *a, **k: klines)
+    monkeypatch.setattr(cloud, "_DATA_DIR", tmp_path / "hk_rs")
+    monkeypatch.setattr(cloud, "_METRICS_DIR", tmp_path / "hk_metrics")
+    monkeypatch.setattr(cloud, "_today", lambda: __import__("datetime").date(2026, 5, 27))
+
+    assert cloud.main() == 0
+    out = pd.read_csv(tmp_path / "hk_rs" / "2026-05-27.csv", index_col="code")
+    for col in ("rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"):
+        assert col in out.columns
+    assert int(out.loc["HK.00002", "rs_below_ma"]) == 1

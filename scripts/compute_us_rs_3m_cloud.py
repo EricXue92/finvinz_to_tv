@@ -24,7 +24,10 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT))
 
+import tomllib  # noqa: E402
+
 from rs_rating import fetch_rs_table  # noqa: E402
+from rs_line import compute_rs_line_features, is_enabled, params_from_config  # noqa: E402
 from us_rs_3m import (  # noqa: E402
     _fetch_spy_kline,
     compute_us_rs_3m_table,
@@ -92,6 +95,19 @@ def main() -> int:
     import pandas as pd  # local import to keep top-of-file imports minimal
     spy_for_compute = spy_kline if spy_kline is not None else pd.DataFrame({"time_key": [], "close": []})
     table = compute_us_rs_3m_table(klines, spy_for_compute)
+
+    # RS-line-vs-MA features (TraderLion-style) merged as extra columns —
+    # best-effort/annotation-only: a config read failure must NOT fail the run.
+    _cfg = {}
+    try:
+        with open(_REPO_ROOT / "config.toml", "rb") as f:
+            _cfg = tomllib.load(f)
+    except Exception as exc:
+        logger.warning(f"[Cloud RS 3M] config.toml unreadable ({exc}); skipping RS-line features")
+    if _cfg and is_enabled(_cfg) and spy_kline is not None and not spy_kline.empty:
+        feats = compute_rs_line_features(klines, spy_kline, **params_from_config(_cfg))
+        table = table.join(feats, how="left")
+        logger.info(f"[Cloud RS 3M] RS-line features merged for {len(feats)} tickers")
 
     # 5. Coverage guard.
     coverage = len(table) / len(universe) if universe else 0
