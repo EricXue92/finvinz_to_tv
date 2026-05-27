@@ -57,6 +57,9 @@ def compute_rs_line_features(
       rs_frac_below_ma  float fraction of last ``persistence_window`` bars below
     Ids with < ``min_history`` aligned bars are EXCLUDED (can't seed the MA);
     consumers treat missing-from-frame as "unknown". Never raises.
+    ``min_history`` is counted against **MA-valid** bars (bars where the MA is
+    non-NaN), so SMA callers effectively need ``min_history + (ma_length - 1)``
+    aligned bars to retain a ticker.
     """
     if benchmark_kline is None or getattr(benchmark_kline, "empty", True):
         return pd.DataFrame(columns=_COLUMNS)
@@ -81,6 +84,7 @@ def compute_rs_line_features(
         rs = m["close"].astype(float) / m["_bench"].astype(float)
         ma = _moving_average(rs, ma_length, ma_type)
         below = (rs < ma)[ma.notna()]
+        # SMA warm-up leaves the first (ma_length-1) bars NaN; require min_history MA-valid bars.
         if len(below) < min_history:
             continue
         flags = [bool(v) for v in below.tolist()]

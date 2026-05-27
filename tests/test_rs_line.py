@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import pytest
 
 from rs_line import compute_rs_line_features
 
@@ -36,7 +35,7 @@ def test_persistently_below_ma_flagged():
     assert out.loc["DOWN", "rs_frac_below_ma"] > 0.75
 
 
-def test_two_day_dip_then_recover_resets_streak():
+def test_late_two_bar_dip_keeps_streak_small():
     n = 80
     closes = [100 + i for i in range(n - 2)] + [100, 95]  # late 2-bar dip
     stock = _kline(closes)
