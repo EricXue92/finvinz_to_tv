@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from rs_line import compute_rs_line_features
+from rs_line import compute_rs_line_features, params_from_config
 
 
 def _kline(closes, start="2026-01-01"):
@@ -89,3 +89,16 @@ def test_empty_benchmark_returns_empty_schema():
     out = compute_rs_line_features({"X": _kline([1, 2, 3])}, None)
     assert list(out.columns) == ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
     assert out.empty
+
+
+def test_params_from_config_defaults_and_overrides():
+    assert params_from_config({}) == {
+        "ma_length": 21, "ma_type": "ema",
+        "persistence_window": 20, "min_history": 42,
+    }
+    cfg = {"rs_line": {"ma_length": 50, "ma_type": "sma",
+                       "persistence_window": 30, "min_history": 60}}
+    assert params_from_config(cfg) == {
+        "ma_length": 50, "ma_type": "sma",
+        "persistence_window": 30, "min_history": 60,
+    }

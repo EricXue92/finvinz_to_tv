@@ -98,3 +98,19 @@ def compute_rs_line_features(
     if not rows:
         return pd.DataFrame(columns=_COLUMNS)
     return pd.DataFrame.from_dict(rows, orient="index", columns=_COLUMNS)
+
+
+def params_from_config(config: dict) -> dict:
+    """Extract compute kwargs from a parsed config dict's ``[rs_line]`` section.
+    Missing keys fall back to module defaults."""
+    cfg = config.get("rs_line", {}) or {}
+    return {
+        "ma_length": int(cfg.get("ma_length", DEFAULT_MA_LENGTH)),
+        "ma_type": str(cfg.get("ma_type", DEFAULT_MA_TYPE)),
+        "persistence_window": int(cfg.get("persistence_window", DEFAULT_PERSISTENCE_WINDOW)),
+        "min_history": int(cfg.get("min_history", DEFAULT_MIN_HISTORY)),
+    }
+
+
+def is_enabled(config: dict) -> bool:
+    return bool((config.get("rs_line", {}) or {}).get("enabled", True))
