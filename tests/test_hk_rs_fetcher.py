@@ -211,3 +211,5 @@ def test_build_returns_rs_line_frame(tmp_path, monkeypatch):
     assert tline is not None
     assert int(tline.loc["HK.00002", "rs_below_ma"]) == 1
     assert "rs_frac_below_ma" in tline.columns
+    assert tline["rs_days_below_ma"].dtype == "int64"
+    assert tline["rs_below_ma"].dtype == "int64"

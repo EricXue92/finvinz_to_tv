@@ -226,7 +226,7 @@ def _extract_rs_line(combined: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=_RS_LINE_COLS)
     out = combined[present].dropna(subset=["rs_below_ma"]).copy()
     out["rs_below_ma"] = out["rs_below_ma"].astype(int)
-    if "rs_days_below_ma" in out:
+    if "rs_days_below_ma" in out.columns:
         out["rs_days_below_ma"] = out["rs_days_below_ma"].astype(int)
     return out
 
