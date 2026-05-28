@@ -26,7 +26,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 _CLOUD_CSV_URL_TEMPLATE = (
-    "https://raw.githubusercontent.com/EricXue92/finvinz_to_tv/main/"
+    "https://raw.githubusercontent.com/EricXue92/momentum-scanner/main/"
     "data/hk_metrics/{date}.csv"
 )
 
@@ -40,7 +40,7 @@ def _fetch_cloud_csv(url: str, timeout: int = 30) -> pd.DataFrame | None:
     DataFrame indexed by ``code`` on success, or None on 404 (not yet
     published), network error, or parse failure. Never raises."""
     try:
-        req = Request(url, headers={"User-Agent": "finviz-to-tv/1.0"})
+        req = Request(url, headers={"User-Agent": "momentum-scanner/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             body = resp.read()
         return pd.read_csv(io.BytesIO(body), index_col="code")
@@ -97,7 +97,7 @@ def build_hk_metrics_cloud(output_dir: Path, today: date) -> pd.DataFrame | None
         logger.warning(
             f"[HK metrics] Cloud CSV for {today.isoformat()} unavailable; "
             "caller will fall back to local yfinance fetch "
-            "(check https://github.com/EricXue92/finvinz_to_tv/actions)"
+            "(check https://github.com/EricXue92/momentum-scanner/actions)"
         )
         return None
 

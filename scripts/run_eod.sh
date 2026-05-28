@@ -15,7 +15,7 @@
 # intraday k-line bars (HK market opens 09:30 HKT, just 30 min before).
 set -euo pipefail
 
-LOG=/Users/xue/finviz_to_tv/output/launchd_US.log
+LOG=/Users/xue/momentum-scanner/output/launchd_US.log
 mkdir -p "$(dirname "$LOG")"
 
 if [[ -f "$LOG" && "$(date -r "$LOG" +%Y-%m-%d)" != "$(date +%Y-%m-%d)" ]]; then
@@ -29,7 +29,7 @@ exec >> "$LOG" 2>&1
 # project's .env (gitignored). Launchd does NOT inherit the user's interactive
 # shell environment, so without this the report step would skip with a
 # "backend init failed" warning.
-ENV_FILE=/Users/xue/finviz_to_tv/.env
+ENV_FILE=/Users/xue/momentum-scanner/.env
 if [[ -f "$ENV_FILE" ]]; then
     set -a
     # shellcheck source=/dev/null
@@ -38,7 +38,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 UV=/Users/xue/.local/bin/uv
-PROJECT=/Users/xue/finviz_to_tv
+PROJECT=/Users/xue/momentum-scanner
 
 # Hard wall-clock cap for the EOD step. A real run is ~3-5 min; anything past
 # 30 min means a hung socket (observed 2026-05-12: finviz scrape stuck inside

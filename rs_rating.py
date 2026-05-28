@@ -94,7 +94,7 @@ def fetch_rs_table(
             logger.warning(f"[RS Rating] Cache read failed ({e}); refetching")
 
     if csv_text is None:
-        req = Request(RS_CSV_URL, headers={"User-Agent": "finviz-to-tv/1.0"})
+        req = Request(RS_CSV_URL, headers={"User-Agent": "momentum-scanner/1.0"})
         attempts = len(_FETCH_RETRY_DELAYS) + 1
         last_err: Exception | None = None
         for i in range(attempts):

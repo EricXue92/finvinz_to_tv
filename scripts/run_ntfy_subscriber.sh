@@ -12,20 +12,20 @@
 # restart (ThrottleInterval=10s prevents storm).
 set -euo pipefail
 
-LOG=/Users/xue/finviz_to_tv/output/launchd_ntfy.log
+LOG=/Users/xue/momentum-scanner/output/launchd_ntfy.log
 mkdir -p "$(dirname "$LOG")"
 if [[ -f "$LOG" && "$(date -r "$LOG" +%Y-%m-%d)" != "$(date +%Y-%m-%d)" ]]; then
     : > "$LOG"
 fi
 exec >> "$LOG" 2>&1
 
-STATE_DIR=/Users/xue/finviz_to_tv/output/state
+STATE_DIR=/Users/xue/momentum-scanner/output/state
 mkdir -p "$STATE_DIR"
 STATE_FILE="$STATE_DIR/ntfy_last_seen.txt"
 
 NTFY=/opt/homebrew/bin/ntfy
 TOPIC=xue-finviz-morning-gap-9f3k2
-HELPER=/Users/xue/finviz_to_tv/scripts/ntfy_notify.sh
+HELPER=/Users/xue/momentum-scanner/scripts/ntfy_notify.sh
 
 if [[ -f "$STATE_FILE" ]]; then
     last=$(cat "$STATE_FILE" 2>/dev/null || echo "")

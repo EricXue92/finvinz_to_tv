@@ -5,7 +5,7 @@
 # 4 hours for k-line data to finalize.
 set -euo pipefail
 
-LOG=/Users/xue/finviz_to_tv/output/launchd_HK.log
+LOG=/Users/xue/momentum-scanner/output/launchd_HK.log
 mkdir -p "$(dirname "$LOG")"
 
 if [[ -f "$LOG" && "$(date -r "$LOG" +%Y-%m-%d)" != "$(date +%Y-%m-%d)" ]]; then
@@ -18,7 +18,7 @@ exec >> "$LOG" 2>&1
 # DEEPSEEK_API_KEY + TAVILY_API_KEY for the deepseek backend) from the
 # project's .env (gitignored). Launchd does NOT inherit the user's
 # interactive shell environment.
-ENV_FILE=/Users/xue/finviz_to_tv/.env
+ENV_FILE=/Users/xue/momentum-scanner/.env
 if [[ -f "$ENV_FILE" ]]; then
     set -a
     # shellcheck source=/dev/null
@@ -27,7 +27,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 UV=/Users/xue/.local/bin/uv
-PROJECT=/Users/xue/finviz_to_tv
+PROJECT=/Users/xue/momentum-scanner
 
 # Hard wall-clock cap — HK pulls ~2,400 tickers from yfinance + Futu snapshots,
 # any of which can hang on a half-closed socket (see run_eod.sh comment). HK

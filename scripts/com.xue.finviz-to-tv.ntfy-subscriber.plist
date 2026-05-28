@@ -25,7 +25,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/xue/finviz_to_tv/scripts/run_ntfy_subscriber.sh</string>
+        <string>/Users/xue/momentum-scanner/scripts/run_ntfy_subscriber.sh</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -38,6 +38,6 @@
     <integer>10</integer>
 
     <key>WorkingDirectory</key>
-    <string>/Users/xue/finviz_to_tv</string>
+    <string>/Users/xue/momentum-scanner</string>
 </dict>
 </plist>

@@ -8,8 +8,8 @@
 #   $NTFY_TIME, $NTFY_TITLE, $NTFY_MESSAGE, $NTFY_PRIORITY (1=min..5=max)
 set -u
 
-STATE_FILE=/Users/xue/finviz_to_tv/output/state/ntfy_last_seen.txt
-LOG=/Users/xue/finviz_to_tv/output/launchd_ntfy.log
+STATE_FILE=/Users/xue/momentum-scanner/output/state/ntfy_last_seen.txt
+LOG=/Users/xue/momentum-scanner/output/launchd_ntfy.log
 
 title="${NTFY_TITLE:-ntfy}"
 message="${NTFY_MESSAGE:-}"

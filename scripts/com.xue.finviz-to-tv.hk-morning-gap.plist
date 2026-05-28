@@ -22,7 +22,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/xue/finviz_to_tv/scripts/run_hk_morning_gap.sh</string>
+        <string>/Users/xue/momentum-scanner/scripts/run_hk_morning_gap.sh</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -68,6 +68,6 @@
     <false/>
 
     <key>WorkingDirectory</key>
-    <string>/Users/xue/finviz_to_tv</string>
+    <string>/Users/xue/momentum-scanner</string>
 </dict>
 </plist>

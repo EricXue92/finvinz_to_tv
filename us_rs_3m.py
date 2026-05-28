@@ -31,7 +31,7 @@ WEIGHTS_3M: list[tuple[int, float]] = [(1, 0.5), (2, 0.3), (3, 0.2)]
 # locally — the home-IP yfinance compute hits Yahoo's IP-cumulative rate
 # limit after ~2000 tickers (see spec 2026-05-21-us-rs-3m-cloud-pipeline).
 _CLOUD_CSV_URL_TEMPLATE = (
-    "https://raw.githubusercontent.com/EricXue92/finvinz_to_tv/main/"
+    "https://raw.githubusercontent.com/EricXue92/momentum-scanner/main/"
     "data/us_rs_3m/{date}.csv"
 )
 
@@ -149,7 +149,7 @@ def _fetch_cloud_csv(url: str, timeout: int = 30) -> pd.DataFrame | None:
     Never raises — callers walk back day-by-day on None.
     """
     try:
-        req = Request(url, headers={"User-Agent": "finviz-to-tv/1.0"})
+        req = Request(url, headers={"User-Agent": "momentum-scanner/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             body = resp.read()
         return pd.read_csv(io.BytesIO(body), index_col="ticker")
@@ -379,6 +379,6 @@ def build_3m_table(
     logger.warning(
         f"[US RS 3M] No cloud CSV within {_FALLBACK_MAX_AGE_DAYS} days; "
         "3M layer will passthrough "
-        "(check https://github.com/EricXue92/finvinz_to_tv/actions)"
+        "(check https://github.com/EricXue92/momentum-scanner/actions)"
     )
     return None

@@ -1,5 +1,5 @@
 [project]
-name = "finviz-to-tv"
+name = "momentum-scanner"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"

@@ -8,7 +8,7 @@
 # and exits cleanly outside any window — DO NOT add a hard error path here.
 set -euo pipefail
 
-LOG=/Users/xue/finviz_to_tv/output/launchd_HK_morning_gap.log
+LOG=/Users/xue/momentum-scanner/output/launchd_HK_morning_gap.log
 mkdir -p "$(dirname "$LOG")"
 
 if [[ -f "$LOG" && "$(date -r "$LOG" +%Y-%m-%d)" != "$(date +%Y-%m-%d)" ]]; then
@@ -18,6 +18,6 @@ fi
 exec >> "$LOG" 2>&1
 
 UV=/Users/xue/.local/bin/uv
-PROJECT=/Users/xue/finviz_to_tv
+PROJECT=/Users/xue/momentum-scanner
 
 exec "$UV" run --directory "$PROJECT" main.py --mode hk-morning-gap

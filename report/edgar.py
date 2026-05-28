@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = Path("output/state/edgar_cache")
 COMPANY_TICKERS_TTL = 86_400              # 1 day
 COMPANYFACTS_TTL = 7 * 86_400             # 7 days
-USER_AGENT = "finviz-to-tv xuelong0208@gmail.com"
+USER_AGENT = "momentum-scanner xuelong0208@gmail.com"
 HTTP_TIMEOUT = 10.0
 HTTP_RETRY_DELAY = 0.5
 

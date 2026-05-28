@@ -31,7 +31,7 @@ WEIGHTS_3M:  list[tuple[int, float]] = [(1, 0.5), (2, 0.3), (3, 0.2)]
 # distribution. Schema: index ``code`` (Futu format), columns
 # ``rs_percentile_12m`` + ``rs_percentile_3m``.
 _CLOUD_CSV_URL_TEMPLATE = (
-    "https://raw.githubusercontent.com/EricXue92/finvinz_to_tv/main/"
+    "https://raw.githubusercontent.com/EricXue92/momentum-scanner/main/"
     "data/hk_rs/{date}.csv"
 )
 
@@ -180,7 +180,7 @@ def _fetch_cloud_csv(url: str, timeout: int = 30) -> pd.DataFrame | None:
     Never raises — callers walk back day-by-day on None.
     """
     try:
-        req = Request(url, headers={"User-Agent": "finviz-to-tv/1.0"})
+        req = Request(url, headers={"User-Agent": "momentum-scanner/1.0"})
         with urlopen(req, timeout=timeout) as resp:
             body = resp.read()
         return pd.read_csv(io.BytesIO(body), index_col="code")
@@ -297,6 +297,6 @@ def build_hk_rs_tables(
     logger.warning(
         f"[HK RS] No cloud CSV within {_FALLBACK_MAX_AGE_DAYS} days; RS gate "
         "will passthrough "
-        "(check https://github.com/EricXue92/finvinz_to_tv/actions)"
+        "(check https://github.com/EricXue92/momentum-scanner/actions)"
     )
     return None, None, None
