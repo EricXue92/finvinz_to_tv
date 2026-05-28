@@ -19,6 +19,7 @@ DEFAULT_MA_LENGTH = 21
 DEFAULT_MA_TYPE = "ema"
 DEFAULT_PERSISTENCE_WINDOW = 20
 DEFAULT_MIN_HISTORY = 42
+DEFAULT_LOOKBACK = 5
 
 _COLUMNS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
 
@@ -98,6 +99,58 @@ def compute_rs_line_features(
     if not rows:
         return pd.DataFrame(columns=_COLUMNS)
     return pd.DataFrame.from_dict(rows, orient="index", columns=_COLUMNS)
+
+
+def compute_rs_direction(
+    klines: dict[str, pd.DataFrame],
+    benchmark_kline: pd.DataFrame | None,
+    ma_length: int = DEFAULT_MA_LENGTH,
+    ma_type: str = DEFAULT_MA_TYPE,
+    lookback: int = DEFAULT_LOOKBACK,
+    min_history: int = DEFAULT_MIN_HISTORY,
+) -> pd.DataFrame:
+    """Per-id RS-line 21EMA direction, indexed by the ``klines`` dict key.
+
+    rs_line = close / benchmark_close (date-aligned inner join); ma = EMA/SMA.
+    Columns:
+      rs_ema         float  latest MA value of the RS line (descriptive only;
+                            scale-dependent — NOT comparable to a TV chart level)
+      rs_ema_chg_5d  float  (ma[-1] - ma[-1-lookback]) / ma[-1-lookback]
+    Ids with < ``min_history`` MA-valid bars are EXCLUDED (unknown). Scale-
+    invariant: scaling the benchmark by a constant leaves rs_ema_chg_5d
+    unchanged. ``min_history`` must exceed ``lookback``. Never raises.
+    """
+    cols = ["rs_ema", "rs_ema_chg_5d"]
+    if benchmark_kline is None or getattr(benchmark_kline, "empty", True):
+        return pd.DataFrame(columns=cols)
+    bench = (
+        benchmark_kline[["time_key", "close"]]
+        .rename(columns={"close": "_bench"})
+        .dropna()
+    )
+
+    rows: dict[str, tuple[float, float]] = {}
+    for tid, df in klines.items():
+        if df is None or df.empty or "close" not in df or "time_key" not in df:
+            continue
+        m = (
+            df[["time_key", "close"]]
+            .dropna()
+            .merge(bench, on="time_key", how="inner")
+            .sort_values("time_key")
+        )
+        rs = m["close"].astype(float) / m["_bench"].astype(float)
+        ma = _moving_average(rs, ma_length, ma_type)
+        ma = ma[ma.notna()]
+        if len(ma) < min_history:  # min_history >= lookback+1 by config, so index is safe
+            continue
+        ema_now = float(ma.iloc[-1])
+        ema_prior = float(ma.iloc[-1 - lookback])
+        rows[tid] = (round(ema_now, 6), round((ema_now - ema_prior) / ema_prior, 6))
+
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame.from_dict(rows, orient="index", columns=cols)
 
 
 def params_from_config(config: dict) -> dict:
