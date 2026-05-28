@@ -118,7 +118,7 @@ def compute_rs_direction(
       rs_ema_chg_5d  float  (ma[-1] - ma[-1-lookback]) / ma[-1-lookback]
     Ids with < ``min_history`` MA-valid bars are EXCLUDED (unknown). Scale-
     invariant: scaling the benchmark by a constant leaves rs_ema_chg_5d
-    unchanged. ``min_history`` must exceed ``lookback``. Never raises.
+    unchanged. Never raises (ids with too few bars to index back are skipped).
     """
     cols = ["rs_ema", "rs_ema_chg_5d"]
     if benchmark_kline is None or getattr(benchmark_kline, "empty", True):
@@ -142,7 +142,7 @@ def compute_rs_direction(
         rs = m["close"].astype(float) / m["_bench"].astype(float)
         ma = _moving_average(rs, ma_length, ma_type)
         ma = ma[ma.notna()]
-        if len(ma) < min_history:  # min_history >= lookback+1 by config, so index is safe
+        if len(ma) < max(min_history, lookback + 1):  # need lookback+1 bars to index back
             continue
         ema_now = float(ma.iloc[-1])
         ema_prior = float(ma.iloc[-1 - lookback])
