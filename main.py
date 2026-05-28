@@ -1393,7 +1393,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=["eod", "us-eod", "hk-eod", "morning-gap", "hk-morning-gap", "report"],
+        choices=["eod", "us-eod", "hk-eod", "morning-gap", "hk-morning-gap", "report", "rs-line-audit"],
         default="eod",
         help="eod: full end-of-day run (US + HK). "
              "us-eod: US only (Longs/Leaders/Shorts/RS/IPO) — for the morning HKT slot when HK market is mid-session. "
@@ -1403,7 +1403,7 @@ def main() -> int:
              "report: generate CANSLIM Markdown+HTML report from today's dated .txt files (requires --market).",
     )
     parser.add_argument(
-        "--market", choices=["us", "hk"],
+        "--market", choices=["us", "hk", "both"],
         help="Required when --mode=report. Selects which market's .txt files to analyze.",
     )
     parser.add_argument(
@@ -1473,11 +1473,15 @@ def main() -> int:
     hk_output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "report":
-        if not args.market:
-            logger.error("--mode=report requires --market {us,hk}")
+        if args.market not in ("us", "hk"):
+            logger.error("--mode=report requires --market {us,hk} (not 'both')")
             return 1
         from report.__main__ import run as run_report
         return run_report(args.market, args.date)
+
+    if args.mode == "rs-line-audit":
+        from rs_line_audit import run_audit
+        return run_audit(config, output_dir, args.market or "both")
 
     if args.mode == "hk-eod":
         # HK-only EOD path: skip the entire US pipeline (Finviz screeners, IBD

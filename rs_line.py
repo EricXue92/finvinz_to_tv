@@ -19,6 +19,8 @@ DEFAULT_MA_LENGTH = 21
 DEFAULT_MA_TYPE = "ema"
 DEFAULT_PERSISTENCE_WINDOW = 20
 DEFAULT_MIN_HISTORY = 42
+DEFAULT_LOOKBACK = 5
+DEFAULT_TOLERANCE = 0.005
 
 _COLUMNS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
 
@@ -100,9 +102,62 @@ def compute_rs_line_features(
     return pd.DataFrame.from_dict(rows, orient="index", columns=_COLUMNS)
 
 
+def compute_rs_direction(
+    klines: dict[str, pd.DataFrame],
+    benchmark_kline: pd.DataFrame | None,
+    ma_length: int = DEFAULT_MA_LENGTH,
+    ma_type: str = DEFAULT_MA_TYPE,
+    lookback: int = DEFAULT_LOOKBACK,
+    min_history: int = DEFAULT_MIN_HISTORY,
+) -> pd.DataFrame:
+    """Per-id RS-line 21EMA direction, indexed by the ``klines`` dict key.
+
+    rs_line = close / benchmark_close (date-aligned inner join); ma = EMA/SMA.
+    Columns:
+      rs_ema         float  latest MA value of the RS line (descriptive only;
+                            scale-dependent — NOT comparable to a TV chart level)
+      rs_ema_chg_5d  float  (ma[-1] - ma[-1-lookback]) / ma[-1-lookback]
+    Ids with < ``min_history`` MA-valid bars are EXCLUDED (unknown). Scale-
+    invariant: scaling the benchmark by a constant leaves rs_ema_chg_5d
+    unchanged. Never raises (ids with too few bars to index back are skipped).
+    """
+    cols = ["rs_ema", "rs_ema_chg_5d"]
+    if benchmark_kline is None or getattr(benchmark_kline, "empty", True):
+        return pd.DataFrame(columns=cols)
+    bench = (
+        benchmark_kline[["time_key", "close"]]
+        .rename(columns={"close": "_bench"})
+        .dropna()
+    )
+
+    rows: dict[str, tuple[float, float]] = {}
+    for tid, df in klines.items():
+        if df is None or df.empty or "close" not in df or "time_key" not in df:
+            continue
+        m = (
+            df[["time_key", "close"]]
+            .dropna()
+            .merge(bench, on="time_key", how="inner")
+            .sort_values("time_key")
+        )
+        rs = m["close"].astype(float) / m["_bench"].astype(float)
+        ma = _moving_average(rs, ma_length, ma_type)
+        ma = ma[ma.notna()]
+        if len(ma) < max(min_history, lookback + 1):  # need lookback+1 bars to index back
+            continue
+        ema_now = float(ma.iloc[-1])
+        ema_prior = float(ma.iloc[-1 - lookback])
+        rows[tid] = (round(ema_now, 6), round((ema_now - ema_prior) / ema_prior, 6))
+
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame.from_dict(rows, orient="index", columns=cols)
+
+
 def params_from_config(config: dict) -> dict:
-    """Extract compute kwargs from a parsed config dict's ``[rs_line]`` section.
-    Missing keys fall back to module defaults."""
+    """``compute_rs_line_features`` kwargs from a parsed config's ``[rs_line]``
+    section (v1 position signal). Missing keys fall back to module defaults.
+    Keys here MUST match that function's signature — it is splatted directly."""
     cfg = config.get("rs_line", {}) or {}
     return {
         "ma_length": int(cfg.get("ma_length", DEFAULT_MA_LENGTH)),
@@ -110,6 +165,26 @@ def params_from_config(config: dict) -> dict:
         "persistence_window": int(cfg.get("persistence_window", DEFAULT_PERSISTENCE_WINDOW)),
         "min_history": int(cfg.get("min_history", DEFAULT_MIN_HISTORY)),
     }
+
+
+def direction_params_from_config(config: dict) -> dict:
+    """``compute_rs_direction`` kwargs from ``[rs_line]`` (direction signal).
+    Separate from ``params_from_config`` because the two compute functions take
+    different kwargs — splatting a superset into either would raise TypeError."""
+    cfg = config.get("rs_line", {}) or {}
+    return {
+        "ma_length": int(cfg.get("ma_length", DEFAULT_MA_LENGTH)),
+        "ma_type": str(cfg.get("ma_type", DEFAULT_MA_TYPE)),
+        "lookback": int(cfg.get("lookback", DEFAULT_LOOKBACK)),
+        "min_history": int(cfg.get("min_history", DEFAULT_MIN_HISTORY)),
+    }
+
+
+def tolerance_from_config(config: dict) -> float:
+    """The RS-direction cut band (fraction, e.g. 0.005 = 0.5%) from ``[rs_line]``.
+    Not a compute kwarg — used by the audit/gate to flag weak direction."""
+    cfg = config.get("rs_line", {}) or {}
+    return float(cfg.get("tolerance", DEFAULT_TOLERANCE))
 
 
 def is_enabled(config: dict) -> bool:

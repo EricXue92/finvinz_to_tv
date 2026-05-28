@@ -1,7 +1,14 @@
 import numpy as np
 import pandas as pd
 
-from rs_line import compute_rs_line_features, params_from_config, summarize_rs_line
+from rs_line import (
+    compute_rs_direction,
+    compute_rs_line_features,
+    direction_params_from_config,
+    params_from_config,
+    summarize_rs_line,
+    tolerance_from_config,
+)
 
 
 def _kline(closes, start="2026-01-01"):
@@ -132,3 +139,75 @@ def test_summarize_all_below_none_above():
     s = summarize_rs_line(["AAA", "BBB"], feats)
     assert "0 above MA, 2 below" in s
     assert s.index("BBB") < s.index("AAA")   # 9d before 5d
+
+
+# ---------------------------------------------------------------------------
+# compute_rs_direction tests
+# ---------------------------------------------------------------------------
+
+
+def _const_bench(n, start="2026-01-01"):
+    return _kline([100.0] * n, start=start)
+
+
+def test_direction_positive_on_rising_ratio():
+    n = 80
+    closes = [10.0 * (1.01 ** i) for i in range(n)]  # steadily rising vs flat bench
+    feats = compute_rs_direction({"UP": _kline(closes)}, _const_bench(n))
+    assert "UP" in feats.index
+    assert feats.loc["UP", "rs_ema_chg_5d"] > 0
+
+
+def test_direction_negative_on_falling_ratio():
+    n = 80
+    closes = [10.0 * (1.01 ** i) for i in range(n - 10)] + [
+        10.0 * (1.01 ** (n - 10)) * (0.97 ** j) for j in range(1, 11)
+    ]  # rises then rolls over in the last ~2 weeks
+    feats = compute_rs_direction({"DN": _kline(closes)}, _const_bench(n))
+    assert feats.loc["DN", "rs_ema_chg_5d"] < 0
+
+
+def test_direction_flat_is_near_zero():
+    n = 80
+    feats = compute_rs_direction({"FLAT": _kline([10.0] * n)}, _const_bench(n))
+    assert abs(feats.loc["FLAT", "rs_ema_chg_5d"]) < 1e-9
+
+
+def test_direction_scale_invariant_to_benchmark():
+    n = 80
+    closes = [10.0 + 0.05 * i for i in range(n)]
+    a = compute_rs_direction({"T": _kline(closes)}, _kline([100.0] * n))
+    b = compute_rs_direction({"T": _kline(closes)}, _kline([1000.0] * n))  # ×10
+    assert abs(a.loc["T", "rs_ema_chg_5d"] - b.loc["T", "rs_ema_chg_5d"]) < 1e-12
+
+
+def test_direction_short_history_excluded():
+    feats = compute_rs_direction({"SHORT": _kline([10.0] * 20)}, _const_bench(20))
+    assert "SHORT" not in feats.index  # < min_history => unknown => omitted
+
+
+def test_direction_lookback_measures_five_bars():
+    # EMA of a ramp is monotone; chg over 5 bars must be strictly positive.
+    n = 80
+    closes = [10.0 + 0.1 * i for i in range(n)]
+    feats = compute_rs_direction({"R": _kline(closes)}, _const_bench(n), lookback=5)
+    assert feats.loc["R", "rs_ema_chg_5d"] > 0
+    assert "rs_ema" in feats.columns and feats.loc["R", "rs_ema"] > 0
+
+
+def test_direction_params_from_config_overrides_and_excludes_persistence():
+    cfg = {"rs_line": {"ma_length": 50, "lookback": 7, "min_history": 60}}
+    p = direction_params_from_config(cfg)
+    assert p == {"ma_length": 50, "ma_type": "ema", "lookback": 7, "min_history": 60}
+    assert "persistence_window" not in p and "tolerance" not in p  # not compute_rs_direction kwargs
+
+
+def test_direction_params_from_config_defaults():
+    assert direction_params_from_config({}) == {
+        "ma_length": 21, "ma_type": "ema", "lookback": 5, "min_history": 42,
+    }
+
+
+def test_tolerance_from_config_default_and_override():
+    assert tolerance_from_config({}) == 0.005
+    assert tolerance_from_config({"rs_line": {"tolerance": 0.003}}) == 0.003
