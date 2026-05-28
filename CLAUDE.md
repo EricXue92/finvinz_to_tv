@@ -12,7 +12,7 @@ uv run main.py --mode hk-eod         # HK EOD (Shorts + Longs/Leaders/RS)   — 
 uv run main.py --mode morning-gap    # US intraday gap scan; clean-exits outside ET window
 uv run main.py --mode hk-morning-gap # HK intraday gap scan (post-open only)
 uv run main.py --mode report --market {us,hk}  # CANSLIM report from today's .txt files
-uv run pytest tests/ -v
+uv run python -m pytest tests/ -v   # `uv run pytest` fails to spawn; use python -m
 ```
 
 ## Layout
