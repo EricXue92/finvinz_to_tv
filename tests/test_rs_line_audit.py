@@ -9,6 +9,11 @@ def _frame(d):
     )
 
 
+def _rev(d):
+    """d: {id: (adr_pct, ret_lb, ret_per_adr)}"""
+    return pd.DataFrame.from_dict(d, orient="index", columns=["adr_pct", "ret_lb", "ret_per_adr"])
+
+
 def test_render_sorts_weakest_first_and_flags_cuts():
     feats = _frame({
         "AAA": (0.01, 0.06),    # +6%  strong
@@ -16,32 +21,56 @@ def test_render_sorts_weakest_first_and_flags_cuts():
         "CCC": (0.03, -0.004),  # -0.4% within band
         "DDD": (0.04, -0.009),  # -0.9% cut
     })
-    text = render_report(["AAA", "BBB", "CCC", "DDD"], feats, tolerance=0.005,
-                         market="US", as_of="2026-05-28")
+    rev = _rev({})  # no reversal data -> cuts get "—" + DROP
+    text = render_report(["AAA", "BBB", "CCC", "DDD"], feats, rev, tolerance=0.005,
+                         adr_mult=1.5, market="US", as_of="2026-05-28")
     # weakest first: BBB(-3.2) DDD(-0.9) CCC(-0.4) AAA(+6)
     assert text.index("BBB") < text.index("DDD") < text.index("CCC") < text.index("AAA")
-    # cut flag only on chg < -0.5%
-    bbb_line = next(l for l in text.splitlines() if "BBB" in l)
-    ccc_line = next(l for l in text.splitlines() if "CCC" in l)
-    assert "CUT" in bbb_line
-    assert "CUT" not in ccc_line
+    # cuts (BBB, DDD) get DROP; CCC within band gets no flag
+    bbb_line = next(l for l in text.splitlines() if "BBB" in l and "rank" not in l)
+    ccc_line = next(l for l in text.splitlines() if "CCC" in l and "rank" not in l)
+    assert "DROP" in bbb_line
+    assert "DROP" not in ccc_line and "EXEMPT" not in ccc_line
 
 
 def test_render_lists_unknowns_and_counts():
     feats = _frame({"AAA": (0.01, 0.06), "BBB": (0.02, -0.032)})
-    text = render_report(["AAA", "BBB", "ZZZ", "YYY"], feats, tolerance=0.005,
-                         market="US", as_of="2026-05-28")
+    rev = _rev({})
+    text = render_report(["AAA", "BBB", "ZZZ", "YYY"], feats, rev, tolerance=0.005,
+                         adr_mult=1.5, market="US", as_of="2026-05-28")
     assert "ZZZ" in text and "YYY" in text          # unknown names shown
     assert "scanned: 4" in text
     assert "scored: 2" in text
     assert "unknown: 2" in text
-    assert "would-cut: 1" in text
+    assert "direction-cut: 1" in text
 
 
 def test_render_handles_all_unknown_without_crash():
-    text = render_report(["AAA", "BBB"], _frame({}), tolerance=0.005,
-                         market="HK", as_of="2026-05-28")
+    text = render_report(["AAA", "BBB"], _frame({}), _rev({}), tolerance=0.005,
+                         adr_mult=1.5, market="HK", as_of="2026-05-28")
     assert "scored: 0" in text and "unknown: 2" in text
+
+
+def test_render_exempts_strong_reversal_among_cuts():
+    feats = _frame({"AAA": (0.01, 0.06), "BBB": (0.02, -0.032), "CCC": (0.03, -0.02)})
+    rev = _rev({"BBB": (9.0, 0.18, 2.0), "CCC": (8.0, 0.04, 0.5)})  # BBB strong, CCC weak
+    text = render_report(["AAA", "BBB", "CCC"], feats, rev, tolerance=0.005,
+                         adr_mult=1.5, market="US", as_of="2026-05-28")
+    bbb = next(l for l in text.splitlines() if "BBB" in l and "rank" not in l)
+    ccc = next(l for l in text.splitlines() if "CCC" in l and "rank" not in l)
+    assert "EXEMPT" in bbb
+    assert "DROP" in ccc and "EXEMPT" not in ccc
+    assert "direction-cut: 2 -> exempt(reversing): 1, drop: 1" in text
+
+
+def test_render_non_cut_rows_have_no_flag():
+    feats = _frame({"AAA": (0.01, 0.06)})  # above band, not cut
+    rev = _rev({"AAA": (5.0, 0.06, 1.2)})
+    text = render_report(["AAA"], feats, rev, tolerance=0.005, adr_mult=1.5,
+                         market="US", as_of="2026-05-28")
+    aaa = next(l for l in text.splitlines() if "AAA" in l and "rank" not in l)
+    assert "EXEMPT" not in aaa and "DROP" not in aaa
+    assert "direction-cut: 0" in text
 
 
 def test_hk_master_to_futu_pads_and_prefixes():
