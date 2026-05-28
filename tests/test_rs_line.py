@@ -1,7 +1,14 @@
 import numpy as np
 import pandas as pd
 
-from rs_line import compute_rs_direction, compute_rs_line_features, params_from_config, summarize_rs_line
+from rs_line import (
+    compute_rs_direction,
+    compute_rs_line_features,
+    direction_params_from_config,
+    params_from_config,
+    summarize_rs_line,
+    tolerance_from_config,
+)
 
 
 def _kline(closes, start="2026-01-01"):
@@ -95,14 +102,12 @@ def test_params_from_config_defaults_and_overrides():
     assert params_from_config({}) == {
         "ma_length": 21, "ma_type": "ema",
         "persistence_window": 20, "min_history": 42,
-        "lookback": 5, "tolerance": 0.005,
     }
     cfg = {"rs_line": {"ma_length": 50, "ma_type": "sma",
                        "persistence_window": 30, "min_history": 60}}
     assert params_from_config(cfg) == {
         "ma_length": 50, "ma_type": "sma",
         "persistence_window": 30, "min_history": 60,
-        "lookback": 5, "tolerance": 0.005,
     }
 
 
@@ -190,14 +195,19 @@ def test_direction_lookback_measures_five_bars():
     assert "rs_ema" in feats.columns and feats.loc["R", "rs_ema"] > 0
 
 
-def test_params_from_config_includes_lookback_and_tolerance():
-    cfg = {"rs_line": {"lookback": 7, "tolerance": 0.003}}
-    p = params_from_config(cfg)
-    assert p["lookback"] == 7
-    assert p["tolerance"] == 0.003
+def test_direction_params_from_config_overrides_and_excludes_persistence():
+    cfg = {"rs_line": {"ma_length": 50, "lookback": 7, "min_history": 60}}
+    p = direction_params_from_config(cfg)
+    assert p == {"ma_length": 50, "ma_type": "ema", "lookback": 7, "min_history": 60}
+    assert "persistence_window" not in p and "tolerance" not in p  # not compute_rs_direction kwargs
 
 
-def test_params_from_config_defaults_lookback_tolerance():
-    p = params_from_config({})
-    assert p["lookback"] == 5
-    assert p["tolerance"] == 0.005
+def test_direction_params_from_config_defaults():
+    assert direction_params_from_config({}) == {
+        "ma_length": 21, "ma_type": "ema", "lookback": 5, "min_history": 42,
+    }
+
+
+def test_tolerance_from_config_default_and_override():
+    assert tolerance_from_config({}) == 0.005
+    assert tolerance_from_config({"rs_line": {"tolerance": 0.003}}) == 0.003

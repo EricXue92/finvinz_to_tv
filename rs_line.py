@@ -155,17 +155,36 @@ def compute_rs_direction(
 
 
 def params_from_config(config: dict) -> dict:
-    """Extract compute kwargs from a parsed config dict's ``[rs_line]`` section.
-    Missing keys fall back to module defaults."""
+    """``compute_rs_line_features`` kwargs from a parsed config's ``[rs_line]``
+    section (v1 position signal). Missing keys fall back to module defaults.
+    Keys here MUST match that function's signature — it is splatted directly."""
     cfg = config.get("rs_line", {}) or {}
     return {
         "ma_length": int(cfg.get("ma_length", DEFAULT_MA_LENGTH)),
         "ma_type": str(cfg.get("ma_type", DEFAULT_MA_TYPE)),
         "persistence_window": int(cfg.get("persistence_window", DEFAULT_PERSISTENCE_WINDOW)),
         "min_history": int(cfg.get("min_history", DEFAULT_MIN_HISTORY)),
-        "lookback": int(cfg.get("lookback", DEFAULT_LOOKBACK)),
-        "tolerance": float(cfg.get("tolerance", DEFAULT_TOLERANCE)),
     }
+
+
+def direction_params_from_config(config: dict) -> dict:
+    """``compute_rs_direction`` kwargs from ``[rs_line]`` (direction signal).
+    Separate from ``params_from_config`` because the two compute functions take
+    different kwargs — splatting a superset into either would raise TypeError."""
+    cfg = config.get("rs_line", {}) or {}
+    return {
+        "ma_length": int(cfg.get("ma_length", DEFAULT_MA_LENGTH)),
+        "ma_type": str(cfg.get("ma_type", DEFAULT_MA_TYPE)),
+        "lookback": int(cfg.get("lookback", DEFAULT_LOOKBACK)),
+        "min_history": int(cfg.get("min_history", DEFAULT_MIN_HISTORY)),
+    }
+
+
+def tolerance_from_config(config: dict) -> float:
+    """The RS-direction cut band (fraction, e.g. 0.005 = 0.5%) from ``[rs_line]``.
+    Not a compute kwarg — used by the audit/gate to flag weak direction."""
+    cfg = config.get("rs_line", {}) or {}
+    return float(cfg.get("tolerance", DEFAULT_TOLERANCE))
 
 
 def is_enabled(config: dict) -> bool:

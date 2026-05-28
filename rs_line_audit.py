@@ -80,9 +80,8 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
         logger.info(f"[rs-line-audit] {market.upper()} master empty — skipping")
         return None
 
-    params = rs_line.params_from_config(config)
-    tolerance = params["tolerance"]
-    direction_kwargs = {k: params[k] for k in ("ma_length", "ma_type", "lookback", "min_history")}
+    direction_kwargs = rs_line.direction_params_from_config(config)
+    tolerance = rs_line.tolerance_from_config(config)
 
     if market == "us":
         from us_rs_3m import fetch_us_klines_yf
