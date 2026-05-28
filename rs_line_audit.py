@@ -17,6 +17,12 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def _hk_master_to_futu(entry: str) -> str:
+    """'HKEX:522' / '522' -> Futu key 'HK.00522' (5-digit, zero-padded)."""
+    code = entry.split(":", 1)[-1].strip()
+    return f"HK.{int(code):05d}"
+
+
 def render_report(
     ids: list[str],
     direction: pd.DataFrame,

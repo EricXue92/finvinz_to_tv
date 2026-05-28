@@ -1,6 +1,6 @@
 import pandas as pd
 
-from rs_line_audit import render_report
+from rs_line_audit import render_report, _hk_master_to_futu
 
 
 def _frame(d):
@@ -42,3 +42,9 @@ def test_render_handles_all_unknown_without_crash():
     text = render_report(["AAA", "BBB"], _frame({}), tolerance=0.005,
                          market="HK", as_of="2026-05-28")
     assert "scored: 0" in text and "unknown: 2" in text
+
+
+def test_hk_master_to_futu_pads_and_prefixes():
+    assert _hk_master_to_futu("HKEX:522") == "HK.00522"
+    assert _hk_master_to_futu("HKEX:1304") == "HK.01304"
+    assert _hk_master_to_futu("148") == "HK.00148"   # tolerate bare code
