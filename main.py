@@ -1473,8 +1473,8 @@ def main() -> int:
     hk_output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "report":
-        if not args.market:
-            logger.error("--mode=report requires --market {us,hk}")
+        if args.market not in ("us", "hk"):
+            logger.error("--mode=report requires --market {us,hk} (not 'both')")
             return 1
         from report.__main__ import run as run_report
         return run_report(args.market, args.date)

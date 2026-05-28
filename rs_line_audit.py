@@ -90,8 +90,8 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
     else:  # hk
         from hk_eod import fetch_hk_klines_yf, fetch_hsi_kline_yf
         bench = fetch_hsi_kline_yf(period="2y")
-        codes = {e: e.split(":", 1)[-1].strip().zfill(4) for e in ids}
-        fetched = fetch_hk_klines_yf(list(codes.values()), period="2y")
+        codes_4d = [e.split(":", 1)[-1].strip().zfill(4) for e in ids]
+        fetched = fetch_hk_klines_yf(codes_4d, period="2y")
         klines = {e: fetched.get(_hk_master_to_futu(e)) for e in ids}
 
     direction = rs_line.compute_rs_direction(klines, bench, **direction_kwargs)
