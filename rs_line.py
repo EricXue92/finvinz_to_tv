@@ -21,6 +21,8 @@ DEFAULT_PERSISTENCE_WINDOW = 20
 DEFAULT_MIN_HISTORY = 42
 DEFAULT_LOOKBACK = 5
 DEFAULT_TOLERANCE = 0.005
+DEFAULT_ADR_MULT = 1.5
+DEFAULT_ADR_DAYS = 20
 
 _COLUMNS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
 
@@ -152,6 +154,49 @@ def compute_rs_direction(
     if not rows:
         return pd.DataFrame(columns=cols)
     return pd.DataFrame.from_dict(rows, orient="index", columns=cols)
+
+
+def compute_rs_reversal(
+    klines: dict[str, pd.DataFrame],
+    lookback: int = DEFAULT_LOOKBACK,
+    adr_days: int = DEFAULT_ADR_DAYS,
+) -> pd.DataFrame:
+    """Per-id recent-strength metric for the reversal exemption, indexed by the
+    klines dict key. Needs OHLC (high/low/close). Columns:
+      adr_pct      float  ADR% = mean(last adr_days of (high-low)/close) * 100
+      ret_lb       float  lookback-bar price return, as a fraction
+      ret_per_adr  float  how many ADRs the price moved over the window
+                          (= ret_lb*100 / adr_pct)
+    Ids lacking high/low/close columns, with < max(adr_days, lookback+1) bars,
+    or with non-positive ADR are EXCLUDED. Never raises.
+    """
+    cols = ["adr_pct", "ret_lb", "ret_per_adr"]
+    rows: dict[str, tuple[float, float, float]] = {}
+    for tid, df in klines.items():
+        if df is None or getattr(df, "empty", True):
+            continue
+        if not {"time_key", "high", "low", "close"}.issubset(df.columns):
+            continue
+        d = df.dropna(subset=["high", "low", "close"]).sort_values("time_key")
+        if len(d) < max(adr_days, lookback + 1):
+            continue
+        close = d["close"].astype(float)
+        adr_pct = float(((d["high"].astype(float) - d["low"].astype(float)) / close)
+                        .tail(adr_days).mean() * 100)
+        if adr_pct <= 0:
+            continue
+        ret_lb = float((close.iloc[-1] - close.iloc[-1 - lookback]) / close.iloc[-1 - lookback])
+        rows[tid] = (round(adr_pct, 4), round(ret_lb, 6), round(ret_lb * 100 / adr_pct, 4))
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame.from_dict(rows, orient="index", columns=cols)
+
+
+def adr_mult_from_config(config: dict) -> float:
+    """Reversal-exemption multiplier (in ADR units) from [rs_line]. Tunable:
+    lower in a bull regime (more reversals real), higher in a correction."""
+    cfg = config.get("rs_line", {}) or {}
+    return float(cfg.get("adr_mult", DEFAULT_ADR_MULT))
 
 
 def params_from_config(config: dict) -> dict:

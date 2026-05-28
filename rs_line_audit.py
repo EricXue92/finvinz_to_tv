@@ -29,39 +29,57 @@ def _hk_master_to_futu(entry: str) -> str:
 def render_report(
     ids: list[str],
     direction: pd.DataFrame,
+    reversal: pd.DataFrame,
     tolerance: float,
+    adr_mult: float,
     market: str,
     as_of: str,
 ) -> str:
-    """Build the audit text. ``direction`` is indexed by id with columns
-    rs_ema, rs_ema_chg_5d. Ids absent from it are 'unknown' (kept downstream)."""
+    """Build the audit text. ``direction`` indexed by id (rs_ema, rs_ema_chg_5d);
+    ``reversal`` indexed by id (adr_pct, ret_lb, ret_per_adr). A direction-cut
+    (chg < -tolerance) is EXEMPT ('reversing') when ret_per_adr >= adr_mult, else
+    DROP. Ids absent from ``direction`` are 'unknown' (kept downstream)."""
     scored = [i for i in ids if i in direction.index
               and pd.notna(direction.loc[i, "rs_ema_chg_5d"])]
     unknown = [i for i in ids if i not in scored]
     scored.sort(key=lambda i: float(direction.loc[i, "rs_ema_chg_5d"]))
-    would_cut = sum(
-        1 for i in scored if float(direction.loc[i, "rs_ema_chg_5d"]) < -tolerance
-    )
 
-    cut_pct = f"-{tolerance * 100:.2f}%"
-    lines = [
-        f"RS-line direction audit — {market} — {as_of}",
-        f"signal: RS-line 21EMA 5-bar slope  |  cut line: chg < {cut_pct}",
-        "",
-        f"  {'rank':>4}  {'ticker':<14} {'chg_5d':>9}  {'EMA21':>12}  flag",
-    ]
+    def _rpa(i):
+        if i in reversal.index and pd.notna(reversal.loc[i, "ret_per_adr"]):
+            return float(reversal.loc[i, "ret_per_adr"])
+        return None
+
+    cut = exempt = 0
+    body = []
     for rank, i in enumerate(scored, 1):
         chg = float(direction.loc[i, "rs_ema_chg_5d"])
         ema = float(direction.loc[i, "rs_ema"])
-        flag = "CUT" if chg < -tolerance else ""
-        lines.append(f"  {rank:>4}  {i:<14} {chg * 100:>8.2f}%  {ema:>12.6f}  {flag}")
+        rpa_s, flag = "", ""
+        if chg < -tolerance:
+            cut += 1
+            rpa = _rpa(i)
+            rpa_s = f"{rpa:.2f}x" if rpa is not None else "—"
+            if rpa is not None and rpa >= adr_mult:
+                flag = "EXEMPT"
+                exempt += 1
+            else:
+                flag = "DROP"
+        body.append(f"  {rank:>4}  {i:<14} {chg*100:>8.2f}%  {ema:>12.6f}  {rpa_s:>8}  {flag}")
 
-    lines.append("")
+    lines = [
+        f"RS-line direction audit — {market} — {as_of}",
+        f"signal: RS-line 21EMA 5-bar slope  |  cut: chg < -{tolerance*100:.2f}%  "
+        f"|  exempt if 5d-return >= {adr_mult:.2f}x ADR",
+        "",
+        f"  {'rank':>4}  {'ticker':<14} {'chg_5d':>9}  {'EMA21':>12}  {'ret/ADR':>8}  flag",
+        *body,
+        "",
+    ]
     if unknown:
         lines.append(f"unknown (insufficient history, KEPT): {', '.join(unknown)}")
     lines.append(
-        f"scanned: {len(ids)} | scored: {len(scored)} | "
-        f"unknown: {len(unknown)} | would-cut: {would_cut}"
+        f"scanned: {len(ids)} | scored: {len(scored)} | unknown: {len(unknown)} | "
+        f"direction-cut: {cut} -> exempt(reversing): {exempt}, drop: {cut - exempt}"
     )
     return "\n".join(lines)
 
@@ -86,7 +104,7 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
     if market == "us":
         from us_rs_3m import fetch_us_klines_yf
         bench = fetch_us_klines_yf(["SPY"], period="6mo", batch_size=1).get("SPY")
-        klines = fetch_us_klines_yf(ids, period="6mo")  # keyed by symbol == master entry
+        klines = fetch_us_klines_yf(ids, period="6mo", include_ohlcv=True)  # keyed by symbol == master entry
     else:  # hk
         from hk_eod import fetch_hk_klines_yf, fetch_hsi_kline_yf
         bench = fetch_hsi_kline_yf(period="2y")
@@ -95,8 +113,10 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
         klines = {e: fetched.get(_hk_master_to_futu(e)) for e in ids}
 
     direction = rs_line.compute_rs_direction(klines, bench, **direction_kwargs)
+    reversal = rs_line.compute_rs_reversal(klines, lookback=direction_kwargs["lookback"])
+    adr_mult = rs_line.adr_mult_from_config(config)
     as_of = date.today().strftime("%Y-%m-%d")
-    text = render_report(ids, direction, tolerance, market.upper(), as_of)
+    text = render_report(ids, direction, reversal, tolerance, adr_mult, market.upper(), as_of)
 
     out_file = output_dir / f"rs_line_audit_{market.upper()}_{as_of}.txt"
     out_file.write_text(text + "\n")

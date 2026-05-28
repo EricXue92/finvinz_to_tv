@@ -4,10 +4,13 @@ import pandas as pd
 from rs_line import (
     compute_rs_direction,
     compute_rs_line_features,
+    compute_rs_reversal,
     direction_params_from_config,
     params_from_config,
     summarize_rs_line,
     tolerance_from_config,
+    adr_mult_from_config,
+    DEFAULT_ADR_MULT,
 )
 
 
@@ -211,3 +214,50 @@ def test_direction_params_from_config_defaults():
 def test_tolerance_from_config_default_and_override():
     assert tolerance_from_config({}) == 0.005
     assert tolerance_from_config({"rs_line": {"tolerance": 0.003}}) == 0.003
+
+
+# ---------------------------------------------------------------------------
+# compute_rs_reversal + adr_mult_from_config tests
+# ---------------------------------------------------------------------------
+
+
+def _ohlc(closes, rng=0.05, start="2026-01-01"):
+    c = np.asarray(closes, dtype=float)
+    idx = pd.date_range(start=start, periods=len(c), freq="B")
+    return pd.DataFrame({"time_key": idx, "high": c * (1 + rng / 2),
+                         "low": c * (1 - rng / 2), "close": c})
+
+
+def test_reversal_ret_per_adr_positive_on_rising_price():
+    feats = compute_rs_reversal({"UP": _ohlc([10.0 + 0.5 * i for i in range(40)])})
+    assert feats.loc["UP", "ret_lb"] > 0
+    assert feats.loc["UP", "ret_per_adr"] > 0
+    assert feats.loc["UP", "adr_pct"] > 0
+
+
+def test_reversal_ret_per_adr_is_return_over_adr():
+    # flat ADR ~5% (rng=0.05); construct a known 5-bar return
+    closes = [100.0] * 35 + [100, 100, 100, 100, 110.0]  # last bar +10% vs 5 bars back
+    feats = compute_rs_reversal({"T": _ohlc(closes, rng=0.05)}, lookback=5, adr_days=20)
+    rpa = feats.loc["T", "ret_per_adr"]
+    # ret_lb ≈ +0.10 (10%); adr_pct ≈ 5 ⇒ ret_per_adr ≈ 10/5 = 2.0
+    assert abs(feats.loc["T", "ret_lb"] - 0.10) < 1e-6
+    assert abs(rpa - (feats.loc["T", "ret_lb"] * 100 / feats.loc["T", "adr_pct"])) < 1e-6
+    assert 1.8 < rpa < 2.2
+
+
+def test_reversal_short_history_excluded():
+    feats = compute_rs_reversal({"S": _ohlc([10.0] * 10)}, adr_days=20)
+    assert "S" not in feats.index
+
+
+def test_reversal_missing_ohlc_excluded():
+    bare = pd.DataFrame({"time_key": pd.date_range("2026-01-01", periods=40, freq="B"),
+                         "close": [10.0] * 40})  # no high/low
+    feats = compute_rs_reversal({"NOHLC": bare})
+    assert "NOHLC" not in feats.index
+
+
+def test_adr_mult_from_config_default_and_override():
+    assert adr_mult_from_config({}) == DEFAULT_ADR_MULT
+    assert adr_mult_from_config({"rs_line": {"adr_mult": 2.0}}) == 2.0
