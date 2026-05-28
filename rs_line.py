@@ -20,6 +20,7 @@ DEFAULT_MA_TYPE = "ema"
 DEFAULT_PERSISTENCE_WINDOW = 20
 DEFAULT_MIN_HISTORY = 42
 DEFAULT_LOOKBACK = 5
+DEFAULT_TOLERANCE = 0.005
 
 _COLUMNS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
 
@@ -162,6 +163,8 @@ def params_from_config(config: dict) -> dict:
         "ma_type": str(cfg.get("ma_type", DEFAULT_MA_TYPE)),
         "persistence_window": int(cfg.get("persistence_window", DEFAULT_PERSISTENCE_WINDOW)),
         "min_history": int(cfg.get("min_history", DEFAULT_MIN_HISTORY)),
+        "lookback": int(cfg.get("lookback", DEFAULT_LOOKBACK)),
+        "tolerance": float(cfg.get("tolerance", DEFAULT_TOLERANCE)),
     }
 
 

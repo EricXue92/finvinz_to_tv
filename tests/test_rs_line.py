@@ -95,12 +95,14 @@ def test_params_from_config_defaults_and_overrides():
     assert params_from_config({}) == {
         "ma_length": 21, "ma_type": "ema",
         "persistence_window": 20, "min_history": 42,
+        "lookback": 5, "tolerance": 0.005,
     }
     cfg = {"rs_line": {"ma_length": 50, "ma_type": "sma",
                        "persistence_window": 30, "min_history": 60}}
     assert params_from_config(cfg) == {
         "ma_length": 50, "ma_type": "sma",
         "persistence_window": 30, "min_history": 60,
+        "lookback": 5, "tolerance": 0.005,
     }
 
 
@@ -186,3 +188,16 @@ def test_direction_lookback_measures_five_bars():
     feats = compute_rs_direction({"R": _kline(closes)}, _const_bench(n), lookback=5)
     assert feats.loc["R", "rs_ema_chg_5d"] > 0
     assert "rs_ema" in feats.columns and feats.loc["R", "rs_ema"] > 0
+
+
+def test_params_from_config_includes_lookback_and_tolerance():
+    cfg = {"rs_line": {"lookback": 7, "tolerance": 0.003}}
+    p = params_from_config(cfg)
+    assert p["lookback"] == 7
+    assert p["tolerance"] == 0.003
+
+
+def test_params_from_config_defaults_lookback_tolerance():
+    p = params_from_config({})
+    assert p["lookback"] == 5
+    assert p["tolerance"] == 0.005
