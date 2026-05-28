@@ -113,6 +113,36 @@ scale-invariance). Position (`line vs EMA`) is **not** shown (decision #2).
   default both).
 - Read-only and idempotent; safe to run any number of times.
 
+## Reversal exemption (added during Phase B validation)
+
+Validation surfaced a real lag failure: the 21EMA 5-bar slope lags, so a name
+that just V-bottomed and is bouncing hard still reads direction-cut (false
+positive — observed on CRML, FORM). To avoid cutting genuine reversals, a
+direction-cut name is **EXEMPT** ("reversing") when its recent price move is
+large relative to its own volatility:
+
+```
+ret_per_adr = (lookback-bar price return %) / ADR%        ADR% = mean(last 20 of (high-low)/close) × 100
+EXEMPT  if  ret_per_adr ≥ adr_mult        else DROP
+```
+
+- **Scale by ADR, not by σ of recent returns.** A `2σ(5-day returns)` rule was
+  tried and **empirically rescued zero of 10 cut names** (incl. CRML/FORM):
+  high-ADR momentum names have huge own-σ (10–80%), so 2σ is unreachable, and
+  using the drop+bounce-inflated σ as the yardstick is self-defeating. ADR% is
+  stable, already computed in the pipeline (`us_ipo.py` formula), and gives an
+  interpretable "how many ADRs did it move this week" number.
+- **`adr_mult` is a tunable config knob** (`[rs_line]`, default 1.5), set by the
+  operator — lower in a bull regime, higher in a correction. Auto-regime
+  switching (the cut "Layer 0") is intentionally NOT built; revisit only if data
+  shows one fixed value can't work across regimes.
+- **Validation result (2026-05-28, adr_mult=1.5):** of 10 US direction-cut names,
+  6 exempt (CRML 1.99×, FORM 1.80×, AMKR 1.67×, ONTO 1.61×, LGN 1.54×, XNDU
+  3.13×), 4 drop (weak/no bounce). Matches judgment.
+- **Audit shows it read-only:** `compute_rs_reversal` (pure) + a `ret/ADR` column
+  and EXEMPT/DROP flag in the report. No output change. `adr_mult` still to be
+  calibrated from more days of data before Phase A enforces it.
+
 ## Phase A — direction entry gate (build only after user validates B)
 
 When the user is satisfied with the criterion:
