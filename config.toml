@@ -23,7 +23,7 @@ adr_days = 20
 #   条件 RS 组    → 12M (min_rs_percentile_longs) + 3M
 #   US Shorts    → 12M (min_rs_percentile_longs) + 3M
 #   US IPO(≥64天) → 仅 3M
-min_rs_percentile        = 80    # Leaders 12M (≥80 = top 20%)
+min_rs_percentile        = 0   # Leaders 12M (≥80 = top 20%) # 80
 min_rs_percentile_longs  = 90    # Longs 5 组 + RS 组 + US Shorts 12M (≥90 = top 10%)
 min_rs_percentile_3m     = 90    # 3M 层
 
