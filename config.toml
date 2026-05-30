@@ -319,7 +319,7 @@ hk_morning_gap        = "HKMorningGap"
 # Cookie 过期同样 soft-fail (跟 Futu OpenD 不可达同语义),
 # 不会阻塞主流程。
 [tv_sync]
-enabled = true
+enabled = false
 # append_only_lists: 跟 [futu].append_only_groups 同语义 — 只 ADD 不 DEL,
 # 跨日累积。建议跟 Futu 那边保持一致避免行为分裂。
 append_only_lists = [
