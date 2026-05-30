@@ -30,6 +30,9 @@ jobs:
       - name: Compute HK RS table
         run: uv run python scripts/compute_hk_rs_cloud.py
 
+      - name: Prune old CSVs (keep last 4 days)
+        run: uv run python scripts/prune_old_data.py data/hk_rs data/hk_metrics --keep 4
+
       - name: Commit and push
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
