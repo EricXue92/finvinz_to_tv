@@ -1483,6 +1483,26 @@ def main() -> int:
         from rs_line_audit import run_audit
         return run_audit(config, output_dir, args.market or "both")
 
+    # Cold-wake guard: launchd fires the moment the machine wakes, but Wi-Fi /
+    # DNS resolver may need 10-30s to come up. Without this gate every fetcher
+    # NXDOMAINs and the pipeline writes 0-byte .txt files. EOD modes return 1
+    # on timeout (loud failure → launchd retries next slot); morning-gap modes
+    # exit 0 silently to honor the "no hard error path" rule in CLAUDE.md.
+    from net_ready import wait_for_network
+    eod_modes = {"eod", "us-eod", "hk-eod"}
+    morning_modes = {"morning-gap", "hk-morning-gap"}
+    if args.mode in eod_modes or args.mode in morning_modes:
+        # finviz is the heaviest US dep; raw.githubusercontent.com hosts both
+        # US/HK RS cloud CSVs. Either reaching means general DNS is up.
+        hosts = ["finviz.com", "raw.githubusercontent.com"]
+        if not wait_for_network(hosts):
+            if args.mode in morning_modes:
+                logger.warning(
+                    f"[net-ready] Skipping {args.mode} run — network never came up"
+                )
+                return 0
+            return 1
+
     if args.mode == "hk-eod":
         # HK-only EOD path: skip the entire US pipeline (Finviz screeners, IBD
         # RS fetch, IPO collection) and run only run_hk_eod. Intended for the
