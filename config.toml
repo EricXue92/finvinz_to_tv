@@ -311,6 +311,51 @@ hk_ipo                = "HKIPO"
 # HK morning-gap (盘后扫描，无 _pre 变体)。
 hk_morning_gap        = "HKMorningGap"
 
+# TradingView 自动同步 — 通过非官方 REST API + sessionid cookie 认证。
+# 凭证读取顺序: env (TV_SESSIONID, TV_SESSIONID_SIGN) →
+#   ~/.config/momentum-scanner/tv_cookie.json (建议 chmod 600)。
+# 18 个列表必须先在 TV 网页手动建好 (名字区分大小写、一字不差);
+# 找不到对应名字 → warning + 跳过该列表, 不会自动创建。
+# Cookie 过期同样 soft-fail (跟 Futu OpenD 不可达同语义),
+# 不会阻塞主流程。
+[tv_sync]
+enabled = true
+# append_only_lists: 跟 [futu].append_only_groups 同语义 — 只 ADD 不 DEL,
+# 跨日累积。建议跟 Futu 那边保持一致避免行为分裂。
+append_only_lists = [
+    # 美股
+    "EarningsGap", "MorningGap", "HighVolume", "GapUp", "NewHigh52W",
+    "TopGainers", "Leaders", "Shorts", "RS", "IPO",
+    # 港股
+    "HKShorts", "HKEarningsGap", "HKHighVolume", "HKGapUp", "HKLeaders",
+    "HKRS", "HKIPO", "HKMorningGap",
+]
+
+[tv_sync.lists]
+# --- 美股 ---
+# 与 Futu 不同: TV 上 MorningGap 跟 EarningsGap 拆开 (Futu 那边三者并入
+# EarningsGap)。morning_gap 和 morning_gap_pre 合并到同一个 MorningGap。
+longs_earnings_gap = "EarningsGap"
+morning_gap        = "MorningGap"
+morning_gap_pre    = "MorningGap"
+longs_high_volume  = "HighVolume"
+longs_gap_up       = "GapUp"
+longs_new_high_52w = "NewHigh52W"
+longs_top_gainers  = "TopGainers"
+shorts             = "Shorts"
+rs                 = "RS"
+leaders            = "Leaders"
+ipo                = "IPO"
+# --- 港股 ---
+hk_shorts             = "HKShorts"
+hk_longs_earnings_gap = "HKEarningsGap"
+hk_longs_high_volume  = "HKHighVolume"
+hk_longs_gap_up       = "HKGapUp"
+hk_leaders            = "HKLeaders"
+hk_rs                 = "HKRS"
+hk_ipo                = "HKIPO"
+hk_morning_gap        = "HKMorningGap"
+
 # 推送通知 (ntfy.sh) — morning-gap 发现"新"票时推送到 phone + Mac 浏览器。
 # 同一交易日内已出现的票不重复推送 (state: output/state/morning_gap_seen_<date>.txt)。
 # topic 名后缀是随机串 = 私人频道。

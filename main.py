@@ -29,6 +29,7 @@ from futu_sync import (
     pre_market_gap_futu,
     sync_to_futu,
 )
+from tv_sync import sync_to_tv
 from cleanup import cleanup_old_outputs
 from hk_eod import fetch_hkex_equities, filter_hk_shorts, run_hk_eod
 from notify import notify_morning_gap
@@ -66,6 +67,28 @@ def _futu_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
         host=futu_cfg.get("host", "127.0.0.1"),
         port=futu_cfg.get("port", 11111),
         append_only=group_name in append_only_groups,
+    )
+
+
+def _tv_sync(config: dict, key: str, tickers: list[str], market: str) -> None:
+    """Sync to TradingView if [tv_sync] is enabled — silent no-op otherwise.
+    Same empty-list contract as _futu_sync (don't clobber the existing list).
+    Independent from Futu sync: TV failure does not affect Futu and vice
+    versa; both are soft side effects."""
+    if not tickers:
+        return
+    tv_cfg = config.get("tv_sync") or {}
+    if not tv_cfg.get("enabled", False):
+        return
+    list_name = (tv_cfg.get("lists") or {}).get(key)
+    if not list_name:
+        return
+    append_only_lists = set(tv_cfg.get("append_only_lists") or [])
+    sync_to_tv(
+        tickers,
+        list_name,
+        market,  # type: ignore[arg-type]
+        append_only=list_name in append_only_lists,
     )
 
 
@@ -1516,6 +1539,7 @@ def main() -> int:
                 write_watchlist=write_watchlist,
                 write_webull=_write_webull,
                 futu_sync=_futu_sync,
+                tv_sync=_tv_sync,
                 load_seen=_load_seen,
                 persist_seen=_persist_seen,
                 eod_seen_path=_eod_seen_path,
@@ -1711,6 +1735,7 @@ def main() -> int:
                 logger.info(f"[Shorts] Final: {len(sorted_shorts)} tickers -> {dated}")
                 _write_webull(sorted_shorts, dated, output_dir)
                 _futu_sync(config, "shorts", sorted_shorts, "US")
+                _tv_sync(config, "shorts", sorted_shorts, "US")
             except Exception as e:
                 logger.warning(f"[Shorts] Failed: {e}")
 
@@ -1789,6 +1814,7 @@ def main() -> int:
             logger.info(f"[Longs/{key}] {len(sorted_t)} tickers -> {dated}")
             _write_webull(sorted_t, dated, output_dir)
             _futu_sync(config, futu_key, sorted_t, "US")
+            _tv_sync(config, futu_key, sorted_t, "US")
             written_longs[key] = sorted_t
 
         # --- Write Leaders ---
@@ -1800,6 +1826,7 @@ def main() -> int:
             logger.info(f"[Leaders] Total unique: {len(sorted_leaders)} -> {dated}")
             _write_webull(sorted_leaders, dated, output_dir)
             _futu_sync(config, "leaders", sorted_leaders, "US")
+            _tv_sync(config, "leaders", sorted_leaders, "US")
 
         # --- Write RS (only if it actually ran) ---
         # RS bypasses cross-day master dedup (eod_seen_US.txt) — see the
@@ -1812,6 +1839,7 @@ def main() -> int:
             logger.info(f"[RS] Found {len(sorted_rs)} tickers -> {dated}")
             _write_webull(sorted_rs, dated, output_dir)
             _futu_sync(config, "rs", sorted_rs, "US")
+            _tv_sync(config, "rs", sorted_rs, "US")
 
         # --- RS-line trend annotation (log only, no output change) ---
         # rs_table_3m is the cloud-published 3M CSV frame, which carries the
@@ -1878,6 +1906,7 @@ def main() -> int:
         logger.info(f"[IPO] {len(sorted_ipo)} tickers -> {dated}")
         _write_webull(sorted_ipo, dated, output_dir)
         _futu_sync(config, "ipo", sorted_ipo, "US")
+        _tv_sync(config, "ipo", sorted_ipo, "US")
 
         # --- HK EOD pipeline (Shorts + Longs/Leaders/RS) ---
         # In us-eod mode the HK pipeline is skipped — that's the dedicated
@@ -1893,6 +1922,7 @@ def main() -> int:
                     write_watchlist=write_watchlist,
                     write_webull=_write_webull,
                     futu_sync=_futu_sync,
+                    tv_sync=_tv_sync,
                     load_seen=_load_seen,
                     persist_seen=_persist_seen,
                     eod_seen_path=_eod_seen_path,
@@ -1943,6 +1973,7 @@ def main() -> int:
         )
         _write_webull(sorted_tickers, dated, output_dir)
         _futu_sync(config, futu_key, sorted_tickers, "US")
+        _tv_sync(config, futu_key, sorted_tickers, "US")
         fresh, promoted = _morning_gap_classify(
             today, sorted_tickers, output_dir, is_pre
         )
@@ -1995,6 +2026,7 @@ def main() -> int:
         )
         _write_webull(tv_tickers, dated, output_dir)
         _futu_sync(config, "hk_morning_gap", tv_tickers, "HK")
+        _tv_sync(config, "hk_morning_gap", tv_tickers, "HK")
         fresh, _ = _morning_gap_classify(
             today, tv_tickers, output_dir, is_pre=False, market="HK"
         )

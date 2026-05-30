@@ -843,6 +843,7 @@ def run_hk_eod(
     write_watchlist,         # callable from main.py
     write_webull,            # callable from main.py (_write_webull)
     futu_sync,               # callable from main.py (_futu_sync)
+    tv_sync,                 # callable from main.py (_tv_sync)
     load_seen,               # callable from main.py (_load_seen)
     persist_seen,            # callable from main.py (_persist_seen)
     eod_seen_path,           # callable from main.py (_eod_seen_path)
@@ -881,6 +882,7 @@ def run_hk_eod(
             logger.info(f"[HK Shorts] {len(sorted_hk)} -> {dated}")
             write_webull(sorted_hk, dated, output_dir)
             futu_sync(config, "hk_shorts", sorted_hk, "HK")
+            tv_sync(config, "hk_shorts", sorted_hk, "HK")
         except Exception as e:
             logger.warning(f"[HK Shorts] Failed: {e}")
 
@@ -1072,6 +1074,7 @@ def run_hk_eod(
         logger.info(f"[HK {name}] {len(tv)} -> {dated}")
         write_webull(tv, dated, output_dir)
         futu_sync(config, futu_key[name], tv, "HK")
+        tv_sync(config, futu_key[name], tv, "HK")
 
     # --- HK IPO sidecar ---
     # Tickers with insufficient history for the IBD 12-month RS calc
@@ -1107,6 +1110,7 @@ def run_hk_eod(
     logger.info(f"[HK IPO] {len(ipo_tv)} -> {dated_ipo}")
     write_webull(ipo_tv, dated_ipo, output_dir)
     futu_sync(config, "hk_ipo", ipo_tv, "HK")
+    tv_sync(config, "hk_ipo", ipo_tv, "HK")
 
     # --- Per-category headline summary ---
     # One aligned line per group so the operator can see at a glance how many
