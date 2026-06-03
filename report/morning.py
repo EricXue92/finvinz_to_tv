@@ -314,6 +314,17 @@ async def _run_async(
     )
     logger.info(f"[morning] wrote {out_path}")
 
+    # Render HTML alongside the .md (soft-fail so HTML failure doesn't block ntfy).
+    try:
+        from report.renderer import markdown_to_html
+        md_text = out_path.read_text(encoding="utf-8")
+        html_text = markdown_to_html(md_text, f"Pre-market Catalyst Report — {date_iso} (US)")
+        html_path = out_path.with_suffix(".html")
+        html_path.write_text(html_text, encoding="utf-8")
+        logger.info(f"[morning] wrote {html_path}")
+    except Exception as e:
+        logger.warning(f"[morning] HTML render failed (md still wrote): {e}")
+
     # Reload full config for [notify] section.
     try:
         with CONFIG_PATH.open("rb") as fh:

@@ -4,6 +4,7 @@
 import argparse
 import logging
 import os
+import shutil
 import sys
 import time
 import tomllib
@@ -197,14 +198,27 @@ def _fetch_snapshot_rows(
             try:
                 last = float(r.get("last_price", 0) or 0)
                 prev = float(r.get("prev_close_price", 0) or 0)
+                pre_p = r.get("pre_price")
                 pre_chg = r.get("pre_change_rate")
-                gap = float(pre_chg) if pre_chg is not None else (
-                    (last - prev) / prev * 100 if prev else None
-                )
+
+                # Prefer pre_price during pre-market window; fall back to last trade.
+                try:
+                    display_price = float(pre_p) if pre_p not in (None, "N/A") else (last or None)
+                except (TypeError, ValueError):
+                    display_price = last or None
+
+                # Prefer pre_change_rate; fall back to derived from last_price.
+                try:
+                    gap = float(pre_chg) if pre_chg not in (None, "N/A") else None
+                except (TypeError, ValueError):
+                    gap = None
+                if gap is None and prev:
+                    gap = (last - prev) / prev * 100
+
                 rows[t] = {
                     "name": r.get("stock_name") or None,
                     "gap_pct": gap,
-                    "last_price": last or None,
+                    "last_price": display_price,  # display, not strictly "last"
                     "market_cap": float(r.get("total_market_val", 0) or 0) or None,
                 }
             except (TypeError, ValueError):
@@ -232,7 +246,7 @@ def _spawn_catalyst_report(
     exception logged + swallowed. Caller is responsible for `fresh`-only
     invariant (we don't re-filter here)."""
     cfg = config.get("morning_gap_catalyst") or {}
-    if not cfg.get("enabled", False):
+    if not cfg.get("enabled", True):
         return
     if not fresh:
         return
@@ -261,9 +275,10 @@ def _spawn_catalyst_report(
             f"[Morning Gap] spawning catalyst report subprocess for "
             f"{len(fresh)} fresh tickers (snapshot at {tmpname})"
         )
+        uv_path = shutil.which("uv") or "/Users/xue/.local/bin/uv"
         subprocess.Popen(
             [
-                "uv", "run", "python", "-m", "report.morning",
+                uv_path, "run", "python", "-m", "report.morning",
                 "--snapshot", tmpname,
                 "--date", today_iso,
                 "--offset", str(offset),
