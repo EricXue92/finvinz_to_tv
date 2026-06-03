@@ -22,6 +22,7 @@ from finviz.screener import Screener
 import openpyxl
 
 from futu_sync import (
+    _opend_reachable,
     discover_hk_morning_gap_candidates,
     discover_morning_gap_candidates,
     get_market_caps_futu,
@@ -162,6 +163,118 @@ def _morning_gap_classify(
     fresh = sorted(new_post - pre_seen)
     _write_seen_set(post_path, post_seen | current)
     return fresh, promoted
+
+
+def _fetch_snapshot_rows(
+    tickers: list[str], *, futu_cfg: dict
+) -> dict[str, dict[str, float | str | None]]:
+    """One small `get_market_snapshot` call against just `tickers`. Returns
+    `{ticker: {name, gap_pct, last_price, market_cap}}`. Soft-fail to {}
+    on any error — the subprocess will still run with null fields."""
+    rows: dict[str, dict[str, float | str | None]] = {}
+    if not tickers:
+        return rows
+    try:
+        from futu import OpenQuoteContext, RET_OK
+    except ImportError:
+        return rows
+    host = futu_cfg.get("host", "127.0.0.1")
+    port = futu_cfg.get("port", 11111)
+    if not _opend_reachable(host, port):
+        return rows
+    ctx = None
+    try:
+        ctx = OpenQuoteContext(host=host, port=port)
+        codes = [f"US.{t}" for t in tickers]
+        ret, snap = ctx.get_market_snapshot(codes)
+        if ret != RET_OK or snap is None:
+            return rows
+        for _, r in snap.iterrows():
+            code = r.get("code", "")
+            if not code.startswith("US."):
+                continue
+            t = code[3:]
+            try:
+                last = float(r.get("last_price", 0) or 0)
+                prev = float(r.get("prev_close_price", 0) or 0)
+                pre_chg = r.get("pre_change_rate")
+                gap = float(pre_chg) if pre_chg is not None else (
+                    (last - prev) / prev * 100 if prev else None
+                )
+                rows[t] = {
+                    "name": r.get("stock_name") or None,
+                    "gap_pct": gap,
+                    "last_price": last or None,
+                    "market_cap": float(r.get("total_market_val", 0) or 0) or None,
+                }
+            except (TypeError, ValueError):
+                continue
+    except Exception as e:
+        logger.warning(f"[Morning Gap] snapshot fetch for catalyst report failed: {e}")
+    finally:
+        if ctx is not None:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+    return rows
+
+
+def _spawn_catalyst_report(
+    *,
+    fresh: list[str],
+    snapshot_rows: dict[str, dict[str, float | str | None]],
+    today_iso: str,
+    offset: int,
+    config: dict,
+) -> None:
+    """Spawn the catalyst report subprocess (detached). Soft-fails — any
+    exception logged + swallowed. Caller is responsible for `fresh`-only
+    invariant (we don't re-filter here)."""
+    cfg = config.get("morning_gap_catalyst") or {}
+    if not cfg.get("enabled", False):
+        return
+    if not fresh:
+        return
+    try:
+        import json
+        import subprocess
+        import tempfile
+
+        entries = []
+        for t in fresh:
+            row = snapshot_rows.get(t, {})
+            entries.append({
+                "ticker": t,
+                "company_name": row.get("name"),
+                "gap_pct": row.get("gap_pct"),
+                "last_price": row.get("last_price"),
+                "market_cap": row.get("market_cap"),
+                "first_seen_offset_minutes": offset,
+            })
+        fd, tmpname = tempfile.mkstemp(
+            prefix="morning_snap_", suffix=".json", text=True
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(entries, fh, ensure_ascii=False)
+        logger.info(
+            f"[Morning Gap] spawning catalyst report subprocess for "
+            f"{len(fresh)} fresh tickers (snapshot at {tmpname})"
+        )
+        subprocess.Popen(
+            [
+                "uv", "run", "python", "-m", "report.morning",
+                "--snapshot", tmpname,
+                "--date", today_iso,
+                "--offset", str(offset),
+            ],
+            cwd=str(Path(__file__).resolve().parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        logger.warning(f"[Morning Gap] catalyst report spawn failed: {e}")
 
 
 def _eod_seen_path(output_dir: Path, market: str) -> Path:
@@ -1980,6 +2093,19 @@ def main() -> int:
         if fresh or promoted:
             notify_morning_gap(
                 fresh, offset, len(sorted_tickers), config, promoted=promoted
+            )
+
+        if is_pre and fresh:
+            snapshot_rows = _fetch_snapshot_rows(
+                fresh, futu_cfg=config.get("futu") or {}
+            )
+            today_iso = today_date.isoformat()
+            _spawn_catalyst_report(
+                fresh=fresh,
+                snapshot_rows=snapshot_rows,
+                today_iso=today_iso,
+                offset=offset,
+                config=config,
             )
 
         try:
