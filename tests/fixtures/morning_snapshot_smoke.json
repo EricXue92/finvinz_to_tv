@@ -1,0 +1,10 @@
+[
+  {
+    "ticker": "NVDA",
+    "company_name": "NVIDIA Corp",
+    "gap_pct": 12.4,
+    "last_price": 138.20,
+    "market_cap": 3400000000000,
+    "first_seen_offset_minutes": -20
+  }
+]
