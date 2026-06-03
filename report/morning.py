@@ -6,17 +6,24 @@ offset), fans out DeepSeek + Tavily catalyst analysis per ticker, appends
 to output/Reports/<date>_us_premarket.md, then pushes ntfy."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
+import os
+import sys
+import tomllib
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import anthropic
 
-from report.llm import LLMBackend
+from notify import notify_morning_catalyst_ready
+from report.llm import DeepSeekBackend, LLMBackend
+from report.state import CONFIG_PATH, OUTPUT_REPORTS_DIR, load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -143,12 +150,6 @@ async def analyze_catalyst(
     )
 
 
-from report.morning_renderer import (  # noqa: E402
-    render_append_section,
-    render_initial_document,
-)
-
-
 def write_report(
     *,
     out_path: Path,
@@ -163,6 +164,13 @@ def write_report(
 ) -> None:
     """Create or append the day's catalyst report. Byte-level append, no
     parsing of prior content. Missing-parent dirs are created."""
+    # Lazy import to break the circular dependency:
+    # morning_renderer imports SnapshotEntry from morning, so a top-level
+    # import here would deadlock when running `python -m report.morning`.
+    from report.morning_renderer import (  # noqa: PLC0415
+        render_append_section,
+        render_initial_document,
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
         block = render_append_section(
@@ -184,3 +192,163 @@ def write_report(
             skipped_count=skipped_count,
         )
         out_path.write_text(doc, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# CLI orchestration
+# ---------------------------------------------------------------------------
+
+ET = ZoneInfo("America/New_York")
+HKT = ZoneInfo("Asia/Hong_Kong")
+PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "morning_gap_catalyst_system.md"
+
+DEFAULT_MAX_TICKERS = 10
+DEFAULT_CONCURRENCY = 3
+DEFAULT_MAX_SEARCH_CALLS = 3
+DEFAULT_MODEL = "deepseek-v4-pro"
+
+
+def _load_catalyst_cfg() -> dict[str, Any]:
+    if not CONFIG_PATH.is_file():
+        return {}
+    try:
+        with CONFIG_PATH.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        logger.warning(f"[morning] failed to read {CONFIG_PATH}: {e}")
+        return {}
+    return data.get("morning_gap_catalyst") or {}
+
+
+def _build_deepseek_backend(cfg: dict[str, Any]) -> DeepSeekBackend:
+    """Construct the DeepSeek backend from env vars + the catalyst config
+    block. Raises RuntimeError on missing keys — caller logs + soft-fails."""
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    tavily_key = os.environ.get("TAVILY_API_KEY")
+    missing = [
+        n for n, v in (("DEEPSEEK_API_KEY", api_key), ("TAVILY_API_KEY", tavily_key)) if not v
+    ]
+    if missing:
+        raise RuntimeError(f"missing env var(s): {', '.join(missing)}")
+    return DeepSeekBackend(
+        api_key=api_key,  # type: ignore[arg-type]
+        tavily_api_key=tavily_key,  # type: ignore[arg-type]
+        model=cfg.get("deepseek_model", DEFAULT_MODEL),
+        max_search_calls=int(cfg.get("max_search_calls", DEFAULT_MAX_SEARCH_CALLS)),
+    )
+
+
+def _cap_and_sort(entries: list[SnapshotEntry], cap: int) -> tuple[list[SnapshotEntry], int]:
+    """Sort by gap% desc, drop entries beyond `cap`. Returns (kept, skipped_count)."""
+    sorted_entries = sorted(
+        entries, key=lambda e: (e.gap_pct or 0.0), reverse=True
+    )
+    kept = sorted_entries[:cap]
+    skipped = max(0, len(sorted_entries) - cap)
+    return kept, skipped
+
+
+async def _run_async(
+    *, snapshot_path: Path, date_iso: str, offset_min: int
+) -> int:
+    load_dotenv()
+    cfg = _load_catalyst_cfg()
+    if not cfg.get("enabled", True):
+        logger.info("[morning] catalyst report disabled in config")
+        return 0
+
+    try:
+        entries = read_snapshot(snapshot_path)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.error(f"[morning] failed to read snapshot {snapshot_path}: {e}")
+        return 0
+    if not entries:
+        logger.info("[morning] empty snapshot, nothing to do")
+        snapshot_path.unlink(missing_ok=True)
+        return 0
+
+    cap = int(cfg.get("max_tickers_per_run", DEFAULT_MAX_TICKERS))
+    entries, skipped = _cap_and_sort(entries, cap)
+
+    if not PROMPT_PATH.is_file():
+        logger.error(f"[morning] system prompt missing at {PROMPT_PATH}")
+        snapshot_path.unlink(missing_ok=True)
+        return 0
+    system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
+
+    try:
+        backend = _build_deepseek_backend(cfg)
+    except RuntimeError as e:
+        logger.warning(f"[morning] backend init failed; skipping: {e}")
+        snapshot_path.unlink(missing_ok=True)
+        return 0
+
+    concurrency = int(cfg.get("concurrency", DEFAULT_CONCURRENCY))
+    semaphore = asyncio.Semaphore(concurrency)
+    try:
+        sections = await asyncio.gather(
+            *(analyze_catalyst(backend, system_prompt, e, semaphore) for e in entries)
+        )
+    finally:
+        await backend.aclose()
+
+    date_stem = date_iso.replace("-", "_")
+    out_path = OUTPUT_REPORTS_DIR / f"{date_stem}_us_premarket.md"
+    now_hkt = datetime.now(HKT)
+    now_et = datetime.now(ET)
+    write_report(
+        out_path=out_path,
+        date_iso=date_iso,
+        offset_min=offset_min,
+        entries=entries,
+        sections=list(sections),
+        model_label=backend.model_label(),
+        generated_at=now_hkt,
+        skipped_count=skipped,
+        et_time_hhmm=now_et.strftime("%H:%M"),
+    )
+    logger.info(f"[morning] wrote {out_path}")
+
+    # Reload full config for [notify] section.
+    try:
+        with CONFIG_PATH.open("rb") as fh:
+            full_cfg = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        full_cfg = {}
+    notify_morning_catalyst_ready(
+        report_path=out_path,
+        offset_min=offset_min,
+        n_tickers=len(entries),
+        config=full_cfg,
+    )
+    snapshot_path.unlink(missing_ok=True)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="python -m report.morning")
+    parser.add_argument("--snapshot", required=True, type=Path)
+    parser.add_argument("--date", required=True, help="YYYY-MM-DD")
+    parser.add_argument("--offset", required=True, type=int,
+                        help="Minutes from market open (e.g. -20)")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    try:
+        return asyncio.run(
+            _run_async(
+                snapshot_path=args.snapshot,
+                date_iso=args.date,
+                offset_min=args.offset,
+            )
+        )
+    except Exception as e:
+        logger.exception(f"[morning] aborted: {e}")
+        try:
+            args.snapshot.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 0  # soft-fail
+
+
+if __name__ == "__main__":
+    sys.exit(main())

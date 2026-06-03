@@ -151,3 +151,50 @@ def test_write_report_appends_when_file_exists(tmp_path: Path) -> None:
     assert "existing content" in text
     assert "## 增补 (-10min, 09:20 ET)" in text
     assert "### TWLO — Twilio" in text
+
+
+import os
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+async def test_run_async_writes_report_and_pushes_notification(
+    tmp_path: Path, monkeypatch
+) -> None:
+    snap = tmp_path / "snap.json"
+    write_snapshot(
+        snap,
+        [SnapshotEntry(ticker="NVDA", company_name="NVIDIA", gap_pct=12.4,
+                       last_price=138.2, market_cap=3.4e12,
+                       first_seen_offset_minutes=-20)],
+    )
+    out_dir = tmp_path / "Reports"
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "dsk-test")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+
+    fake_backend = MagicMock()
+    fake_backend.analyze = AsyncMock(return_value="### 主催化剂\n\nx\n")
+    fake_backend.aclose = AsyncMock()
+    fake_backend.model_label = MagicMock(return_value="dsv4 (DeepSeek)")
+
+    from report import morning
+    monkeypatch.setattr(morning, "_build_deepseek_backend", lambda cfg: fake_backend)
+    monkeypatch.setattr(morning, "OUTPUT_REPORTS_DIR", out_dir)
+    notify_calls: list[dict] = []
+    monkeypatch.setattr(
+        morning,
+        "notify_morning_catalyst_ready",
+        lambda **kw: notify_calls.append(kw),
+    )
+
+    rc = await morning._run_async(
+        snapshot_path=snap, date_iso="2026-06-03", offset_min=-20
+    )
+
+    assert rc == 0
+    report = out_dir / "2026_06_03_us_premarket.md"
+    assert report.exists()
+    assert "NVDA" in report.read_text(encoding="utf-8")
+    assert notify_calls and notify_calls[0]["n_tickers"] == 1
+    # Sidecar must be cleaned up.
+    assert not snap.exists()
