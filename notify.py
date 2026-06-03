@@ -4,6 +4,7 @@ Failures are swallowed and logged. Never raises — same contract as futu_sync.
 """
 
 import logging
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -92,3 +93,32 @@ def notify_morning_gap(
             + " · pre-market gap confirmed by RTH volume"
         )
         _ntfy_post(server, topic, title, body, priority="high")
+
+
+def notify_morning_catalyst_ready(
+    *,
+    report_path: Path,
+    offset_min: int,
+    n_tickers: int,
+    config: dict,
+) -> None:
+    """Push the second-stage ntfy when the catalyst report is written.
+
+    Independent from `notify_morning_gap` — that one fires immediately
+    with the ticker list; this one fires a few minutes later with the
+    report link. Same ntfy topic, different title.
+    """
+    notify_cfg = config.get("notify") or {}
+    if not notify_cfg.get("enabled", False):
+        return
+
+    topic = notify_cfg.get("ntfy_topic")
+    if not topic:
+        logger.warning("[Notify] ntfy_topic missing for catalyst report")
+        return
+
+    server = notify_cfg.get("ntfy_server", "https://ntfy.sh").rstrip("/")
+    sign = "" if offset_min < 0 else "+"
+    title = f"Catalyst Report Ready ({sign}{offset_min}min, {n_tickers} tickers)"
+    body = str(report_path)
+    _ntfy_post(server, topic, title, body, priority="default")
