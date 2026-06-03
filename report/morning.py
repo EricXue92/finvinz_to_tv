@@ -255,12 +255,17 @@ async def _run_async(
     cfg = _load_catalyst_cfg()
     if not cfg.get("enabled", True):
         logger.info("[morning] catalyst report disabled in config")
+        snapshot_path.unlink(missing_ok=True)
         return 0
 
     try:
         entries = read_snapshot(snapshot_path)
     except (OSError, json.JSONDecodeError) as e:
         logger.error(f"[morning] failed to read snapshot {snapshot_path}: {e}")
+        try:
+            snapshot_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         return 0
     if not entries:
         logger.info("[morning] empty snapshot, nothing to do")

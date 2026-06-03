@@ -198,3 +198,39 @@ async def test_run_async_writes_report_and_pushes_notification(
     assert notify_calls and notify_calls[0]["n_tickers"] == 1
     # Sidecar must be cleaned up.
     assert not snap.exists()
+
+
+async def test_run_async_unlinks_snapshot_when_disabled(
+    tmp_path: Path, monkeypatch
+) -> None:
+    snap = tmp_path / "snap.json"
+    write_snapshot(
+        snap,
+        [SnapshotEntry(ticker="NVDA", company_name="NVIDIA")],
+    )
+    from report import morning
+    monkeypatch.setattr(morning, "_load_catalyst_cfg", lambda: {"enabled": False})
+
+    rc = await morning._run_async(
+        snapshot_path=snap, date_iso="2026-06-03", offset_min=-20
+    )
+
+    assert rc == 0
+    assert not snap.exists()
+
+
+async def test_run_async_unlinks_snapshot_when_read_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    snap = tmp_path / "snap.json"
+    snap.write_text("{ not valid json", encoding="utf-8")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "dsk-test")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+
+    from report import morning
+    rc = await morning._run_async(
+        snapshot_path=snap, date_iso="2026-06-03", offset_min=-20
+    )
+
+    assert rc == 0
+    assert not snap.exists()
