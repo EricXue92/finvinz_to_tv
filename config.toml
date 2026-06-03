@@ -384,3 +384,13 @@ model = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/anthropic"
 max_tokens = 3500
 max_search_calls = 2
+
+[morning_gap_catalyst]
+# Pre-market catalyst report. Runs as detached subprocess after the
+# morning-gap scan finds fresh US pre-market gappers. Independent from
+# the EOD [report] backend selection — always uses DeepSeek + Tavily.
+enabled = true
+max_tickers_per_run = 10
+concurrency = 3
+max_search_calls = 3
+deepseek_model = "deepseek-v4-pro"

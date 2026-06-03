@@ -42,6 +42,11 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   trim today's incomplete bar (and skip the conditional HSI-trigger RS group).
 - **Report** is soft-fail (wrapper exit code reflects only the EOD step). Shorts /
   HK Shorts / Morning Gap are excluded from it.
+- **Catalyst report (pre-market)** is a **detached subprocess** spawned
+  from the morning-gap path; it MUST NOT block the morning-gap process.
+  Always uses DeepSeek + Tavily regardless of `[report] backend`. Reads
+  only the JSON snapshot sidecar — MUST NOT call Futu / yfinance. Output:
+  `output/Reports/<date>_us_premarket.md`, appended across -20 / -10.
 
 ## RS gating
 
