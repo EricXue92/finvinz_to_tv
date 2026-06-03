@@ -107,3 +107,47 @@ async def test_analyze_catalyst_returns_placeholder_on_empty_response(monkeypatc
     entry = SnapshotEntry(ticker="NVDA")
     result = await analyze_catalyst(backend, "<sys>", entry, sem)
     assert result == CATALYST_FAILURE_PLACEHOLDER.format(exc_type="RuntimeError")
+
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from report.morning import write_report
+
+
+def test_write_report_creates_file_when_missing(tmp_path: Path) -> None:
+    out = tmp_path / "2026_06_03_us_premarket.md"
+    write_report(
+        out_path=out,
+        date_iso="2026-06-03",
+        offset_min=-20,
+        entries=[SnapshotEntry(ticker="NVDA", company_name="NVIDIA", gap_pct=12.4)],
+        sections=["### 主催化剂\n\nx\n### 证据\n\n—\n### 分类\n\n**财报**\n### 提示\n\n—\n"],
+        model_label="m (DeepSeek)",
+        generated_at=datetime(2026, 6, 3, tzinfo=ZoneInfo("Asia/Hong_Kong")),
+        skipped_count=0,
+        et_time_hhmm="09:10",
+    )
+    text = out.read_text(encoding="utf-8")
+    assert "# Pre-market Catalyst Report" in text
+    assert "## NVDA — NVIDIA" in text
+
+
+def test_write_report_appends_when_file_exists(tmp_path: Path) -> None:
+    out = tmp_path / "2026_06_03_us_premarket.md"
+    out.write_text("# Pre-market Catalyst Report — 2026-06-03 (US)\n\nexisting content\n", encoding="utf-8")
+    write_report(
+        out_path=out,
+        date_iso="2026-06-03",
+        offset_min=-10,
+        entries=[SnapshotEntry(ticker="TWLO", company_name="Twilio", gap_pct=8.0)],
+        sections=["### 主催化剂\n\nx\n"],
+        model_label="m (DeepSeek)",
+        generated_at=datetime(2026, 6, 3, tzinfo=ZoneInfo("Asia/Hong_Kong")),
+        skipped_count=0,
+        et_time_hhmm="09:20",
+    )
+    text = out.read_text(encoding="utf-8")
+    assert "existing content" in text
+    assert "## 增补 (-10min, 09:20 ET)" in text
+    assert "### TWLO — Twilio" in text

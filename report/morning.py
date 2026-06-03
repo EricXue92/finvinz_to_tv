@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -140,3 +141,46 @@ async def analyze_catalyst(
     return CATALYST_FAILURE_PLACEHOLDER.format(
         exc_type=type(last_error).__name__ if last_error else "Unknown"
     )
+
+
+from report.morning_renderer import (  # noqa: E402
+    render_append_section,
+    render_initial_document,
+)
+
+
+def write_report(
+    *,
+    out_path: Path,
+    date_iso: str,
+    offset_min: int,
+    entries: list[SnapshotEntry],
+    sections: list[str],
+    model_label: str,
+    generated_at: datetime,
+    skipped_count: int,
+    et_time_hhmm: str,
+) -> None:
+    """Create or append the day's catalyst report. Byte-level append, no
+    parsing of prior content. Missing-parent dirs are created."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if out_path.exists():
+        block = render_append_section(
+            offset_min=offset_min,
+            et_time_hhmm=et_time_hhmm,
+            entries=entries,
+            sections=sections,
+        )
+        with out_path.open("a", encoding="utf-8") as fh:
+            fh.write(block)
+    else:
+        doc = render_initial_document(
+            date_iso=date_iso,
+            offset_min=offset_min,
+            entries=entries,
+            sections=sections,
+            model_label=model_label,
+            generated_at=generated_at,
+            skipped_count=skipped_count,
+        )
+        out_path.write_text(doc, encoding="utf-8")
