@@ -42,7 +42,28 @@ def test_render_lists_unknowns_and_counts():
     assert "scanned: 4" in text
     assert "scored: 2" in text
     assert "unknown: 2" in text
+    # No anomaly_ids passed → all unknowns categorized as insufficient history
+    assert "insufficient history" in text
+    assert "data anomaly" not in text
+    assert "short-hist: 2, anomaly: 0" in text
     assert "direction-cut: 1" in text
+
+
+def test_render_splits_unknown_into_anomaly_and_short_history():
+    feats = _frame({"AAA": (0.01, 0.06)})
+    rev = _rev({})
+    text = render_report(
+        ["AAA", "ZZZ", "YYY"], feats, rev, tolerance=0.005,
+        adr_mult=1.5, market="US", as_of="2026-06-13",
+        anomaly_ids={"YYY"},
+    )
+    # both unknowns appear, on separate labeled lines
+    lines = text.splitlines()
+    short_line = next(l for l in lines if "insufficient history" in l)
+    anom_line  = next(l for l in lines if "data anomaly" in l)
+    assert "ZZZ" in short_line and "YYY" not in short_line
+    assert "YYY" in anom_line and "ZZZ" not in anom_line
+    assert "short-hist: 1, anomaly: 1" in text
 
 
 def test_render_handles_all_unknown_without_crash():

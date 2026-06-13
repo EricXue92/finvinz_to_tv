@@ -6,6 +6,7 @@ from rs_line import (
     compute_rs_line_features,
     compute_rs_reversal,
     direction_params_from_config,
+    find_anomaly_ids,
     params_from_config,
     summarize_rs_line,
     tolerance_from_config,
@@ -294,6 +295,38 @@ def test_reversal_skips_split_inside_lookback():
     closes = [100.0] * 35 + [100.0, 100.0, 10.0, 10.1, 10.2]  # split at t=-3
     feats = compute_rs_reversal({"SPLIT": _ohlc(closes, rng=0.05)}, lookback=5, adr_days=20)
     assert "SPLIT" not in feats.index
+
+
+def test_find_anomaly_ids_flags_split_inside_lookback():
+    n = 80
+    clean = [100.0 + 0.1 * i for i in range(n)]
+    split = list(clean)
+    split[-3] = split[-4] / 10.0
+    split[-2] = split[-3] * 1.01
+    split[-1] = split[-2] * 1.02
+    out = find_anomaly_ids({"CLEAN": _kline(clean), "SPLIT": _kline(split)}, lookback=5)
+    assert out == {"SPLIT"}
+
+
+def test_find_anomaly_ids_uses_rs_ratio_when_benchmark_given():
+    # Stock close is smooth, but the RS ratio jumps because the BENCHMARK has
+    # a single-bar anomaly inside the lookback window.
+    n = 80
+    smooth_stock = _kline([100.0] * n)
+    bench_closes = [100.0] * n
+    bench_closes[-3] = 10.0  # benchmark drops 90% → rs ratio jumps 10x
+    out = find_anomaly_ids({"S": smooth_stock}, _kline(bench_closes), lookback=5)
+    assert out == {"S"}
+
+
+def test_find_anomaly_ids_ignores_split_outside_lookback():
+    n = 80
+    closes = [100.0 + 0.1 * i for i in range(n)]
+    closes[-20] = closes[-21] / 10.0
+    for k in range(-19, 0):
+        closes[k] = closes[k - 1] * 1.001
+    out = find_anomaly_ids({"OLD": _kline(closes)}, lookback=5)
+    assert out == set()
 
 
 def test_adr_mult_from_config_default_and_override():

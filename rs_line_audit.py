@@ -91,14 +91,22 @@ def render_report(
     adr_mult: float,
     market: str,
     as_of: str,
+    anomaly_ids: set[str] | None = None,
 ) -> str:
     """Build the audit text. ``direction`` indexed by id (rs_ema, rs_ema_chg_5d);
     ``reversal`` indexed by id (adr_pct, ret_lb, ret_per_adr). A direction-cut
     (chg < -tolerance) is EXEMPT ('reversing') when ret_per_adr >= adr_mult, else
-    DROP. Ids absent from ``direction`` are 'unknown' (kept downstream)."""
+    DROP. Ids absent from ``direction`` are 'unknown' (kept downstream).
+
+    ``anomaly_ids`` (optional) lets the report split the unknown bucket into
+    "data anomaly" (split / bad quote) vs "insufficient history" — same KEPT
+    semantics either way."""
     buckets = classify(ids, direction, reversal, tolerance, adr_mult)
     scored = buckets["scored_asc"]
     unknown = buckets["unknowns"]
+    anomaly_ids = anomaly_ids or set()
+    anomaly_unknown = [u for u in unknown if u in anomaly_ids]
+    short_unknown   = [u for u in unknown if u not in anomaly_ids]
     drop_set = set(buckets["drops"])
     exempt_set = set(buckets["exempts"])
 
@@ -129,10 +137,17 @@ def render_report(
         *body,
         "",
     ]
-    if unknown:
-        lines.append(f"unknown (insufficient history, KEPT): {', '.join(unknown)}")
+    if short_unknown:
+        lines.append(
+            f"unknown — insufficient history (KEPT): {', '.join(short_unknown)}"
+        )
+    if anomaly_unknown:
+        lines.append(
+            f"unknown — data anomaly e.g. split (KEPT): {', '.join(anomaly_unknown)}"
+        )
     lines.append(
-        f"scanned: {len(ids)} | scored: {len(scored)} | unknown: {len(unknown)} | "
+        f"scanned: {len(ids)} | scored: {len(scored)} | "
+        f"unknown: {len(unknown)} (short-hist: {len(short_unknown)}, anomaly: {len(anomaly_unknown)}) | "
         f"direction-cut: {cut} -> exempt(reversing): {exempt}, drop: {cut - exempt}"
     )
     return "\n".join(lines)
@@ -209,9 +224,13 @@ def _audit_market(market: str, config: dict, output_dir: Path, dry_run: bool = F
 
     direction = rs_line.compute_rs_direction(klines, bench, **direction_kwargs)
     reversal = rs_line.compute_rs_reversal(klines, lookback=direction_kwargs["lookback"])
+    anomaly_ids = rs_line.find_anomaly_ids(klines, bench, lookback=direction_kwargs["lookback"])
     adr_mult = rs_line.adr_mult_from_config(config)
     as_of = date.today().strftime("%Y-%m-%d")
-    text = render_report(ids, direction, reversal, tolerance, adr_mult, market.upper(), as_of)
+    text = render_report(
+        ids, direction, reversal, tolerance, adr_mult, market.upper(), as_of,
+        anomaly_ids=anomaly_ids,
+    )
 
     out_file = output_dir / f"rs_line_audit_{market.upper()}_{as_of}.txt"
     out_file.write_text(text + "\n")

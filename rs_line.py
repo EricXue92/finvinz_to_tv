@@ -51,6 +51,39 @@ def _has_bar_anomaly(series: pd.Series, window: int) -> bool:
     return bool((returns.abs() >= ANOMALY_BAR_THRESHOLD).any())
 
 
+def find_anomaly_ids(
+    klines: dict[str, pd.DataFrame],
+    benchmark_kline: pd.DataFrame | None = None,
+    lookback: int = DEFAULT_LOOKBACK,
+) -> set[str]:
+    """Ids whose close (or close/benchmark ratio when ``benchmark_kline`` is
+    given) trips ``_has_bar_anomaly`` in the last ``lookback+1`` bars. Matches
+    exactly what ``compute_rs_direction`` skips, so downstream callers can
+    distinguish "data anomaly" unknowns from "insufficient history" unknowns
+    in their reports."""
+    bench = None
+    if benchmark_kline is not None and not getattr(benchmark_kline, "empty", True):
+        bench = (
+            benchmark_kline[["time_key", "close"]]
+            .rename(columns={"close": "_bench"}).dropna()
+        )
+    out: set[str] = set()
+    for tid, df in klines.items():
+        if df is None or getattr(df, "empty", True):
+            continue
+        if "close" not in df.columns or "time_key" not in df.columns:
+            continue
+        m = df[["time_key", "close"]].dropna().sort_values("time_key")
+        if bench is not None:
+            m = m.merge(bench, on="time_key", how="inner").sort_values("time_key")
+            series = m["close"].astype(float) / m["_bench"].astype(float)
+        else:
+            series = m["close"].astype(float)
+        if _has_bar_anomaly(series, lookback):
+            out.add(tid)
+    return out
+
+
 def _trailing_streak(flags: list[bool]) -> int:
     """Count of consecutive True values at the end of the list."""
     n = 0
