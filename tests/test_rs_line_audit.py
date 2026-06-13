@@ -1,6 +1,6 @@
 import pandas as pd
 
-from rs_line_audit import render_report, _hk_master_to_futu
+from rs_line_audit import classify, render_report, _hk_master_to_futu
 
 
 def _frame(d):
@@ -71,6 +71,23 @@ def test_render_non_cut_rows_have_no_flag():
     aaa = next(l for l in text.splitlines() if "AAA" in l and "rank" not in l)
     assert "EXEMPT" not in aaa and "DROP" not in aaa
     assert "direction-cut: 0" in text
+
+
+def test_classify_splits_drops_exempts_and_ranks_keeps_desc():
+    feats = _frame({
+        "AAA": (0.01, 0.06),    # +6%  strong  -> keep
+        "BBB": (0.02, -0.032),  # cut, weak    -> DROP
+        "CCC": (0.03, -0.02),   # cut, exempt  -> keep (exempt)
+        "DDD": (0.04, -0.004),  # within band  -> keep
+    })
+    rev = _rev({"CCC": (8.0, 0.18, 2.0)})  # only CCC exempts
+    b = classify(["AAA", "BBB", "CCC", "DDD", "ZZZ"], feats, rev,
+                 tolerance=0.005, adr_mult=1.5)
+    assert b["drops"] == ["BBB"]
+    assert b["exempts"] == ["CCC"]
+    assert b["unknowns"] == ["ZZZ"]
+    # strongest first across kept (AAA +6, DDD -0.4, CCC -2.0), then unknowns
+    assert b["keeps_ranked"] == ["AAA", "DDD", "CCC", "ZZZ"]
 
 
 def test_hk_master_to_futu_pads_and_prefixes():

@@ -26,6 +26,62 @@ def _hk_master_to_futu(entry: str) -> str:
     return f"HK.{int(code):05d}"
 
 
+def classify(
+    ids: list[str],
+    direction: pd.DataFrame,
+    reversal: pd.DataFrame,
+    tolerance: float,
+    adr_mult: float,
+) -> dict:
+    """Score ids by RS-line 21EMA 5-bar slope and split into drop / keep / unknown.
+
+    Returns a dict with:
+      - scored_asc: ids sorted weakest-first (ascending chg_5d) — for the report.
+      - drops: ids with chg < -tolerance AND ret_per_adr < adr_mult (or missing),
+               in weakest-first order.
+      - exempts: ids with chg < -tolerance AND ret_per_adr >= adr_mult.
+      - keeps_ranked: kept ids sorted by RS strength desc (chg_5d desc), with
+                      unknowns appended at the end.
+      - unknowns: ids absent from direction or with NaN chg_5d.
+    """
+    scored = [i for i in ids if i in direction.index
+              and pd.notna(direction.loc[i, "rs_ema_chg_5d"])]
+    unknowns = [i for i in ids if i not in scored]
+    scored.sort(key=lambda i: float(direction.loc[i, "rs_ema_chg_5d"]))
+
+    def _rpa(i):
+        if i in reversal.index and pd.notna(reversal.loc[i, "ret_per_adr"]):
+            return float(reversal.loc[i, "ret_per_adr"])
+        return None
+
+    drops, exempts, kept_scored = [], [], []
+    for i in scored:
+        chg = float(direction.loc[i, "rs_ema_chg_5d"])
+        if chg < -tolerance:
+            rpa = _rpa(i)
+            if rpa is not None and rpa >= adr_mult:
+                exempts.append(i)
+                kept_scored.append(i)
+            else:
+                drops.append(i)
+        else:
+            kept_scored.append(i)
+
+    keeps_ranked = sorted(
+        kept_scored,
+        key=lambda i: float(direction.loc[i, "rs_ema_chg_5d"]),
+        reverse=True,
+    ) + list(unknowns)
+
+    return {
+        "scored_asc": scored,
+        "drops": drops,
+        "exempts": exempts,
+        "keeps_ranked": keeps_ranked,
+        "unknowns": unknowns,
+    }
+
+
 def render_report(
     ids: list[str],
     direction: pd.DataFrame,
@@ -39,33 +95,30 @@ def render_report(
     ``reversal`` indexed by id (adr_pct, ret_lb, ret_per_adr). A direction-cut
     (chg < -tolerance) is EXEMPT ('reversing') when ret_per_adr >= adr_mult, else
     DROP. Ids absent from ``direction`` are 'unknown' (kept downstream)."""
-    scored = [i for i in ids if i in direction.index
-              and pd.notna(direction.loc[i, "rs_ema_chg_5d"])]
-    unknown = [i for i in ids if i not in scored]
-    scored.sort(key=lambda i: float(direction.loc[i, "rs_ema_chg_5d"]))
+    buckets = classify(ids, direction, reversal, tolerance, adr_mult)
+    scored = buckets["scored_asc"]
+    unknown = buckets["unknowns"]
+    drop_set = set(buckets["drops"])
+    exempt_set = set(buckets["exempts"])
 
     def _rpa(i):
         if i in reversal.index and pd.notna(reversal.loc[i, "ret_per_adr"]):
             return float(reversal.loc[i, "ret_per_adr"])
         return None
 
-    cut = exempt = 0
     body = []
     for rank, i in enumerate(scored, 1):
         chg = float(direction.loc[i, "rs_ema_chg_5d"])
         ema = float(direction.loc[i, "rs_ema"])
         rpa_s, flag = "", ""
         if chg < -tolerance:
-            cut += 1
             rpa = _rpa(i)
             rpa_s = f"{rpa:.2f}x" if rpa is not None else "—"
-            if rpa is not None and rpa >= adr_mult:
-                flag = "EXEMPT"
-                exempt += 1
-            else:
-                flag = "DROP"
+            flag = "EXEMPT" if i in exempt_set else "DROP"
         body.append(f"  {rank:>4}  {i:<14} {chg*100:>8.2f}%  {ema:>12.6f}  {rpa_s:>8}  {flag}")
 
+    cut = len(drop_set) + len(exempt_set)
+    exempt = len(exempt_set)
     lines = [
         f"RS-line direction audit — {market} — {as_of}",
         f"signal: RS-line 21EMA 5-bar slope  |  cut: chg < -{tolerance*100:.2f}%  "
@@ -121,6 +174,17 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
     out_file = output_dir / f"rs_line_audit_{market.upper()}_{as_of}.txt"
     out_file.write_text(text + "\n")
     logger.info(f"[rs-line-audit] wrote {out_file}")
+
+    buckets = classify(ids, direction, reversal, tolerance, adr_mult)
+    drop_file = output_dir / f"rs_line_audit_{market.upper()}_{as_of}_drop.txt"
+    drop_file.write_text(",".join(buckets["drops"]) + ("\n" if buckets["drops"] else ""))
+    logger.info(f"[rs-line-audit] wrote {drop_file} ({len(buckets['drops'])} ids)")
+
+    keep_file = output_dir / f"rs_line_audit_{market.upper()}_{as_of}_keep_ranked.txt"
+    keep_file.write_text(
+        ",".join(buckets["keeps_ranked"]) + ("\n" if buckets["keeps_ranked"] else "")
+    )
+    logger.info(f"[rs-line-audit] wrote {keep_file} ({len(buckets['keeps_ranked'])} ids)")
     return text
 
 
