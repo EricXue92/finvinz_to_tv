@@ -33,23 +33,32 @@ min_price      = 10.0            # USD; = Finviz sh_price_o10
 min_avg_volume = 500_000         # 20日股/天; = Finviz sh_avgvol_o500
 # min_dollar_volume / min_adr_percent 复用上方 [settings] 值
 
-# RS line 趋势标注 (TraderLion 式 RS line = 价/指数, vs 它自己的 EMA)。
-# 云端 (update_us_rs_3m / update_hk_rs) 从已有 k 线算 rs_below_ma /
-# rs_days_below_ma / rs_frac_below_ma 三列, 本地只读列做日志标注 —— v1 不改
-# .txt / dedup 输出。判据 = RS line 持续待在它均线下方 (位置+持续性, 不看均线斜率)。
+# RS line 趋势 (TraderLion 式 RS line = 价/指数, vs 它自己的 EMA)。
+# 两条判据路径共用本段参数:
+#   1) EOD 标注 (位置 + 持续性) —— 云端 (update_us_rs_3m / update_hk_rs)
+#      从已有 k 线算 rs_below_ma / rs_days_below_ma / rs_frac_below_ma 三列,
+#      本地只读列做日志标注。不改 .txt / dedup 输出。
+#      参数: ma_length, ma_type, persistence_window, min_history。
+#   2) rs-line-audit 审计 (均线斜率 + 反转豁免) —— 手动跑
+#      `uv run main.py --mode rs-line-audit` 时, 对 eod_seen_{US,HK}.txt
+#      里的每只票算 RS-line EMA 的 lookback 天斜率 chg, 满足
+#      `chg < -tolerance` 且 `5日涨幅 < adr_mult × ADR%` → DROP, 从 master
+#      里裁掉 (先备份)。历史不足 / 单日 ≥50% 跳变 → unknown, 保留。
+#      参数: lookback, tolerance, adr_mult (外加上面的 ma_length/ma_type/
+#      min_history)。
 [rs_line]
 enabled = true
 ma_length = 21          # 对齐 TraderLion RS-line 均线 (用户确认 EMA21)
 ma_type = "ema"         # "ema" | "sma"
-persistence_window = 20 # 占比测度的回看交易日数
-min_history = 42        # 对齐后不足此根数 → unknown (排除, 不标注)
+persistence_window = 20 # EOD 标注用: rs_frac_below_ma 的回看交易日数
+min_history = 42        # 对齐后不足此根数 → unknown (排除, 不标注 / 不审计)
 # ===================== ⭐ 常调参数 TUNABLE ⭐ =====================
-# 下面 3 个是最常调的旋钮, 审计后在这里校准。搜索 "TUNE" 即可快速定位。
-lookback  = 5           # TUNE ⭐ 方向斜率回看天数 (5 bar = 一个交易周)
+# 下面 3 个是审计路径最常调的旋钮, 审计后在这里校准。搜索 "TUNE" 即可定位。
+lookback  = 5           # TUNE ⭐ EMA 斜率回看天数 (5 bar = 一个交易周)
 tolerance = 0.005       # TUNE ⭐ 破位线: chg < -0.5% 即方向转弱 (噪声带, 工作假设)
 adr_mult  = 1.0         # TUNE ⭐ 反转豁免: 5日涨幅 ≥ adr_mult×ADR% 则暂留。调高=更严苛/只留最强反转(代价:可能误砍真反转); 调低=更宽容/少被洗出
 # ================================================================
-# v1 只标注。漂移阈值故意留空, 待观察真实分布后在 v2 加:
+# EOD 标注路径目前只输出三列, 未引入硬阈值。待观察真实分布后在 v2 加:
 #   drop_days_below = ...   # 连续在均线下方天数
 #   drop_frac_below = ...   # persistence_window 内占比
 
