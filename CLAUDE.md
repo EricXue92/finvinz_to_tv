@@ -63,13 +63,20 @@ local (throttle-prone) k-line fetch.
 - **Do NOT make fetch failure hard-fail:** walk back ≤ 3 days of stale cache, then
   pass through (no gate) with a warning. Tickers **missing** from the table are
   KEPT, not dropped.
-- **RS-line trend (annotate-only, v1):** cloud scripts publish `rs_below_ma` /
-  `rs_days_below_ma` / `rs_frac_below_ma` (TraderLion-style RS line = price/index
-  vs its own EMA21) as extra columns in `data/{us_rs_3m,hk_rs}/<date>.csv`. The
-  EOD log annotates long-side survivors whose RS line is persistently below its
-  MA; **no `.txt`/dedup effect**. Computed cloud-side only (local never refetches
-  klines). Config: `[rs_line]`. Spec:
+- **RS-line trend (annotate in EOD; manual prune via audit mode):** cloud scripts
+  publish `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` (TraderLion-style
+  RS line = price/index vs its own EMA21) as extra columns in
+  `data/{us_rs_3m,hk_rs}/<date>.csv`. The EOD log annotates long-side survivors
+  whose RS line is persistently below its MA; EOD itself has **no `.txt`/dedup
+  effect**. Computed cloud-side only (local never refetches klines). Config:
+  `[rs_line]`. Spec:
   `docs/superpowers/specs/2026-05-27-rs-line-trend-filter-design.md`.
+- **`uv run main.py --mode rs-line-audit [--market us|hk|both]`** scores the
+  cross-day master, writes `output/rs_line_audit_<MKT>_<date>{,_drop,_keep_ranked}.txt`,
+  **and prunes the drops from `state/eod_seen_{US,HK}.txt`** so they can
+  re-qualify on a future EOD run. Backs the master up first as
+  `eod_seen_<MKT>.txt.bak.<stamp>`. Manual, operator-triggered; not on the
+  launchd schedule.
 
 ## Futu sync
 

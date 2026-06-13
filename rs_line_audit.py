@@ -1,16 +1,17 @@
-"""Read-only RS-line direction audit over the cross-day 'seen' masters.
+"""RS-line direction audit over the cross-day 'seen' masters.
 
 Scores every already-surfaced ticker (output/state/eod_seen_{US,HK}.txt) by its
-RS-line 21EMA 5-bar direction and prints the full distribution weakest-first with
-the tolerance cut line marked, so the operator can judge whether 'direction up'
-is a good screening rule before it gates any output. Touches nothing: no .txt, no
-master, no Futu. yfinance is acceptable here (manual, one-off, bounded list).
+RS-line 21EMA 5-bar direction, prints the full distribution weakest-first with
+the tolerance cut line marked, and **prunes the drops from the master** so they
+can re-qualify on a future EOD run. Backs the master up first
+(``eod_seen_<MKT>.txt.bak.<timestamp>``). No Futu side effects. yfinance is
+acceptable here (manual, one-off, bounded list).
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -143,6 +144,39 @@ def _load_seen(path: Path) -> list[str]:
     return [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
 
 
+def _prune_master(seen_path: Path, drops: list[str]) -> None:
+    """Remove drop ids from the cross-day master, backing up first.
+
+    Backup name: ``<master>.bak.YYYYmmdd_HHMMSS`` next to the master. Repeated
+    audit runs accumulate backups — operator prunes them by hand when stale.
+    """
+    if not drops:
+        logger.info(f"[rs-line-audit] no drops to prune from {seen_path.name}")
+        return
+    if not seen_path.exists():
+        logger.warning(
+            f"[rs-line-audit] master missing, cannot prune: {seen_path}"
+        )
+        return
+    current = [ln.strip() for ln in seen_path.read_text().splitlines() if ln.strip()]
+    drop_set = set(drops)
+    kept = [t for t in current if t not in drop_set]
+    removed = len(current) - len(kept)
+    if removed == 0:
+        logger.info(
+            f"[rs-line-audit] {seen_path.name}: drops not present in master, nothing to do"
+        )
+        return
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = seen_path.parent / f"{seen_path.name}.bak.{stamp}"
+    backup.write_text(seen_path.read_text())
+    seen_path.write_text("\n".join(kept) + ("\n" if kept else ""))
+    logger.info(
+        f"[rs-line-audit] pruned {seen_path.name}: "
+        f"{len(current)} -> {len(kept)} (-{removed}); backup: {backup.name}"
+    )
+
+
 def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
     """Return the report text for one market, or None if its master is empty."""
     seen_path = output_dir / "state" / f"eod_seen_{market.upper()}.txt"
@@ -185,6 +219,8 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
         ",".join(buckets["keeps_ranked"]) + ("\n" if buckets["keeps_ranked"] else "")
     )
     logger.info(f"[rs-line-audit] wrote {keep_file} ({len(buckets['keeps_ranked'])} ids)")
+
+    _prune_master(seen_path, buckets["drops"])
     return text
 
 
