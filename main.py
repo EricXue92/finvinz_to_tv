@@ -1561,6 +1561,11 @@ def main() -> int:
         "--date",
         help="Optional YYYY-MM-DD override for --mode=report (default: today HKT).",
     )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Only meaningful with --mode=rs-line-audit: write the audit report "
+             "and sidecars, but do NOT prune state/eod_seen_*.txt.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -1632,7 +1637,7 @@ def main() -> int:
 
     if args.mode == "rs-line-audit":
         from rs_line_audit import run_audit
-        return run_audit(config, output_dir, args.market or "both")
+        return run_audit(config, output_dir, args.market or "both", dry_run=args.dry_run)
 
     # Cold-wake guard: launchd fires the moment the machine wakes, but Wi-Fi /
     # DNS resolver may need 10-30s to come up. Without this gate every fetcher

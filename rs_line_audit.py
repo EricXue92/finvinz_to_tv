@@ -144,11 +144,13 @@ def _load_seen(path: Path) -> list[str]:
     return [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
 
 
-def _prune_master(seen_path: Path, drops: list[str]) -> None:
+def _prune_master(seen_path: Path, drops: list[str], dry_run: bool = False) -> None:
     """Remove drop ids from the cross-day master, backing up first.
 
     Backup name: ``<master>.bak.YYYYmmdd_HHMMSS`` next to the master. Repeated
     audit runs accumulate backups — operator prunes them by hand when stale.
+    ``dry_run=True`` logs what would change but writes nothing (no backup, no
+    master mutation).
     """
     if not drops:
         logger.info(f"[rs-line-audit] no drops to prune from {seen_path.name}")
@@ -167,6 +169,12 @@ def _prune_master(seen_path: Path, drops: list[str]) -> None:
             f"[rs-line-audit] {seen_path.name}: drops not present in master, nothing to do"
         )
         return
+    if dry_run:
+        logger.info(
+            f"[rs-line-audit] DRY-RUN: would prune {seen_path.name}: "
+            f"{len(current)} -> {len(kept)} (-{removed}); no backup written, master untouched"
+        )
+        return
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup = seen_path.parent / f"{seen_path.name}.bak.{stamp}"
     backup.write_text(seen_path.read_text())
@@ -177,7 +185,7 @@ def _prune_master(seen_path: Path, drops: list[str]) -> None:
     )
 
 
-def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
+def _audit_market(market: str, config: dict, output_dir: Path, dry_run: bool = False) -> str | None:
     """Return the report text for one market, or None if its master is empty."""
     seen_path = output_dir / "state" / f"eod_seen_{market.upper()}.txt"
     ids = _load_seen(seen_path)
@@ -220,15 +228,18 @@ def _audit_market(market: str, config: dict, output_dir: Path) -> str | None:
     )
     logger.info(f"[rs-line-audit] wrote {keep_file} ({len(buckets['keeps_ranked'])} ids)")
 
-    _prune_master(seen_path, buckets["drops"])
+    _prune_master(seen_path, buckets["drops"], dry_run=dry_run)
     return text
 
 
-def run_audit(config: dict, output_dir: Path, market: str = "both") -> int:
-    """Read-only audit entry point. Never mutates .txt / master / Futu."""
+def run_audit(
+    config: dict, output_dir: Path, market: str = "both", dry_run: bool = False
+) -> int:
+    """Audit entry point. Writes report + sidecars, prunes the master unless
+    ``dry_run=True``. Never touches Futu."""
     markets = ["us", "hk"] if market == "both" else [market]
     for m in markets:
-        text = _audit_market(m, config, output_dir)
+        text = _audit_market(m, config, output_dir, dry_run=dry_run)
         if text is not None:
             print("\n" + text + "\n")
     return 0
