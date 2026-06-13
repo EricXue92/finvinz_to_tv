@@ -258,6 +258,44 @@ def test_reversal_missing_ohlc_excluded():
     assert "NOHLC" not in feats.index
 
 
+# ---------------------------------------------------------------------------
+# Single-bar anomaly guard (splits / bad quotes)
+# ---------------------------------------------------------------------------
+
+
+def test_direction_skips_split_inside_lookback():
+    # 10:1 split 3 bars before the last bar → close-to-close return ≈ -90% sits
+    # inside the 5-bar lookback. Without the guard the chg_5d signal would be
+    # catastrophically negative (KLAC 2026-06-12 case).
+    n = 80
+    closes = [100.0 + 0.1 * i for i in range(n)]
+    closes[-3] = closes[-4] / 10.0      # split at t=-3
+    closes[-2] = closes[-3] * 1.01
+    closes[-1] = closes[-2] * 1.02
+    feats = compute_rs_direction({"SPLIT": _kline(closes)}, _const_bench(n), lookback=5)
+    assert "SPLIT" not in feats.index  # excluded → unknown → kept downstream
+
+
+def test_direction_keeps_split_outside_lookback():
+    # Same magnitude but the split is ≥ lookback+1 bars before the last bar,
+    # so it doesn't fall in the close-to-close return window we guard.
+    n = 80
+    closes = [100.0 + 0.1 * i for i in range(n)]
+    closes[-20] = closes[-21] / 10.0    # split well outside the 5-bar window
+    for k in range(-19, 0):
+        closes[k] = closes[k - 1] * 1.001
+    feats = compute_rs_direction({"OLDSPLIT": _kline(closes)}, _const_bench(n), lookback=5)
+    assert "OLDSPLIT" in feats.index
+
+
+def test_reversal_skips_split_inside_lookback():
+    # 10:1 split inside the 5-bar return window → would make ret_lb ≈ -0.9 and
+    # ret_per_adr blow up. Guard must exclude.
+    closes = [100.0] * 35 + [100.0, 100.0, 10.0, 10.1, 10.2]  # split at t=-3
+    feats = compute_rs_reversal({"SPLIT": _ohlc(closes, rng=0.05)}, lookback=5, adr_days=20)
+    assert "SPLIT" not in feats.index
+
+
 def test_adr_mult_from_config_default_and_override():
     assert adr_mult_from_config({}) == DEFAULT_ADR_MULT
     assert adr_mult_from_config({"rs_line": {"adr_mult": 2.0}}) == 2.0

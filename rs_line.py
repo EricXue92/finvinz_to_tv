@@ -24,6 +24,12 @@ DEFAULT_TOLERANCE = 0.005
 DEFAULT_ADR_MULT = 1.5
 DEFAULT_ADR_DAYS = 20
 
+# Single-bar close-to-close |return| ≥ this fraction is treated as a data
+# anomaly (stock split, reverse split, bad quote, halt-resume gap). The audit
+# excludes such ids from scoring → unknown → kept. 50% is well above any
+# real one-day move that EMA/return signals can meaningfully reason about.
+ANOMALY_BAR_THRESHOLD = 0.50
+
 _COLUMNS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
 
 
@@ -31,6 +37,18 @@ def _moving_average(s: pd.Series, length: int, ma_type: str) -> pd.Series:
     if ma_type == "sma":
         return s.rolling(length).mean()
     return s.ewm(span=length, adjust=False).mean()
+
+
+def _has_bar_anomaly(series: pd.Series, window: int) -> bool:
+    """True iff any close-to-close |return| in the last ``window+1`` bars of
+    ``series`` is ≥ ``ANOMALY_BAR_THRESHOLD``. ``window+1`` bars produce
+    ``window`` returns, which spans exactly the lookback range that feeds the
+    direction/reversal outputs."""
+    if len(series) < window + 1:
+        return False
+    tail = series.iloc[-(window + 1):].astype(float)
+    returns = tail.pct_change().dropna()
+    return bool((returns.abs() >= ANOMALY_BAR_THRESHOLD).any())
 
 
 def _trailing_streak(flags: list[bool]) -> int:
@@ -143,6 +161,8 @@ def compute_rs_direction(
             .sort_values("time_key")
         )
         rs = m["close"].astype(float) / m["_bench"].astype(float)
+        if _has_bar_anomaly(rs, lookback):
+            continue  # split / bad quote in the lookback window → unknown
         ma = _moving_average(rs, ma_length, ma_type)
         ma = ma[ma.notna()]
         if len(ma) < max(min_history, lookback + 1):  # need lookback+1 bars to index back
@@ -181,6 +201,8 @@ def compute_rs_reversal(
         if len(d) < max(adr_days, lookback + 1):
             continue
         close = d["close"].astype(float)
+        if _has_bar_anomaly(close, lookback):
+            continue  # split / bad quote in the lookback window → unknown
         adr_pct = float(((d["high"].astype(float) - d["low"].astype(float)) / close)
                         .tail(adr_days).mean() * 100)
         if adr_pct <= 0:
