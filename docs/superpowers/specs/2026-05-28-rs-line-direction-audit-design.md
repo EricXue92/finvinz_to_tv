@@ -25,6 +25,39 @@ of v1 decision #2 ("don't use MA slope") — justified because we now slope the
 *already-smoothed* EMA over a *5-bar* window (not the raw line over 1 bar), which
 removes the 2-day-wiggle instability that motivated the original objection.
 
+## Why we trust "EMA21 turning down" as a real-weakening signal
+
+Recorded here because the rationale has come up in review more than once and
+the comment in `config.toml` previously overstated it as "EMA21 is slow,
+therefore down = real weakening." That's directionally right but incomplete.
+The actual reasoning chain:
+
+1. **Double smoothing, not single smoothing.** The raw RS line is noisy at
+   1-bar resolution. EMA21 strips the high-frequency wobble; then taking a
+   5-bar endpoint difference (`rs_ema_chg_5d`) strips the EMA's own 1-day
+   jitter. So "EMA21 turning down" actually means "an already-smoothed series
+   has moved against itself for a full trading week." Each stage on its own
+   was rejected (v1 #2 explicitly banned bare MA slope precisely because of
+   2-day wiggles); the combination is what makes the signal stable.
+2. **Direction leads position by 1–2 weeks.** For a pool that's already passed
+   12M/3M RS gates, every name is sitting above its MA — waiting for the line
+   to *break* the MA (the v1 position signal) cuts 1–2 weeks too late.
+   Slope-of-EMA21 rolls over before the line crosses the MA, so the signal is
+   *leading*, not just *slow*. This is the real reason for the pivot, not
+   "EMA21 is insensitive."
+3. **Residual lag is acknowledged and patched, not denied.** EMA21 5-bar
+   slope still lags real-time price action, so a name in a sharp V-shaped
+   reversal can register as "weakening" on the day its RS line is already
+   ripping back up. We don't pretend the slope is infallible — we add the
+   ADR-based reversal exemption (`ret_per_adr ≥ adr_mult`) to keep the names
+   that the slope would otherwise misread. See "Reversal exemption" below.
+
+Putting it together: `EMA21 5-bar slope < −tolerance` is a **probabilistic**
+read on real weakening — robust to short noise (double smoothing), early
+relative to MA-cross (leading), and explicitly backstopped against its known
+failure mode (reversal exemption). It is not "EMA21 is insensitive so its move
+must be real."
+
 ## The signal
 
 ```
