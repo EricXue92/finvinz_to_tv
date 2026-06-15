@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly rolling registration of pmset one-shot wakes for the US
+  morning-gap scans. Runs schedule_morning_gap_wakes.py every Sunday
+  18:00 HKT, reseeding the next 14 weekdays of 20:59 / 21:59 HKT wakes.
+
+  Must be a LaunchDaemon (root) because `pmset schedule` requires root.
+  Calls /usr/bin/python3 directly — the script is stdlib-only, so we
+  don't drag uv / .venv into a root context.
+
+  Install:
+    sudo cp scripts/com.xue.finviz-to-tv.schedule-wakes.plist \
+        /Library/LaunchDaemons/
+    sudo chown root:wheel \
+        /Library/LaunchDaemons/com.xue.finviz-to-tv.schedule-wakes.plist
+    sudo launchctl bootstrap system \
+        /Library/LaunchDaemons/com.xue.finviz-to-tv.schedule-wakes.plist
+
+  RunAtLoad fires it once on bootstrap, so the queue is populated
+  immediately — no need to also run the script by hand.
+
+  Verify:
+    sudo launchctl print system/com.xue.finviz-to-tv.schedule-wakes
+    pmset -g sched
+    tail output/launchd_schedule_wakes.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.xue.finviz-to-tv.schedule-wakes</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/xue/momentum-scanner/scripts/schedule_morning_gap_wakes.py</string>
+        <string>14</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>18</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/xue/momentum-scanner/output/launchd_schedule_wakes.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/xue/momentum-scanner/output/launchd_schedule_wakes.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/xue/momentum-scanner</string>
+</dict>
+</plist>
