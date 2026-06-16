@@ -71,13 +71,15 @@ local (throttle-prone) k-line fetch.
   effect**. Computed cloud-side only (local never refetches klines). Config:
   `[rs_line]`. Spec:
   `docs/superpowers/specs/2026-05-27-rs-line-trend-filter-design.md`.
-- **`uv run main.py --mode rs-line-audit [--market us|hk|both] [--dry-run]`**
+- **`uv run main.py --mode rs-line-audit [--market us|hk|both] [--dry-run|--yes]`**
   scores the cross-day master, writes
-  `output/rs_line_audit_<MKT>_<date>{,_drop,_keep_ranked}.txt`, **and prunes the
-  drops from `state/eod_seen_{US,HK}.txt`** so they can re-qualify on a future
-  EOD run. Backs the master up first as `eod_seen_<MKT>.txt.bak.<stamp>`.
-  `--dry-run` writes the report + sidecars but does NOT touch the master (no
-  backup either). Manual, operator-triggered; not on the launchd schedule.
+  `output/rs_line_audit_<MKT>_<date>{,_drop,_keep_ranked}.txt`, prints the
+  report, then **prompts y/N** to prune the drops from
+  `state/eod_seen_{US,HK}.txt` so they can re-qualify on a future EOD run.
+  Confirmed prunes back the master up first as `eod_seen_<MKT>.txt.bak.<stamp>`.
+  `--yes` skips the prompt (auto-prune, legacy non-interactive behavior);
+  `--dry-run` writes the report + sidecars but does NOT touch the master
+  (no prompt, no backup). Manual, operator-triggered; not on the launchd schedule.
 
 ## Futu sync
 

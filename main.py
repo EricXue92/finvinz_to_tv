@@ -1565,7 +1565,13 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Only meaningful with --mode=rs-line-audit: write the audit report "
-             "and sidecars, but do NOT prune state/eod_seen_*.txt.",
+             "and sidecars, but do NOT prune state/eod_seen_*.txt (skips the "
+             "confirmation prompt too).",
+    )
+    parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Only meaningful with --mode=rs-line-audit: skip the interactive "
+             "y/N confirmation and prune state/eod_seen_*.txt immediately.",
     )
     args = parser.parse_args()
 
@@ -1638,7 +1644,10 @@ def main() -> int:
 
     if args.mode == "rs-line-audit":
         from rs_line_audit import run_audit
-        return run_audit(config, output_dir, args.market or "both", dry_run=args.dry_run)
+        return run_audit(
+            config, output_dir, args.market or "both",
+            dry_run=args.dry_run, assume_yes=args.yes,
+        )
 
     # Cold-wake guard: launchd fires the moment the machine wakes, but Wi-Fi /
     # DNS resolver may need 10-30s to come up. Without this gate every fetcher

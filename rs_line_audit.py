@@ -200,8 +200,20 @@ def _prune_master(seen_path: Path, drops: list[str], dry_run: bool = False) -> N
     )
 
 
-def _audit_market(market: str, config: dict, output_dir: Path, dry_run: bool = False) -> str | None:
-    """Return the report text for one market, or None if its master is empty."""
+def _audit_market(
+    market: str,
+    config: dict,
+    output_dir: Path,
+    dry_run: bool = False,
+    assume_yes: bool = False,
+) -> str | None:
+    """Return the report text for one market, or None if its master is empty.
+
+    Pruning gate: ``dry_run`` skips pruning entirely (no prompt). Otherwise,
+    if ``assume_yes`` is True the master is pruned unconditionally; if False,
+    the operator is prompted y/N after the report is printed and only confirmed
+    drops are pruned.
+    """
     seen_path = output_dir / "state" / f"eod_seen_{market.upper()}.txt"
     ids = _load_seen(seen_path)
     if not ids:
@@ -247,18 +259,57 @@ def _audit_market(market: str, config: dict, output_dir: Path, dry_run: bool = F
     )
     logger.info(f"[rs-line-audit] wrote {keep_file} ({len(buckets['keeps_ranked'])} ids)")
 
-    _prune_master(seen_path, buckets["drops"], dry_run=dry_run)
+    print("\n" + text + "\n")
+
+    drops = buckets["drops"]
+    if dry_run:
+        logger.info(
+            f"[rs-line-audit] {market.upper()}: --dry-run set, skipping prune "
+            f"({len(drops)} drops left in {seen_path.name})"
+        )
+        return text
+
+    if not drops:
+        _prune_master(seen_path, drops, dry_run=False)  # logs the no-op
+        return text
+
+    if assume_yes:
+        _prune_master(seen_path, drops, dry_run=False)
+        return text
+
+    # Interactive confirmation: report and sidecars already on disk; operator
+    # may inspect drop_file before answering. Default is N to favor safety.
+    prompt = (
+        f"\n[rs-line-audit] {market.upper()}: prune {len(drops)} ticker(s) "
+        f"from {seen_path.name}? (y/N): "
+    )
+    try:
+        answer = input(prompt).strip().lower()
+    except EOFError:
+        answer = ""
+    if answer in ("y", "yes"):
+        _prune_master(seen_path, drops, dry_run=False)
+    else:
+        logger.info(
+            f"[rs-line-audit] {market.upper()}: declined — {seen_path.name} "
+            f"left unchanged. Re-run with --yes to auto-confirm, or inspect "
+            f"{drop_file.name}."
+        )
     return text
 
 
 def run_audit(
-    config: dict, output_dir: Path, market: str = "both", dry_run: bool = False
+    config: dict,
+    output_dir: Path,
+    market: str = "both",
+    dry_run: bool = False,
+    assume_yes: bool = False,
 ) -> int:
-    """Audit entry point. Writes report + sidecars, prunes the master unless
-    ``dry_run=True``. Never touches Futu."""
+    """Audit entry point. Writes report + sidecars; pruning gate:
+    ``dry_run`` skips prune entirely; ``assume_yes`` prunes without asking;
+    otherwise prompts y/N per market after printing the report.
+    Never touches Futu."""
     markets = ["us", "hk"] if market == "both" else [market]
     for m in markets:
-        text = _audit_market(m, config, output_dir, dry_run=dry_run)
-        if text is not None:
-            print("\n" + text + "\n")
+        _audit_market(m, config, output_dir, dry_run=dry_run, assume_yes=assume_yes)
     return 0
