@@ -41,12 +41,14 @@ UV=/Users/xue/.local/bin/uv
 PROJECT=/Users/xue/momentum-scanner
 
 # Hard wall-clock cap for the EOD step. A real run is ~3-5 min; anything past
-# 30 min means a hung socket (observed 2026-05-12: finviz scrape stuck inside
-# SSL read() for 50+ min because the `finviz` lib sets no socket timeout, and
-# launchd has no kill timer of its own). macOS ships no `timeout`, so we
-# `set -m` to put the backgrounded job in its own process group, then a
-# watchdog sends SIGTERM (escalates to SIGKILL) to the whole group so uv's
-# python grandchild dies with its parent instead of leaking.
+# 30 min means a hung socket. The finviz lib's SSL hang (2026-05-12: 50+ min;
+# 2026-06-16: 12 min, pushed Leaders past the watchdog with no .txt written)
+# is now bounded in-process by `finviz_timeout.py` (socket timeout + capped
+# retries) — this wrapper timer remains as defense-in-depth for anything else
+# that might hang. macOS ships no `timeout`, so `set -m` puts the backgrounded
+# job in its own process group, then a watchdog sends SIGTERM (escalates to
+# SIGKILL) to the whole group so uv's python grandchild dies with its parent
+# instead of leaking.
 EOD_TIMEOUT=${EOD_TIMEOUT:-1800}
 set +e
 set -m

@@ -20,6 +20,7 @@ import yfinance as yf
 from finviz import get_stock
 from finviz.helper_functions.error_handling import NoResults
 from finviz.screener import Screener
+import finviz_timeout  # noqa: F401  — patches finviz sync HTTP (timeout + bounded retries)
 import openpyxl
 
 from futu_sync import (
