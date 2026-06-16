@@ -103,3 +103,11 @@ groups must be created by hand in the client (API can't create groups).
   error path** (missed wakes are silent by design).
 - pmset wake keyword is **`wakeorpoweron`** on macOS 26+ (`wakepoweron` no longer
   parses). US EOD uses mode `us-eod` not `eod` (HK bar is incomplete at 10:00 HKT).
+- **RS workflow self-trigger:** GH Actions' scheduled cron is unreliable
+  (delayed hours; sometimes skipped — observed 2026-06-16: today's 3M CSV
+  missing because GH cron never fired). Launchd dispatches the workflow via
+  `gh workflow run` 75 min before EOD: `us-rs-3m-trigger` (Tue-Sat 08:45) and
+  `hk-rs-trigger` (Mon-Fri 18:45) → `scripts/trigger_rs_workflow.sh`. The
+  GH-side cron is kept as belt-and-suspenders; workflow's commit step is
+  idempotent (`git diff --staged --quiet → exit 0`) so a double-fire is
+  harmless. Failures ntfy via the morning-gap topic.
