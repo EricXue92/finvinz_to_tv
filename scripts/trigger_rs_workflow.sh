@@ -73,8 +73,18 @@ echo "[$(ts)] [trigger:$MARKET] dispatched run $RUN_ID, watching"
 if "$GH" --repo "$REPO" run watch "$RUN_ID" --exit-status >/dev/null 2>&1; then
     echo "[$(ts)] [trigger:$MARKET] run $RUN_ID completed successfully"
 else
-    echo "[$(ts)] [trigger:$MARKET] run $RUN_ID FAILED — EOD will use stale fallback"
-    ntfy_alert "$MARKET RS workflow failed" \
-        "Run $RUN_ID failed. EOD will fall back to yesterday's CSV (≤3 days OK)."
-    exit 1
+    # `gh run watch` can race with the final job state (or hiccup on a GH
+    # services blip during post-job cleanup) and exit non-zero on a run
+    # that actually concluded success. Re-check the authoritative conclusion
+    # before firing an alert.
+    CONCLUSION=$("$GH" --repo "$REPO" run view "$RUN_ID" \
+        --json conclusion --jq '.conclusion' 2>/dev/null)
+    if [[ "$CONCLUSION" == "success" ]]; then
+        echo "[$(ts)] [trigger:$MARKET] run $RUN_ID watch exited non-zero but conclusion=success — suppressing alert"
+    else
+        echo "[$(ts)] [trigger:$MARKET] run $RUN_ID FAILED (conclusion=${CONCLUSION:-unknown}) — EOD will use stale fallback"
+        ntfy_alert "$MARKET RS workflow failed" \
+            "Run $RUN_ID failed (conclusion=${CONCLUSION:-unknown}). EOD will fall back to yesterday's CSV (≤3 days OK)."
+        exit 1
+    fi
 fi
