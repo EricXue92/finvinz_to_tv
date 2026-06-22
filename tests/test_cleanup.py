@@ -20,37 +20,41 @@ def output_tree(tmp_path: Path) -> Path:
     return out
 
 
-def test_today_and_yesterday_survive(output_tree: Path) -> None:
-    _touch(output_tree / "TV/US/2026_05_15_Leaders.txt")
-    _touch(output_tree / "TV/US/2026_05_14_Leaders.txt")
+def test_recent_five_days_survive(output_tree: Path) -> None:
+    # 5-day window: today (05_15) + 4 prior days (05_14..05_11) survive.
+    for d in ("2026_05_15", "2026_05_14", "2026_05_13",
+              "2026_05_12", "2026_05_11"):
+        _touch(output_tree / f"TV/US/{d}_Leaders.txt")
     cleanup_old_outputs(output_tree, date(2026, 5, 15))
-    assert (output_tree / "TV/US/2026_05_15_Leaders.txt").exists()
-    assert (output_tree / "TV/US/2026_05_14_Leaders.txt").exists()
+    for d in ("2026_05_15", "2026_05_14", "2026_05_13",
+              "2026_05_12", "2026_05_11"):
+        assert (output_tree / f"TV/US/{d}_Leaders.txt").exists()
 
 
-def test_files_older_than_two_days_deleted(output_tree: Path) -> None:
+def test_files_older_than_five_days_deleted(output_tree: Path) -> None:
+    # Cutoff for today=05_15 is 05_11; 05_10 and earlier are pruned.
     _touch(output_tree / "TV/US/2026_05_15_Leaders.txt")
-    _touch(output_tree / "TV/US/2026_05_14_Leaders.txt")
-    _touch(output_tree / "TV/US/2026_05_13_Leaders.txt")
+    _touch(output_tree / "TV/US/2026_05_11_Leaders.txt")
+    _touch(output_tree / "TV/US/2026_05_10_Leaders.txt")
     _touch(output_tree / "TV/US/2026_05_09_Leaders.txt")
 
-    _touch(output_tree / "TV/HK/2026_05_13_Shorts.txt")
-    _touch(output_tree / "Webull/US/2026_05_12_GapUp.txt")
-    _touch(output_tree / "Webull/HK/2026_05_11_RS.txt")
-    _touch(output_tree / "Reports/2026_05_13_us.md")
-    _touch(output_tree / "Reports/2026_05_13_hk.html")
+    _touch(output_tree / "TV/HK/2026_05_10_Shorts.txt")
+    _touch(output_tree / "Webull/US/2026_05_09_GapUp.txt")
+    _touch(output_tree / "Webull/HK/2026_05_09_RS.txt")
+    _touch(output_tree / "Reports/2026_05_10_us.md")
+    _touch(output_tree / "Reports/2026_05_10_hk.html")
 
     cleanup_old_outputs(output_tree, date(2026, 5, 15))
 
     assert (output_tree / "TV/US/2026_05_15_Leaders.txt").exists()
-    assert (output_tree / "TV/US/2026_05_14_Leaders.txt").exists()
-    assert not (output_tree / "TV/US/2026_05_13_Leaders.txt").exists()
+    assert (output_tree / "TV/US/2026_05_11_Leaders.txt").exists()
+    assert not (output_tree / "TV/US/2026_05_10_Leaders.txt").exists()
     assert not (output_tree / "TV/US/2026_05_09_Leaders.txt").exists()
-    assert not (output_tree / "TV/HK/2026_05_13_Shorts.txt").exists()
-    assert not (output_tree / "Webull/US/2026_05_12_GapUp.txt").exists()
-    assert not (output_tree / "Webull/HK/2026_05_11_RS.txt").exists()
-    assert not (output_tree / "Reports/2026_05_13_us.md").exists()
-    assert not (output_tree / "Reports/2026_05_13_hk.html").exists()
+    assert not (output_tree / "TV/HK/2026_05_10_Shorts.txt").exists()
+    assert not (output_tree / "Webull/US/2026_05_09_GapUp.txt").exists()
+    assert not (output_tree / "Webull/HK/2026_05_09_RS.txt").exists()
+    assert not (output_tree / "Reports/2026_05_10_us.md").exists()
+    assert not (output_tree / "Reports/2026_05_10_hk.html").exists()
 
 
 def test_rs_rating_uses_four_day_window(output_tree: Path) -> None:

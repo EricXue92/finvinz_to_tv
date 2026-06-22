@@ -29,12 +29,12 @@ _DATE_U = r"(\d{4}_\d{2}_\d{2})"   # underscores
 _DATE_D = r"(\d{4}-\d{2}-\d{2})"   # dashes
 
 _RETENTION_RULES: tuple[_Rule, ...] = (
-    # Dated scan outputs — 2-day retention.
-    _Rule("TV/US",     re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 2),
-    _Rule("TV/HK",     re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 2),
-    _Rule("Webull/US", re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 2),
-    _Rule("Webull/HK", re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 2),
-    _Rule("Reports",   re.compile(rf"^{_DATE_U}_(us|hk)\.(md|html)$"), "%Y_%m_%d", 2),
+    # Dated scan outputs — 5-day retention (today + 4 prior days).
+    _Rule("TV/US",     re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 5),
+    _Rule("TV/HK",     re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 5),
+    _Rule("Webull/US", re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 5),
+    _Rule("Webull/HK", re.compile(rf"^{_DATE_U}_.+\.txt$"),  "%Y_%m_%d", 5),
+    _Rule("Reports",   re.compile(rf"^{_DATE_U}_(us|hk)\.(md|html)$"), "%Y_%m_%d", 5),
     # Per-day state caches — 2-day retention.
     _Rule("state", re.compile(rf"^morning_gap_seen_(?:pre|post)_{_DATE_U}\.txt$"),
           "%Y_%m_%d", 2),
