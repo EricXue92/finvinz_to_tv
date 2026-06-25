@@ -2122,7 +2122,8 @@ def main() -> int:
         )
         if fresh or promoted:
             notify_morning_gap(
-                fresh, offset, len(sorted_tickers), config, promoted=promoted
+                fresh, offset, len(sorted_tickers), config, promoted=promoted,
+                all_tickers=sorted_tickers,
             )
 
         if is_pre and fresh:
@@ -2189,7 +2190,7 @@ def main() -> int:
         if fresh:
             notify_morning_gap(
                 fresh, offset, len(tv_tickers), config,
-                promoted=[], market="HK",
+                promoted=[], market="HK", all_tickers=tv_tickers,
             )
 
         try:

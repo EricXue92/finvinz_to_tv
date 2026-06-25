@@ -47,13 +47,15 @@ def notify_morning_gap(
     config: dict,
     promoted: list[str] | None = None,
     market: str = "US",
+    all_tickers: list[str] | None = None,
 ) -> None:
     """Push ntfy alert(s) for a morning-gap scan.
 
     Args:
         new_tickers: brand-new tickers this scan (not seen in any earlier
             scan of the same phase, and — for post-open — not in pre-market
-            seen either). Fires the regular alert.
+            seen either). Decides *whether* the regular alert fires and the
+            "N new" count in its title.
         offset_min: minutes from market open. Negative = pre-market.
         total: total ticker count for this scan (including repeats).
         config: full parsed config.toml dict. Reads [notify] section.
@@ -62,6 +64,9 @@ def notify_morning_gap(
             high-priority alert. Always empty for pre-market scans and for
             HK (HK has no pre phase).
         market: "US" or "HK" — controls the title prefix only.
+        all_tickers: the full scan list. When given, the regular alert body
+            lists every ticker (not just the delta), so a "2 new / total 33"
+            scan still shows all 33 names. Falls back to new_tickers if None.
     """
     promoted = promoted or []
     if not new_tickers and not promoted:
@@ -82,12 +87,13 @@ def notify_morning_gap(
     prefix = "HK Morning Gap" if market == "HK" else "Morning Gap"
 
     if new_tickers:
-        title = f"{prefix} {sign}{offset_min}min · {len(new_tickers)} new"
-        body = _format_body(new_tickers, max_in_body, total)
+        title = f"{prefix} {sign}{offset_min}min | {len(new_tickers)} new"
+        body_tickers = all_tickers if all_tickers is not None else new_tickers
+        body = _format_body(body_tickers, max_in_body, total)
         _ntfy_post(server, topic, title, body, priority="default")
 
     if promoted:
-        title = f"{prefix} {sign}{offset_min}min · {len(promoted)} PROMOTED"
+        title = f"{prefix} {sign}{offset_min}min | {len(promoted)} PROMOTED"
         body = (
             _format_body(promoted, max_in_body, total)
             + " · pre-market gap confirmed by RTH volume"
