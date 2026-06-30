@@ -32,7 +32,13 @@ sys.path.insert(0, str(_REPO_ROOT))
 import tomllib  # noqa: E402
 
 import pandas as pd  # noqa: E402
-from rs_line import compute_rs_line_features, is_enabled, params_from_config  # noqa: E402
+from rs_line import (  # noqa: E402
+    compute_rs_line_features,
+    compute_rs_new_high,
+    is_enabled,
+    new_high_params_from_config,
+    params_from_config,
+)
 
 from hk_eod import (  # noqa: E402
     build_metrics_frame,
@@ -140,6 +146,9 @@ def main() -> int:
         feats = compute_rs_line_features(klines, hsi_kline, **params_from_config(_cfg))
         combined = combined.join(feats, how="left")
         logger.info(f"[Cloud HK RS] RS-line features merged for {len(feats)} codes")
+        nh = compute_rs_new_high(klines, hsi_kline, **new_high_params_from_config(_cfg))
+        combined = combined.join(nh, how="left")
+        logger.info(f"[Cloud HK RS] RS-new-high column merged for {len(nh)} codes")
 
     # 7. Write today's CSV.
     _DATA_DIR.mkdir(parents=True, exist_ok=True)

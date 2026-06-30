@@ -836,6 +836,13 @@ def _to_tv(code: str) -> str:
     return "HKEX:" + (stripped or "0")
 
 
+def _tv_to_code(tv: str) -> str:
+    """``HKEX:700`` → ``HK.00700`` — inverse of ``_to_tv``, re-padding to the
+    5-digit Futu code used as the RS-table index. ``HKEX:1`` → ``HK.00001``."""
+    num = tv.replace("HKEX:", "", 1)
+    return "HK." + num.zfill(5)
+
+
 def run_hk_eod(
     config: dict,
     output_dir: Path,
@@ -1075,6 +1082,35 @@ def run_hk_eod(
         write_webull(tv, dated, output_dir)
         futu_sync(config, futu_key[name], tv, "HK")
         tv_sync(config, futu_key[name], tv, "HK")
+
+    # --- RS New High strong sub-list (HK) ---
+    # Mirror of the US RS-NH block: of today's long-side survivors (the 4
+    # first-sighting groups incl. Leaders; conditional RS excluded), keep
+    # those whose RS line is within nh_tolerance of its 6-month high.
+    # rs_line_tbl is indexed by Futu code, so map the TV survivors back to
+    # codes for the lookup, then convert the selected codes to TV for output.
+    import rs_line
+    if rs_line.nh_is_enabled(config):
+        nh_long_groups = ["EarningsGap", "HighVolume", "GapUp", "Leaders"]
+        nh_candidate_codes = sorted({
+            _tv_to_code(tv)
+            for name in nh_long_groups
+            for tv in final.get(name, [])
+        })
+        nh_tol = rs_line.nh_tolerance_from_config(config)
+        nh_codes, nh_stats = rs_line.select_rs_new_high(
+            nh_candidate_codes, rs_line_tbl, nh_tol
+        )
+        nh_tv = sorted(_to_tv(c) for c in nh_codes)
+        dated_nh = hk_output_dir / f"{today_iso}_HKRSNewHigh.txt"
+        write_watchlist(nh_tv, dated_nh, fmt)
+        logger.info(
+            f"[HK RS-NH] {rs_line.format_rs_new_high_summary(nh_stats)} "
+            f"(tol={nh_tol:.0%}) -> {dated_nh}"
+        )
+        write_webull(nh_tv, dated_nh, output_dir)
+        futu_sync(config, "hk_rs_new_high", nh_tv, "HK")
+        tv_sync(config, "hk_rs_new_high", nh_tv, "HK")
 
     # --- HK IPO sidecar ---
     # Tickers with insufficient history for the IBD 12-month RS calc

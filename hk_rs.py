@@ -214,7 +214,7 @@ def _split_combined(combined: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
     return _one("rs_percentile_12m"), _one("rs_percentile_3m")
 
 
-_RS_LINE_COLS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
+_RS_LINE_COLS = ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma", "rs_pct_off_high"]
 
 
 def _extract_rs_line(combined: pd.DataFrame) -> pd.DataFrame:

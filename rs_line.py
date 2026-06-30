@@ -155,6 +155,64 @@ def compute_rs_line_features(
     return pd.DataFrame.from_dict(rows, orient="index", columns=_COLUMNS)
 
 
+_NEW_HIGH_COLUMNS = ["rs_pct_off_high"]
+
+
+def compute_rs_new_high(
+    klines: dict[str, pd.DataFrame],
+    benchmark_kline: pd.DataFrame | None,
+    *,
+    min_history: int = DEFAULT_MIN_HISTORY,
+) -> pd.DataFrame:
+    """Per-id distance of the RS line from its own all-history maximum.
+
+    RS line = close / benchmark_close (date-aligned inner join, same shape as
+    compute_rs_line_features). The single output column ``rs_pct_off_high`` is
+    ``(window_max - rs[-1]) / window_max`` over the FULL aligned history, clamped
+    at 0 on the low side (numerical noise). 0.0 == latest bar is the high; larger
+    == further below the high. Scale-invariant (benchmark constant cancels).
+
+    Ids with < ``min_history`` aligned bars, or with a single-bar |return| >=
+    ANOMALY_BAR_THRESHOLD anywhere in the aligned series (split / bad quote that
+    would poison the max), are EXCLUDED — consumers treat missing-from-frame as
+    "unknown". Never raises.
+    """
+    if benchmark_kline is None or getattr(benchmark_kline, "empty", True):
+        return pd.DataFrame(columns=_NEW_HIGH_COLUMNS)
+    bench = (
+        benchmark_kline[["time_key", "close"]]
+        .rename(columns={"close": "_bench"})
+        .dropna()
+    )
+
+    rows: dict[str, float] = {}
+    for tid, df in klines.items():
+        if df is None or df.empty or "close" not in df or "time_key" not in df:
+            continue
+        m = (
+            df[["time_key", "close"]]
+            .dropna()
+            .merge(bench, on="time_key", how="inner")
+            .sort_values("time_key")
+        )
+        if len(m) < min_history:
+            continue
+        rs = m["close"].astype(float) / m["_bench"].astype(float)
+        # Split / bad quote anywhere in the full series would warp the max →
+        # exclude. Window = whole series, so check the whole series.
+        if _has_bar_anomaly(rs, len(rs) - 1):
+            continue
+        window_max = float(rs.max())
+        if window_max <= 0:
+            continue
+        off = (window_max - float(rs.iloc[-1])) / window_max
+        rows[tid] = round(max(off, 0.0), 4)
+
+    if not rows:
+        return pd.DataFrame(columns=_NEW_HIGH_COLUMNS)
+    return pd.DataFrame.from_dict(rows, orient="index", columns=_NEW_HIGH_COLUMNS)
+
+
 def compute_rs_direction(
     klines: dict[str, pd.DataFrame],
     benchmark_kline: pd.DataFrame | None,
@@ -289,6 +347,76 @@ def tolerance_from_config(config: dict) -> float:
 
 def is_enabled(config: dict) -> bool:
     return bool((config.get("rs_line", {}) or {}).get("enabled", True))
+
+
+def new_high_params_from_config(config: dict) -> dict:
+    """``compute_rs_new_high`` kwargs from ``[rs_line]``. Reuses the shared
+    ``min_history`` floor (nh_min_history override) — splatted directly."""
+    cfg = config.get("rs_line", {}) or {}
+    return {"min_history": int(cfg.get("nh_min_history", cfg.get("min_history", DEFAULT_MIN_HISTORY)))}
+
+
+def nh_is_enabled(config: dict) -> bool:
+    """Whether the RS-New-High sub-list is produced (``[rs_line].nh_enabled``)."""
+    return bool((config.get("rs_line", {}) or {}).get("nh_enabled", True))
+
+
+def nh_tolerance_from_config(config: dict) -> float:
+    """Max ``rs_pct_off_high`` to qualify for RS-New-High (fraction; 0.02 = 2%)."""
+    return float((config.get("rs_line", {}) or {}).get("nh_tolerance", 0.02))
+
+
+def select_rs_new_high(
+    candidates: list[str],
+    features: pd.DataFrame | None,
+    tolerance: float,
+) -> tuple[list[str], dict]:
+    """From ``candidates`` (ids in ``features`` index format), return those whose
+    ``rs_pct_off_high`` <= ``tolerance``, plus a stats dict. Ids missing from the
+    frame, with NaN, or when the column is absent are 'unknown' → EXCLUDED (this
+    is a positive highlight filter: can't confirm a new high → don't include).
+    Never raises. stats keys: total, selected, le_1pct, le_2pct, le_5pct, unknown.
+    """
+    stats = {"total": len(candidates), "selected": 0,
+             "le_1pct": 0, "le_2pct": 0, "le_5pct": 0, "unknown": 0}
+    have_col = (
+        features is not None
+        and not getattr(features, "empty", True)
+        and "rs_pct_off_high" in features.columns
+    )
+    if not have_col:
+        stats["unknown"] = len(candidates)
+        return [], stats
+    assert features is not None  # have_col implies this; narrows for type-checkers
+    selected: list[str] = []
+    for cid in candidates:
+        if cid not in features.index:
+            stats["unknown"] += 1
+            continue
+        val = features.loc[cid, "rs_pct_off_high"]
+        if pd.isna(val):
+            stats["unknown"] += 1
+            continue
+        off = float(val)
+        if off <= 0.01:
+            stats["le_1pct"] += 1
+        if off <= 0.02:
+            stats["le_2pct"] += 1
+        if off <= 0.05:
+            stats["le_5pct"] += 1
+        if off <= tolerance:
+            selected.append(cid)
+    stats["selected"] = len(selected)
+    return sorted(selected), stats
+
+
+def format_rs_new_high_summary(stats: dict) -> str:
+    """One-line RS-New-High distribution log."""
+    return (
+        f"RS-NH: {stats['selected']}/{stats['total']} selected "
+        f"(<=1%: {stats['le_1pct']}, <=2%: {stats['le_2pct']}, "
+        f"<=5%: {stats['le_5pct']}; unknown: {stats['unknown']})"
+    )
 
 
 def summarize_rs_line(ids: list[str], features: pd.DataFrame | None) -> str | None:
