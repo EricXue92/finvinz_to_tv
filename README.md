@@ -88,6 +88,24 @@ Oliver Kell's relative-strength approach. **Runs only when SPY *and* QQQ are bot
 
 Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 12M ∩ 3M ≥ 90** (double gate).
 
+### RS New High (强势子清单 — positive highlight)
+
+A second-pass filter that picks the **strongest of the strong**: from the day's already-selected **long-side survivors** it surfaces tickers whose TraderLion-style **RS line** (price ÷ benchmark) is sitting at or near its own ~6-month high. Output is a **separate sub-list** (`<date>_RSNewHigh.txt` / `<date>_HKRSNewHigh.txt` + Webull mirror + Futu/TV sync) — the parent watchlists are untouched.
+
+| Aspect | Detail |
+|---|---|
+| **Scope** | US Longs + Leaders, HK Longs + Leaders. **RS group and Shorts excluded** (RS-NH doesn't apply to short setups). |
+| **Signal** | `rs_pct_off_high` = `(window_max − rs_now) / window_max`, where `window_max` is the RS line's max over all available (~6mo) history. `0` = RS line made a new high today; larger = weaker. |
+| **Band** | Keep if `0 ≤ rs_pct_off_high ≤ nh_tolerance` (`[rs_line] nh_tolerance`, default **0.02** = within 2% of the high). |
+| **Compute split** | The continuous `rs_pct_off_high` column is computed **cloud-side** (GitHub Actions) and published into `data/{us_rs_3m,hk_rs}/<date>.csv`; the threshold is applied **locally**. Changing the band never refetches k-lines. |
+| **Unknown handling** | Missing column / missing ticker / `< nh_min_history` (42 bars) → **EXCLUDED** (positive selection — if a new high can't be confirmed, it's not included). This is the *opposite* of the RS-gate's missing→KEPT policy. |
+| **Dedup** | **No own cross-day master** — it's a pure subset of the already-deduped long-side output, so it's re-detected daily (like the RS group and Shorts). |
+| **Calibration log** | Each run logs the `≤1% / ≤2% / ≤5%` distribution (and the unknown count) so `nh_tolerance` can be tuned against real data. |
+
+**Complementary signal — RS-line trend annotation:** the same cloud scripts also publish `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` (RS line vs its own EMA21). The EOD log *annotates* long-side survivors whose RS line is persistently below its MA — the inverse of RS New High (weakening rather than leading). This is **log-only** (no `.txt` / dedup effect); manual pruning of the cross-day master is available via `--mode rs-line-audit`. Config: `[rs_line]`.
+
+**Futu groups `RSNewHigh` / `HKRSNewHigh`** are diff-based (NOT append-only) and must be hand-created in the Futu client before first run.
+
 ### IPO (auto-collected sidecar)
 
 Long-side candidates that pass any Longs/Leaders/RS Finviz screen but get dropped by yfinance for insufficient daily history — typical for stocks IPO'd within the last few months. The candidate set is then run through a depth-conditional ladder (mirror of HK `filter_hk_ipo_candidates`, implementation in `us_ipo.filter_us_ipo_candidates`) so a day-30 IPO can still surface while a day-200 IPO is held to nearly the full long-side baseline:
@@ -222,8 +240,8 @@ After each EOD run, `--mode report --market {us,hk}` reads the day's dated long-
 ```
 output/
 ├── TV/                        # comma-separated, for TradingView "Import list..."
-│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
-│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO}.txt
+│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,RSNewHigh,IPO,MorningGapPre,MorningGap}.txt
+│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,HKRSNewHigh,IPO}.txt
 ├── Webull/                    # newline-separated mirror, for Webull "Upload as File"
 │   ├── US/<date>_*.txt
 │   └── HK/<date>_*.txt
@@ -251,9 +269,9 @@ Configure `[futu]` in `config.toml`. Sync hooks fire after each successful watch
 **One-time setup:**
 1. Launch [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html), log in (default `127.0.0.1:11111`).
 2. In the Futu PC client, manually create these custom groups (the API can only modify existing groups, not create them):
-   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `IPO`.
+   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `RSNewHigh`, `IPO` (US) plus `HKRSNewHigh` (HK).
 
-All EOD groups are append-only — clear them manually when crowded (Futu cap: 500 per group for non-traders, 2000 for active traders).
+Most EOD groups are append-only — clear them manually when crowded (Futu cap: 500 per group for non-traders, 2000 for active traders). The two **`RSNewHigh` / `HKRSNewHigh`** groups are the exception: they're diff-based (one DEL + one ADD per run), tracking the latest day's strong sub-list rather than accumulating.
 
 ## Push notifications (ntfy)
 
