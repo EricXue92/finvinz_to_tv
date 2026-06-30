@@ -1085,8 +1085,8 @@ def run_hk_eod(
 
     # --- RS New High strong sub-list (HK) ---
     # Mirror of the US RS-NH block: of today's long-side survivors (the 4
-    # first-sighting groups + Leaders; conditional RS excluded, same as US),
-    # keep those whose RS line is within nh_tolerance of its 6-month high.
+    # first-sighting groups incl. Leaders; conditional RS excluded), keep
+    # those whose RS line is within nh_tolerance of its 6-month high.
     # rs_line_tbl is indexed by Futu code, so map the TV survivors back to
     # codes for the lookup, then convert the selected codes to TV for output.
     import rs_line

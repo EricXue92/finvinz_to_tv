@@ -387,6 +387,7 @@ def select_rs_new_high(
     if not have_col:
         stats["unknown"] = len(candidates)
         return [], stats
+    assert features is not None  # have_col implies this; narrows for type-checkers
     selected: list[str] = []
     for cid in candidates:
         if cid not in features.index:
