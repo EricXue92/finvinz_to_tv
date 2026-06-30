@@ -349,6 +349,75 @@ def is_enabled(config: dict) -> bool:
     return bool((config.get("rs_line", {}) or {}).get("enabled", True))
 
 
+def new_high_params_from_config(config: dict) -> dict:
+    """``compute_rs_new_high`` kwargs from ``[rs_line]``. Reuses the shared
+    ``min_history`` floor (nh_min_history override) — splatted directly."""
+    cfg = config.get("rs_line", {}) or {}
+    return {"min_history": int(cfg.get("nh_min_history", cfg.get("min_history", DEFAULT_MIN_HISTORY)))}
+
+
+def nh_is_enabled(config: dict) -> bool:
+    """Whether the RS-New-High sub-list is produced (``[rs_line].nh_enabled``)."""
+    return bool((config.get("rs_line", {}) or {}).get("nh_enabled", True))
+
+
+def nh_tolerance_from_config(config: dict) -> float:
+    """Max ``rs_pct_off_high`` to qualify for RS-New-High (fraction; 0.02 = 2%)."""
+    return float((config.get("rs_line", {}) or {}).get("nh_tolerance", 0.02))
+
+
+def select_rs_new_high(
+    candidates: list[str],
+    features: pd.DataFrame | None,
+    tolerance: float,
+) -> tuple[list[str], dict]:
+    """From ``candidates`` (ids in ``features`` index format), return those whose
+    ``rs_pct_off_high`` <= ``tolerance``, plus a stats dict. Ids missing from the
+    frame, with NaN, or when the column is absent are 'unknown' → EXCLUDED (this
+    is a positive highlight filter: can't confirm a new high → don't include).
+    Never raises. stats keys: total, selected, le_1pct, le_2pct, le_5pct, unknown.
+    """
+    stats = {"total": len(candidates), "selected": 0,
+             "le_1pct": 0, "le_2pct": 0, "le_5pct": 0, "unknown": 0}
+    have_col = (
+        features is not None
+        and not getattr(features, "empty", True)
+        and "rs_pct_off_high" in features.columns
+    )
+    if not have_col:
+        stats["unknown"] = len(candidates)
+        return [], stats
+    selected: list[str] = []
+    for cid in candidates:
+        if cid not in features.index:
+            stats["unknown"] += 1
+            continue
+        val = features.loc[cid, "rs_pct_off_high"]
+        if pd.isna(val):
+            stats["unknown"] += 1
+            continue
+        off = float(val)
+        if off <= 0.01:
+            stats["le_1pct"] += 1
+        if off <= 0.02:
+            stats["le_2pct"] += 1
+        if off <= 0.05:
+            stats["le_5pct"] += 1
+        if off <= tolerance:
+            selected.append(cid)
+    stats["selected"] = len(selected)
+    return sorted(selected), stats
+
+
+def format_rs_new_high_summary(stats: dict) -> str:
+    """One-line RS-New-High distribution log."""
+    return (
+        f"RS-NH: {stats['selected']}/{stats['total']} selected "
+        f"(<=1%: {stats['le_1pct']}, <=2%: {stats['le_2pct']}, "
+        f"<=5%: {stats['le_5pct']}; unknown: {stats['unknown']})"
+    )
+
+
 def summarize_rs_line(ids: list[str], features: pd.DataFrame | None) -> str | None:
     """One-line RS-line summary for a list of ids against a features frame.
     Returns None when no usable feature data exists (annotation skipped).
