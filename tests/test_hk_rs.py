@@ -6,6 +6,7 @@ import pytest
 from hk_rs import (
     WEIGHTS_12M,
     WEIGHTS_3M,
+    _extract_rs_line,
     _score_from_kline,
     cache_path,
     compute_rs_table,
@@ -125,3 +126,19 @@ def test_save_and_load_3m_cache_roundtrip(tmp_path):
 
     # 默认 suffix 路径不应找到这个文件
     assert load_cache(_date(2026, 5, 21), tmp_path) is None
+
+
+def test_extract_rs_line_includes_pct_off_high():
+    combined = pd.DataFrame(
+        {
+            "rs_percentile_12m": [85.0, 40.0],
+            "rs_below_ma": [0, 1],
+            "rs_days_below_ma": [0, 5],
+            "rs_frac_below_ma": [0.0, 0.8],
+            "rs_pct_off_high": [0.004, 0.12],
+        },
+        index=pd.Index(["HK.00001", "HK.00002"], name="code"),
+    )
+    out = _extract_rs_line(combined)
+    assert "rs_pct_off_high" in out.columns
+    assert float(out.loc["HK.00001", "rs_pct_off_high"]) == 0.004
