@@ -4,6 +4,7 @@ import pandas as pd
 from rs_line import (
     compute_rs_direction,
     compute_rs_line_features,
+    compute_rs_new_high,
     compute_rs_reversal,
     direction_params_from_config,
     find_anomaly_ids,
@@ -332,3 +333,56 @@ def test_find_anomaly_ids_ignores_split_outside_lookback():
 def test_adr_mult_from_config_default_and_override():
     assert adr_mult_from_config({}) == DEFAULT_ADR_MULT
     assert adr_mult_from_config({"rs_line": {"adr_mult": 2.0}}) == 2.0
+
+
+# ---------------------------------------------------------------------------
+# compute_rs_new_high tests
+# ---------------------------------------------------------------------------
+
+
+def test_rs_new_high_zero_when_at_high():
+    n = 80
+    stock = _kline([100 + i for i in range(n)])   # RS line 单调上行 → 当日即最高
+    bench = _flat_bench(n)
+    out = compute_rs_new_high({"UP": stock}, bench, min_history=42)
+    assert abs(float(out.loc["UP", "rs_pct_off_high"])) < 1e-9
+
+
+def test_rs_new_high_positive_after_pullback():
+    n = 80
+    closes = [100 + i for i in range(n - 5)] + [104, 103, 102, 101, 100]  # 末段回踩
+    stock = _kline(closes)
+    bench = _flat_bench(n)
+    out = compute_rs_new_high({"DOWN": stock}, bench, min_history=42)
+    assert float(out.loc["DOWN", "rs_pct_off_high"]) > 0.0
+
+
+def test_rs_new_high_scale_invariant():
+    n = 80
+    closes = [100 + i for i in range(n - 5)] + [104, 103, 102, 101, 100]
+    stock = _kline(closes)
+    a = compute_rs_new_high({"X": stock}, _flat_bench(n, level=50.0), min_history=42)
+    b = compute_rs_new_high({"X": stock}, _flat_bench(n, level=500.0), min_history=42)
+    assert abs(float(a.loc["X", "rs_pct_off_high"]) - float(b.loc["X", "rs_pct_off_high"])) < 1e-9
+
+
+def test_rs_new_high_split_excluded():
+    n = 80
+    closes = [100 + i for i in range(n - 1)] + [10]   # 末根 ~ -90% 跳变(拆股)
+    stock = _kline(closes)
+    bench = _flat_bench(n)
+    out = compute_rs_new_high({"SPL": stock}, bench, min_history=42)
+    assert "SPL" not in out.index
+
+
+def test_rs_new_high_short_history_excluded():
+    n = 30
+    stock = _kline([100 + i for i in range(n)])
+    out = compute_rs_new_high({"NEW": stock}, _flat_bench(n), min_history=42)
+    assert "NEW" not in out.index
+
+
+def test_rs_new_high_empty_benchmark_returns_schema():
+    out = compute_rs_new_high({"X": _kline([1, 2, 3])}, None)
+    assert list(out.columns) == ["rs_pct_off_high"]
+    assert out.empty

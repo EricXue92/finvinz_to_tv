@@ -155,6 +155,64 @@ def compute_rs_line_features(
     return pd.DataFrame.from_dict(rows, orient="index", columns=_COLUMNS)
 
 
+_NEW_HIGH_COLUMNS = ["rs_pct_off_high"]
+
+
+def compute_rs_new_high(
+    klines: dict[str, pd.DataFrame],
+    benchmark_kline: pd.DataFrame | None,
+    *,
+    min_history: int = DEFAULT_MIN_HISTORY,
+) -> pd.DataFrame:
+    """Per-id distance of the RS line from its own all-history maximum.
+
+    RS line = close / benchmark_close (date-aligned inner join, same shape as
+    compute_rs_line_features). The single output column ``rs_pct_off_high`` is
+    ``(window_max - rs[-1]) / window_max`` over the FULL aligned history, clamped
+    at 0 on the low side (numerical noise). 0.0 == latest bar is the high; larger
+    == further below the high. Scale-invariant (benchmark constant cancels).
+
+    Ids with < ``min_history`` aligned bars, or with a single-bar |return| >=
+    ANOMALY_BAR_THRESHOLD anywhere in the aligned series (split / bad quote that
+    would poison the max), are EXCLUDED — consumers treat missing-from-frame as
+    "unknown". Never raises.
+    """
+    if benchmark_kline is None or getattr(benchmark_kline, "empty", True):
+        return pd.DataFrame(columns=_NEW_HIGH_COLUMNS)
+    bench = (
+        benchmark_kline[["time_key", "close"]]
+        .rename(columns={"close": "_bench"})
+        .dropna()
+    )
+
+    rows: dict[str, float] = {}
+    for tid, df in klines.items():
+        if df is None or df.empty or "close" not in df or "time_key" not in df:
+            continue
+        m = (
+            df[["time_key", "close"]]
+            .dropna()
+            .merge(bench, on="time_key", how="inner")
+            .sort_values("time_key")
+        )
+        if len(m) < min_history:
+            continue
+        rs = m["close"].astype(float) / m["_bench"].astype(float)
+        # Split / bad quote anywhere in the full series would warp the max →
+        # exclude. Window = whole series, so check the whole series.
+        if _has_bar_anomaly(rs, len(rs) - 1):
+            continue
+        window_max = float(rs.max())
+        if window_max <= 0:
+            continue
+        off = (window_max - float(rs.iloc[-1])) / window_max
+        rows[tid] = round(max(off, 0.0), 4)
+
+    if not rows:
+        return pd.DataFrame(columns=_NEW_HIGH_COLUMNS)
+    return pd.DataFrame.from_dict(rows, orient="index", columns=_NEW_HIGH_COLUMNS)
+
+
 def compute_rs_direction(
     klines: dict[str, pd.DataFrame],
     benchmark_kline: pd.DataFrame | None,
