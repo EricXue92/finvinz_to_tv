@@ -32,7 +32,7 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   TV `.txt` stays comma-separated.
 - **Dedup, layered:** (1) within Longs, earlier `config.toml` entry wins; (2) Longs
   union deduped against Leaders (`Longs > Leaders`); (3) cross-day master
-  `eod_seen_{US,HK,IPO,HKIPO}.txt` (`_dedup_seen`) — daily output = within-day
+  `output/state/eod_seen_{US,HK,IPO,HKIPO}.txt` (`_dedup_seen`) — daily output = within-day
   survivors minus master, survivors append. Markets independent; IPO/HKIPO have
   own masters. **RS and Shorts are excluded from all dedup** (re-detect by design).
   Reset masters only by deleting the file.
@@ -75,7 +75,7 @@ local (throttle-prone) k-line fetch.
   scores the cross-day master, writes
   `output/rs_line_audit_<MKT>_<date>{,_drop,_keep_ranked}.txt`, prints the
   report, then **prompts y/N** to prune the drops from
-  `state/eod_seen_{US,HK}.txt` so they can re-qualify on a future EOD run.
+  `output/state/eod_seen_{US,HK}.txt` so they can re-qualify on a future EOD run.
   Confirmed prunes back the master up first as `eod_seen_<MKT>.txt.bak.<stamp>`.
   `--yes` skips the prompt (auto-prune, legacy non-interactive behavior);
   `--dry-run` writes the report + sidecars but does NOT touch the master
