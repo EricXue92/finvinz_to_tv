@@ -65,7 +65,7 @@ adr_mult  = 1.0         # TUNE ⭐ 反转豁免: 5日涨幅 ≥ adr_mult×ADR% �
 # RS New High 强势子清单: 从当日长线侧 survivors 里再筛 RS line 贴近 6 个月高点的票。
 # 云端发布连续列 rs_pct_off_high (= RS line 距全历史最高值的百分比, 0=当日新高);
 # 本地按下面阈值正向精选, 输出 RSNewHigh.txt (独立组, 非 append-only, 不进 dedup master)。
-nh_enabled     = true
+nh_enabled     = false
 nh_tolerance   = 0.02   # TUNE ⭐ rs_pct_off_high ≤ 此值 → 进 RSNewHigh。起步 2%, 按 EOD 分布日志校准
 nh_min_history = 42     # 不足 → unknown, 不纳入
 
