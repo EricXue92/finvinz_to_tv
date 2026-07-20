@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Pre-EOD dispatch of the update_us_rs_3m.yml GH Actions workflow, Tue-Sat
+  08:45 HKT — 75 min before the US EOD slot. GH's own scheduled cron is
+  unreliable (delayed hours / skipped; observed 2026-06-16), so launchd
+  drives it via `gh workflow run` (scripts/trigger_rs_workflow.sh). The
+  workflow's commit step is idempotent, so a double-fire with GH's cron is
+  harmless. The script owns its log (output/launchd_rs_trigger.log).
+
+  Requires `gh auth login` for the account with repo access.
+
+  Install:
+    cp scripts/com.xue.finviz-to-tv.us-rs-3m-trigger.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) \
+        ~/Library/LaunchAgents/com.xue.finviz-to-tv.us-rs-3m-trigger.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.xue.finviz-to-tv.us-rs-3m-trigger</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/xue/momentum-scanner/scripts/trigger_rs_workflow.sh</string>
+        <string>update_us_rs_3m.yml</string>
+        <string>US</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- Tue-Sat 08:45 HKT -->
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/xue/momentum-scanner</string>
+</dict>
+</plist>

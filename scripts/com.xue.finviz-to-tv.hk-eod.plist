@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HK EOD slot: Mon-Fri 20:00 HKT (4h after the 16:00 HKT close so k-line
+  data has finalized — this is the only slot allowed to use today's HK
+  close, see CLAUDE.md "HK data-day rule"). Runs scripts/run_hk_eod.sh
+  which rotates and owns the log (output/launchd_HK.log); no
+  StandardOutPath/StandardErrorPath here for the same NUL-hole reason as
+  the US plist.
+
+  No pmset wake — the Mac is typically awake at 20:00 HKT; if asleep,
+  launchd fires on next wake.
+
+  Install:
+    cp scripts/com.xue.finviz-to-tv.hk-eod.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) \
+        ~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.xue.finviz-to-tv.hk-eod</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/xue/momentum-scanner/scripts/run_hk_eod.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- Mon-Fri 20:00 HKT -->
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/xue/momentum-scanner</string>
+</dict>
+</plist>
