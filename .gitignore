@@ -12,3 +12,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Claude Code machine-local settings (do not commit)
+.claude/settings.local.json
