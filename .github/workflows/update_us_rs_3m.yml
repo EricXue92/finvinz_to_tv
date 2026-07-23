@@ -43,8 +43,11 @@ jobs:
             exit 0
           fi
           git commit -m "chore(us_rs_3m): publish $(date -u +%Y-%m-%d) table"
-          # Retry once with rebase if someone pushed to main during our
-          # ~14-min compute window. The rebase is guaranteed trivial — we
-          # only added a new file in data/us_rs_3m/ — so the second push
-          # succeeds.
-          git push || (git pull --rebase origin main && git push)
+          # Retry with rebase if main moved during our ~14-min compute window.
+          # A concurrent run (the launchd self-trigger + the GH cron kept as
+          # belt-and-suspenders) may have already published today's dated CSV,
+          # so the rebase is an add/add conflict on that file — NOT the trivial
+          # replay this once assumed. Resolve in our favor with -X theirs (in a
+          # rebase, "theirs" is the commit being replayed = our freshly-computed
+          # table) so the push converges instead of failing the job.
+          git push || (git pull --rebase -X theirs origin main && git push)
