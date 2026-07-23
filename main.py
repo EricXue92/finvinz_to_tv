@@ -4,6 +4,7 @@
 import argparse
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -470,6 +471,36 @@ def load_config(config_path: Path) -> dict:
         return tomllib.load(f)
 
 
+# A finviz symbol: 1-6 uppercase alnum, optional .X / -X class suffix (BRK-B,
+# AAC-U). Used to detect the finviz>=2.0.0 row-parse regression below.
+_FINVIZ_TICKER_RE = re.compile(r"[A-Z][A-Z0-9]{0,5}([.\-][A-Z0-9]+)?$")
+
+
+def _finviz_row_shift(rows: list[dict]) -> bool:
+    """Detect the finviz>=2.0.0 row-parse regression.
+
+    Finviz's current screener HTML carries one extra leading cell per data row,
+    so the library zips every value one column to the right of its header: the
+    real ticker lands in the column *after* 'Ticker' (which keeps only the
+    symbol's first letter), the real Market Cap lands one past 'Market Cap', and
+    so on. We detect it from the first row — a single-char 'Ticker' cell whose
+    next cell is itself a full ticker — and correct positionally. A correctly
+    parsed row (real multi-char ticker in 'Ticker', or a genuine 1-char ticker
+    followed by a company *name*) fails the test, so a future library fix
+    self-heals with no code change here.
+    """
+    if not rows or "Ticker" not in rows[0]:
+        return False
+    keys = list(rows[0].keys())
+    vals = list(rows[0].values())
+    i = keys.index("Ticker")
+    return (
+        len(vals) > i + 1
+        and len(str(vals[i])) == 1
+        and bool(_FINVIZ_TICKER_RE.fullmatch(str(vals[i + 1])))
+    )
+
+
 def run_screener(
     filters: list[str],
     signal: str | None = None,
@@ -492,13 +523,26 @@ def run_screener(
         stock_list = Screener(**kwargs)
     except NoResults:
         return []
+
+    rows = stock_list.data
+    shifted = _finviz_row_shift(rows)
+    keys = list(rows[0].keys()) if rows else []
+
+    def cell(stock: dict, col: str) -> str:
+        """Value for logical column `col`, undoing the finviz row shift."""
+        if not shifted:
+            return stock[col]
+        vals = list(stock.values())
+        j = keys.index(col) + 1
+        return vals[j] if j < len(vals) else stock[col]
+
     tickers: list[str] = []
-    for stock in stock_list.data:
-        t = stock["Ticker"]
+    for stock in rows:
+        t = cell(stock, "Ticker")
         tickers.append(t)
         if capture_caps is not None:
             try:
-                capture_caps[t] = parse_number(stock["Market Cap"])
+                capture_caps[t] = parse_number(cell(stock, "Market Cap"))
             except (KeyError, ValueError):
                 pass
     return tickers
@@ -1659,9 +1703,14 @@ def main() -> int:
     morning_modes = {"morning-gap", "hk-morning-gap"}
     if args.mode in eod_modes or args.mode in morning_modes:
         # finviz is the heaviest US dep; raw.githubusercontent.com hosts both
-        # US/HK RS cloud CSVs. Either reaching means general DNS is up.
-        hosts = ["finviz.com", "raw.githubusercontent.com"]
-        if not wait_for_network(hosts):
+        # US/HK RS cloud CSVs; query1.finance.yahoo.com is the yfinance endpoint
+        # — probing it too keeps the pipeline from starting while Yahoo is still
+        # unreachable on a cold-wake link (observed: the machine took ~12 min
+        # after a pmset wake to reach finviz, and yfinance stayed flaky a while
+        # longer, so batch downloads came back empty). settle_seconds rides out
+        # the first-minute flakiness after the handshake succeeds.
+        hosts = ["finviz.com", "raw.githubusercontent.com", "query1.finance.yahoo.com"]
+        if not wait_for_network(hosts, settle_seconds=20.0):
             if args.mode in morning_modes:
                 logger.warning(
                     f"[net-ready] Skipping {args.mode} run — network never came up"

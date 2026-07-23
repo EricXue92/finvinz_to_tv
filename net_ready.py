@@ -32,6 +32,7 @@ def wait_for_network(
     max_wait_seconds: float = 300.0,
     initial_delay: float = 5.0,
     max_delay: float = 30.0,
+    settle_seconds: float = 0.0,
     port: int = 443,
     probe: Callable[[str, int], bool] = _host_reachable,
     sleep: Callable[[float], None] = time.sleep,
@@ -41,6 +42,11 @@ def wait_for_network(
 
     Returns True on success, False on timeout. Caller decides whether a timeout
     is fatal (EOD modes) or a clean-exit (morning-gap modes — see CLAUDE.md).
+
+    A first successful TCP handshake on a cold-wake Wi-Fi link does not mean the
+    link is stable: yfinance batch downloads issued in the next minute can still
+    come back empty. `settle_seconds` sleeps AFTER every host is reachable,
+    before returning, to let the freshly-established route stabilize.
     """
     deadline = monotonic() + max_wait_seconds
     delay = initial_delay
@@ -54,6 +60,11 @@ def wait_for_network(
                     f"[net-ready] Network up after {attempt} attempts "
                     f"({len(hosts)} host(s) reachable)"
                 )
+            if settle_seconds > 0:
+                logger.info(
+                    f"[net-ready] Settling {settle_seconds:.0f}s before starting"
+                )
+                sleep(settle_seconds)
             return True
         remaining = deadline - monotonic()
         if remaining <= 0:
