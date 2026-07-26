@@ -90,6 +90,8 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 
 ### RS New High(强势子清单 — 正向高亮)
 
+> **当前已停用**(`[rs_line] nh_enabled = false`)。US(`main.py`)和 HK(`hk_eod.py`)两处的整个 RS-NH 块都被 `rs_line.nh_is_enabled(config)` 这道闸包着,关闭时不产出 `RSNewHigh.txt` / `HKRSNewHigh.txt`,也不做对应的 Futu/TV 同步。以下描述的是把 `nh_enabled = true` 打开后的行为。
+
 第二遍过滤,挑"强中之强":从当日已选出的**长线侧 survivors** 里,挑出 TraderLion 式 **RS line**(价 ÷ 基准)正贴在或接近其自身 ~6 个月高点的票。输出是一个**独立子清单**(`<date>_RSNewHigh.txt` / `<date>_HKRSNewHigh.txt` + Webull 镜像 + Futu/TV 同步)——不动母清单。
 
 | 方面             | 细节                                                                                                                                                 |
@@ -283,7 +285,7 @@ output/
 
 1. 启动 [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html),登录(默认 `127.0.0.1:11111`)。
 2. 在 Futu PC 客户端手动建这些自定义分组(API 只能改已存在的分组,不能新建):
-   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `RSNewHigh`, `IPO`(US)外加 `HKRSNewHigh`(HK)。
+   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `RSNewHigh`, `IPO`(US)外加 `HKRSNewHigh`(HK)。其中 `RSNewHigh` / `HKRSNewHigh` 对应的 RS New High 功能**当前已停用**(`nh_enabled = false`),重新启用前可先不建这两个分组。
 
 多数 EOD 分组是 append-only——太满时在客户端手动清空(Futu 上限:非交易户 500/组,活跃交易户 2000)。两个 **`RSNewHigh` / `HKRSNewHigh`** 分组是例外:它们 diff-based(每次一 DEL + 一 ADD),跟踪最新一天的强势子清单而非累积。
 
