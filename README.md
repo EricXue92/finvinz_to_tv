@@ -1,16 +1,20 @@
 # 每日选股扫描流水线 (Daily Stock Screener Pipeline)
 
-多数据源的动量 (momentum) 与做空 (short) 筛选器(美股走 Finviz,盘中缺口走 Futu 快照),输出可导入 TradingView / Webull 的自选列表,通过 OpenAPI 自动同步到 Futu(富途牛牛)自定义分组(也可选同步到 TradingView 列表,走其非官方 REST API),并生成每日 CANSLIM 风格的研究简报。方法学基于 Oliver Kell 和 Kristjan Kullamägi。
+一套多数据源的动量(momentum)与做空(short)选股扫描器:美股用 Finviz 选股,盘中缺口取自 Futu 快照。结果导出为可直接导入 TradingView / Webull 的自选列表,并通过 OpenAPI 自动同步到 Futu(富途牛牛)的自定义分组;也可选同步到 TradingView 列表(走其非官方 REST API)。此外每天还生成一份 CANSLIM 风格的研究简报。选股方法主要参考 Oliver Kell 与 Kristjan Kullamägi。
 
-> **状态 (2026-07-26):** 美股 + 港股。美股用 Finviz + yfinance + 一张 12M IBD RS CSV + 一张 3M RS 表。港股用 yfinance 取 k 线 + HSI 历史(最初的 Futu-only 方案被回滚——Futu 免费/Lv1 档把 12 个月历史覆盖率压到了主板全市场的 ~12%)。Futu 仍负责港股市值、条件 RS 触发用的 HSI 实时日涨幅快照,以及自选同步。**百分位 RS 表(美股 3M、港股 12M+3M)和港股长线侧 metrics frame 现在每天在 GitHub Actions 上算好、以 CSV 形式发布到 `data/` 下;本地流水线只负责拉取**(家用 IP 的 yfinance 计算跑到一半就被限流)。两个市场都对 Leaders/RS/Shorts 用 **12M ∩ 3M RS 双闸**(Longs 5 组保持仅 12M),对不足 12 个月的票用**按历史深度分级的 IPO ladder**。港股流水线跑在自己独立的 20:00 HKT 计划槽(美股跑 10:00 HKT)——两者各写各自的分市场日志。每次 EOD 跑完后,wrapper 脚本还会对该市场调用一次 `--mode report`,为当天新发现的长线侧票生成 CANSLIM Markdown + 独立 HTML 简报(后端可选——默认 DeepSeek V4 + Tavily,Anthropic `web_search` 为备选)。
+> **状态(2026-07-26):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 只负责港股市值、条件 RS 触发所需的 HSI 实时日涨幅快照,以及自选同步。
+>
+> **百分位 RS 表(美股 3M、港股 12M+3M)和港股长线侧 metrics frame 每天在 GitHub Actions 上算好,以 CSV 发布到 `data/`;本地流水线只负责拉取**——因为家用 IP 上的 yfinance 计算跑到一半就会被限流。两个市场的 Leaders/RS/Shorts 都走 **12M ∩ 3M RS 双闸**(Longs 5 组只用 12M),历史不足 12 个月的新股则走**按历史深度分级的 IPO ladder**。
+>
+> 港股流水线有自己独立的 20:00 HKT 计划槽,美股则跑在 10:00 HKT,两者各写各自的分市场日志。每个 EOD 跑完后,wrapper 脚本会再对该市场跑一次 `--mode report`,为当天新发现的长线侧个股生成 CANSLIM 简报(Markdown + 独立 HTML)。报告后端可选:默认 DeepSeek V4 + Tavily,备选 Anthropic `web_search`。
 
 ## 筛选器 (Screeners)
 
-所有基于 Finviz 的扫描都用 `ind_stocksonly` 排除 ETF/ETN。Morning Gap(Futu `stock_type=STOCK`)按构造就只含个股。
+所有基于 Finviz 的扫描都加 `ind_stocksonly` 排除 ETF/ETN;Morning Gap 用 Futu `stock_type=STOCK`,天然只含个股。
 
 ### 全局闸门 (long-side)
 
-在 Finviz 屏之后、任何昂贵的 yfinance 工作之前套用。可在 `[settings]` 中配置。
+在 Finviz 选股之后、任何昂贵的 yfinance 计算之前先行套用。阈值均可在 `[settings]` 中配置。
 
 | 闸门                                            | 作用范围                                | 阈值                                                           | 数据源                                                                                                                                                                                                                                                 |
 | ----------------------------------------------- | --------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -30,13 +34,13 @@
 | US Shorts                                                       | `min_rs_percentile_longs` | `min_rs_percentile_3m`                                               |
 | US IPO ladder (≥ 64 天)                                         | —                         | `min_rs_percentile_3m`(用 `np.searchsorted` 对 Fred6725 `raw_score`) |
 
-语义:12M ≥ 90 = "长期领头羊";3M ≥ 90 = "近期仍在领跑"。交集 = "老领头羊还在领跑"。**上面这些 `≥ 90` 是设计意图;权威阈值是 `[settings]` 里的配置值**——每一层都可独立调,任一层设为 `0` 即关闭(例如 Leaders 12M 层的 `min_rs_percentile` 目前是 `0`)。**Longs 5 组保持仅 12M** 是刻意为之——它们本身就有很强的事件过滤(EarningsGap / RVol 放量 / GapUp / 52W 新高 / Top Gainer),再叠 3M 会把 universe 收得过紧。把 `min_rs_percentile_3m = 0` 可关掉整个 3M 层(跳过云端 CSV 拉取)。HK Shorts 和 Morning Gap 不做 RS 闸。
+含义:12M ≥ 90 表示"长期领头羊",3M ≥ 90 表示"近期仍在领跑",两者的交集就是"老牌领头羊至今没掉队"。**这些 `≥ 90` 只是设计意图,真正生效的阈值以 `[settings]` 的配置为准**:每一层都能单独调,设为 `0` 即关闭该层(比如 Leaders 的 12M 层 `min_rs_percentile` 现在就是 `0`)。**Longs 5 组只用 12M 是有意为之**——它们本身的事件过滤已经足够强(EarningsGap / RVol 放量 / GapUp / 52W 新高 / Top Gainer),再叠一层 3M 会把 universe 收得过窄。把 `min_rs_percentile_3m` 设为 `0` 就能关掉整个 3M 层(连云端 CSV 也不再拉取)。HK Shorts 和 Morning Gap 不做 RS 闸。
 
-ADR% 取代了旧的 Finviz `beta > 1.5` 过滤——beta 度量的是多年与大盘的相关性,会把当下正在活跃、其实 in-play 的中/大盘 catalyst 票误排掉。ADR%(Kullamägi 式)直接度量一只股票当下是否在动。
+ADR% 取代了过去的 Finviz `beta > 1.5` 过滤:beta 反映的是多年来与大盘的相关性,容易误杀那些眼下正活跃、真正 in-play 的中大盘催化剂票;而 ADR%(Kullamägi 式)直接衡量一只股票当下的波动幅度。
 
 ### Longs(5 个策略,互斥)
 
-Oliver Kell 的动量/突破 setup。优先级顺序——靠前者胜出,每只 ticker 每天最多出现在一个 Longs 文件里。
+Oliver Kell 的动量/突破 setup。按优先级排序,靠前的策略优先命中,每只 ticker 每天最多进一个 Longs 文件。
 
 | 优先级 | 策略          | Finviz 过滤                                                                                              |
 | ------ | ------------- | -------------------------------------------------------------------------------------------------------- |
@@ -46,13 +50,13 @@ Oliver Kell 的动量/突破 setup。优先级顺序——靠前者胜出,每只
 | 4      | `NewHigh52W`  | Small Cap+, Avg Vol > 500K, Price > $10, New 52W High, Above SMA50 & SMA200                              |
 | 5      | `TopGainers`  | Small Cap+, Avg Vol > 500K, Price > $10, Above SMA50 & SMA200, Signal: Top Gainers                       |
 
-这 5 组同样要过全局的 Dollar Volume / ADR% 闸和 IBD RS 12M ≥ 90。**Longs 不加 3M 层**(事件过滤本身已经在选新鲜动量)。
+这 5 组同样要过全局的 Dollar Volume / ADR% 闸以及 IBD RS 12M ≥ 90。**Longs 不加 3M 层**——事件过滤本身选的就是新鲜动量。
 
 ### Leaders(5 个策略,合并)
 
-站上 SMA50 + SMA200 的长期趋势领头羊。五个策略共用同一套基础过滤,只在 perf 窗口上不同。
+站上 SMA50 与 SMA200 的长期趋势领头羊。五个策略共用同一套基础过滤,只在 perf 窗口上有所不同。
 
-**基础过滤:** Small Cap+, Avg Vol > 500K, Price > $10, Above SMA50, Above SMA200,外加全局闸 **含 12M ∩ 3M RS 双闸**(阈值见 `[settings]`)。
+**基础过滤:** Small Cap+, Avg Vol > 500K, Price > $10, Above SMA50, Above SMA200,外加全局闸(**含 12M ∩ 3M RS 双闸**,阈值见 `[settings]`)。
 
 | 策略              | Performance 阈值  |
 | ----------------- | ----------------- |
@@ -64,9 +68,9 @@ Oliver Kell 的动量/突破 setup。优先级顺序——靠前者胜出,每只
 
 ### US Shorts
 
-Kullamägi 抛物线 blow-off setup。两阶段:先做 Finviz Ownership 预过滤,再在一次共享下载上做 yfinance 后处理。
+Kullamägi 抛物线 blow-off setup。分两阶段:先用 Finviz Ownership 预过滤,再在一次共享下载上做 yfinance 后处理。
 
-**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M(Finviz 3 个月均量), Cap > $300M。然后 **IBD RS 12M ∩ 3M ≥ 90**(在 yfinance batch 之前先砍掉)。
+**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M(Finviz 3 个月均量), Cap > $300M;随后套 **IBD RS 12M ∩ 3M ≥ 90**,在进 yfinance batch 之前先筛掉一批。
 
 **Phase 2 — yfinance + Futu 市值快照,顺序:performance → dollar volume → ADR% → 连续上涨天数。**
 
@@ -80,21 +84,21 @@ Kullamägi 抛物线 blow-off setup。两阶段:先做 Finviz Ownership 预过�
 | Performance — Small Cap ($300M–$2B) | 2、3 或 4 周内 Up 300%+                  | yfinance                                             |
 | 连续上涨天数                        | ≥ 3 个绿天(若开市则排除今日未完成的 bar) | yfinance                                             |
 
-市值取自 Futu(无截断),而非 Finviz 那种粗糙的 `"6.96M"`/`"1.23B"` 字符串——后者在 $2B / $10B 边界附近容易分错桶。
+市值取自 Futu 的精确数值,而不是 Finviz 那种 `"6.96M"`/`"1.23B"` 的粗略字符串——后者在 $2B / $10B 分界附近很容易分错桶。
 
 ### RS — Relative Strength(条件触发)
 
-Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1.2% 时才运行**(`check_market_down`;阈值在代码里)——挑出在弱市里扛住的股票。
+Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 和 QQQ 当日都跌 ≥ 1.2% 时才运行**(`check_market_down`,阈值写在代码里)。
 
 过滤:Small Cap+, Avg Vol > 500K, Price > $10, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 12M ∩ 3M ≥ 90**(双闸)。
 
 ### RS-line 趋势标注(仅日志)
 
-云端脚本发布 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma`(TraderLion 式 **RS line** = 价 ÷ 基准 vs 它自己的 EMA21)进 `data/{us_rs_3m,hk_rs}/<date>.csv`。EOD 日志会*标注*那些 RS line 持续在其均线下方(走弱)的长线侧 survivors。这是**仅日志**(不影响 `.txt` / dedup);跨日 master 的手动裁剪走 `--mode rs-line-audit`。配置:`[rs_line]`。
+云端脚本会把 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` 三列写进 `data/{us_rs_3m,hk_rs}/<date>.csv`(TraderLion 式 **RS line** = 价 ÷ 基准,再与它自己的 EMA21 比较)。EOD 日志据此*标注*那些 RS line 持续处于均线下方(走弱)的长线侧 survivors。这一步**只写日志**,不影响 `.txt` 输出,也不进 dedup;跨日 master 的手动裁剪走 `--mode rs-line-audit`。配置见 `[rs_line]`。
 
 ### IPO(自动收集的 sidecar)
 
-那些通过了某个 Longs/Leaders/RS Finviz 屏、但被 yfinance 因日线历史不足而丢弃的长线候选——典型就是最近几个月内 IPO 的票。候选集再过一条按历史深度分级的 ladder(镜像 HK `filter_hk_ipo_candidates`,实现在 `us_ipo.filter_us_ipo_candidates`),这样第 30 天的 IPO 仍能浮现,而第 200 天的 IPO 被卡到几乎完整的长线基线:
+收集那些通过了某个 Longs/Leaders/RS 的 Finviz 筛选、却因日线历史不足被 yfinance 丢弃的长线候选——典型就是最近几个月刚上市的新股。这批候选再过一道按历史深度分级的 ladder(实现于 `us_ipo.filter_us_ipo_candidates`,与 HK 的 `filter_hk_ipo_candidates` 对应),这样上市第 30 天的新股仍能浮现,而上市第 200 天的则要通过几乎完整的长线基线:
 
 | 闸门         | 阈值                             | 条件                                          |
 | ------------ | -------------------------------- | --------------------------------------------- |
@@ -108,19 +112,19 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 | above SMA200 | —                                | 仅当 ≥ 200 天                                 |
 | 3M RS        | ≥ 90(对 Fred6725 raw_score 分布) | 仅当 ≥ 64 天                                  |
 
-阈值对齐 US Longs 基线,历史攒满后能无缝晋升。3M RS 闸比较特殊:IPO 候选不在 Fred6725 universe 里(< 120 天),故 ladder 在本地算它的分数,再用 `np.searchsorted` 对 Fred6725 `raw_score` 分布排名——"这只 IPO 如果今天加入 universe 会排在哪"。当 `min_rs_percentile_3m = 0` 时整个 RS 闸跳过。
+阈值对齐 US Longs 基线,历史攒满后即可无缝晋升。3M RS 闸的处理比较特殊:IPO 候选(上市不足 120 天)不在 Fred6725 universe 里,所以 ladder 先在本地算出它的分数,再用 `np.searchsorted` 放到 Fred6725 `raw_score` 分布里排名——相当于问"这只新股要是今天加入 universe,会排在什么位置"。`min_rs_percentile_3m = 0` 时整个 RS 闸跳过。
 
-- 输出:`output/TV/US/<date>_IPO.txt` + Webull 镜像 + Futu 分组 `IPO`
-- 跨日 master:`output/state/eod_seen_IPO.txt`(独立于 `eod_seen_US.txt`,这样一只晋升的 ticker 会在第一个合格日落进它本该的长线侧分组)
-- 保护:出现在 12M Fred6725 RS 表里的 ticker 有 ≥ 12mo 历史、不可能是新 IPO——这类丢弃会被标为瞬时的 yfinance 缺口,在 ladder 之前从 IPO 桶里排除。
+- 输出:`output/TV/US/<date>_IPO.txt`,加 Webull 镜像与 Futu 分组 `IPO`。
+- 跨日 master:`output/state/eod_seen_IPO.txt`,独立于 `eod_seen_US.txt`——这样一只新股攒够历史后,会在第一个合格日直接落进它本该属于的长线侧分组。
+- 一道保护:出现在 12M Fred6725 RS 表里的 ticker 必有 ≥ 12 个月历史,不可能是新股;这类丢弃只是 yfinance 的瞬时缺口,会在 ladder 之前先从 IPO 桶里剔除。
 
 ### HK Shorts
 
-方法学与 US Shorts 相同,数据源为 HKEX 股票列表(~2,400 只主板股)+ yfinance,阈值用 HKD 原生(cap ≥ HKD 300M,avg vol ≥ 1M 股/天 [独有下限——长线侧用 500K],dollar volume ≥ HKD 100M,ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 市值桶对应 perf 50/200/300%,连续 3+ 上涨天数;输出 `HKEX:NNN` 格式、去掉前导零)。2026-05-06 重新启用。
+方法学与 US Shorts 一致,数据源换成 HKEX 股票列表(约 2,400 只主板股)加 yfinance,阈值全部用 HKD 原生值:cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空侧独有的下限,长线侧是 500K),dollar volume ≥ HKD 100M,ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三档市值分别对应 perf 50/200/300%,连续 3 天以上上涨;输出 `HKEX:NNN` 格式并去掉前导零。已于 2026-05-06 重新启用。
 
 ### HK 长线侧:EarningsGap / HighVolume / GapUp / Leaders / RS
 
-五个策略,数据源为 **yfinance**(k 线 + HSI)加 **Futu**(市值 + HSI 实时日涨幅)。最初的方案是 Futu-only,但 Futu 免费/Lv1 档把 12 个月历史覆盖率压到了主板全市场的 ~12%——IBD 12 个月 RS 算法没东西可排——于是长线 k 线改走 yfinance,后者对几乎每只 ticker 都能稳定给出 2+ 年数据。方法学对齐 US Longs/Leaders/RS,阈值用 HKD 原生。Universe = HKEX 主板股(~2,400)。输出:`output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt`,`HKEX:NNN` TradingView 格式(去前导零——TV 会静默拒绝 `HKEX:0148` 这种)。
+五个策略,数据源为 **yfinance**(k 线 + HSI)加 **Futu**(市值 + HSI 实时日涨幅)。最初是 Futu-only 方案,但 Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史,IBD 12 个月 RS 算法几乎无票可排,于是长线 k 线改走 yfinance——它对几乎每只 ticker 都能稳定提供 2 年以上数据。方法学对齐 US 的 Longs/Leaders/RS,阈值用 HKD 原生值,universe 为 HKEX 主板股(约 2,400 只)。输出 `output/TV/HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,RS}.txt`,采用 `HKEX:NNN` 的 TradingView 格式(去前导零,否则 TV 会静默拒绝 `HKEX:0148` 这类写法)。
 
 **统一基线 (`[hk_settings]`):**
 
@@ -134,7 +138,7 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 | Above SMA50 & SMA200 | 两者                  | 对齐 US `ta_sma50_pa` + `ta_sma200_pa`,套在每个长线侧过滤上                                                     |
 | RS Percentile        | 12M ∩ 3M 双闸(vs HSI) | **12M ≥ 80, 3M ≥ 90**(`min_rs_percentile_longs` / `min_rs_percentile_longs_3m`);IBD 算法 vs HSI,非 Fred6725 CSV |
 
-**各策略闸门**(优先级顺序——靠前者胜出,每只 ticker 每天最多出现在一个 HK 长线侧文件里)。五个都继承上面的统一基线(现在含 SMA50 & SMA200 趋势过滤),故下面列的附加闸门是叠加在其之上:
+**各策略闸门**(按优先级排序,靠前的优先命中,每只 ticker 每天最多进一个 HK 长线侧文件)。五个策略都继承上面的统一基线(现已含 SMA50 & SMA200 趋势过滤),所以下表列的是叠加在基线之上的附加闸门:
 
 | 优先级 | 策略           | 附加闸门                                                                     |
 | ------ | -------------- | ---------------------------------------------------------------------------- |
@@ -144,15 +148,15 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 | 4      | HK Leaders     | 满足任一(4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150)                  |
 | 5      | HK RS          | 基线之外无附加;**条件触发**——仅当 HSI 日涨幅 ≤ −1.2%(`hsi_rs_trigger`)时运行 |
 
-**HK RS 算法**:与美股同样的 `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` 加权季度收益公式(再加一层 3M),基准换成 HSI(`^HSI`),百分位在 HK 主板 universe 上排名。**云端在 GitHub Actions 上计算**(12M + 3M + RS-line 列合成一张 CSV)并发布到 `data/hk_rs/<date>.csv`;`hk_rs.py` 负责拉取并拆分(拉不到就往回退 ≤ 3 天)。HK 长线侧 **metrics frame** 同样云端发布到 `data/hk_metrics/`,通过 `hk_metrics.build_hk_metrics_cloud` 拉取,云端拉不到时回退到本地实时 yfinance 抓取。
+**HK RS 算法**:沿用美股那套 `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` 加权季度收益公式(再叠一层 3M),基准换成 HSI(`^HSI`),百分位在 HK 主板 universe 内排名。**计算放在 GitHub Actions 云端**,把 12M、3M 和 RS-line 三部分合成一张 CSV 发布到 `data/hk_rs/<date>.csv`;`hk_rs.py` 负责拉取并拆分,拉不到就往前回退最多 3 天。HK 长线侧的 **metrics frame** 同样云端发布到 `data/hk_metrics/`,由 `hk_metrics.build_hk_metrics_cloud` 拉取,云端取不到时再回退到本地实时 yfinance 抓取。
 
-**OpenD 软依赖**:HK 长线侧 k 线 + HSI 历史来自 yfinance,所以 OpenD 挂掉不会清空 .txt 文件。OpenD 挂掉时:市值变 NaN(cap≥HK$300M 基线会把所有票砍掉),条件 RS 的 HSI 触发快照跳过,Futu 同步跳过——但排序与写文件逻辑本身能跑完。OpenD 在线时流水线完整填充。每个策略写进它自己的 append-only Futu 分组(`HKEarningsGap`、`HKHighVolume`、`HKGapUp`、`HKLeaders`、`HKRS`)——首次运行前须在 Futu PC 客户端手动建好。
+**OpenD 软依赖**:HK 长线侧的 k 线与 HSI 历史都来自 yfinance,所以 OpenD 挂掉不会清空 .txt 文件。OpenD 不在线时,市值取不到会变 NaN(cap ≥ HK$300M 的基线会把所有票筛掉),条件 RS 的 HSI 触发快照和 Futu 同步都跳过,但排序与写文件本身照常跑完;OpenD 在线时则完整填充。每个策略写进各自的 append-only Futu 分组(`HKEarningsGap`、`HKHighVolume`、`HKGapUp`、`HKLeaders`、`HKRS`),这些分组须在首次运行前于 Futu PC 客户端手动建好。
 
 ### HK IPO(自动收集的 sidecar)
 
-镜像 US IPO sidecar。HKEX 主板 universe 里 yfinance 返回了、但 `< 253 行日线收盘`(不足以做 IBD 12 个月 RS 计算)的 ticker——几乎都是刚进 yfinance、还没攒满 12 个月数据的 HK 新股。
+与 US IPO sidecar 对应。收集 HKEX 主板 universe 里 yfinance 有返回、但日线收盘不足 253 行(不够做 IBD 12 个月 RS 计算)的 ticker——几乎都是刚进 yfinance、还没攒满 12 个月数据的 HK 新股。
 
-- **基线按历史深度分级条件触发。** 每个闸门只在 ticker 攒够数据时才启用——真正第 1 天的 IPO 仍能浮现,而 200 天大的 IPO 被卡到几乎完整的长线基线:
+- **基线按历史深度分级、逐档启用。** 每道闸门只在 ticker 攒够数据后才生效——上市第 1 天的新股仍能浮现,上市 200 天的则要通过几乎完整的长线基线:
 
   | 闸门         | 阈值         | 条件                          |
   | ------------ | ------------ | ----------------------------- |
@@ -165,15 +169,15 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
   | above SMA200 | —            | 仅当 ≥ 200 交易日             |
   | RS           | —            | 总是跳过(按定义就是 sub-12mo) |
 
-  ADR 阈值对齐长线侧的 3.5% 下限——让 IPO 基线与 HK 长线侧其余部分一致,历史攒到 253 行时晋升无缝。
+  ADR 阈值对齐长线侧的 3.5% 下限,让 IPO 基线与 HK 长线侧的其余部分保持一致,历史攒满 253 行时可无缝晋升。
 
 - **输出:** `output/TV/HK/<date>_IPO.txt`,镜像到 Webull。
-- **独立跨日 master:** `output/state/eod_seen_HKIPO.txt`。一旦 IPO 攒到 ≥253 行,它就从 IPO 桶里掉出、在第一个合格日落进本该的长线侧分组(长线侧 master `eod_seen_HK.txt` 是分开的,不交叉污染)。
+- **独立跨日 master:** `output/state/eod_seen_HKIPO.txt`。一旦新股攒到 ≥ 253 行,就从 IPO 桶里退出,在第一个合格日落进本该属于的长线侧分组(长线侧 master `eod_seen_HK.txt` 与之分开,互不污染)。
 - **Futu 分组:** append-only `HKIPO`——首次运行前须在 Futu PC 客户端手动建好。
 
 ### Morning Gap(盘前 + 盘中,每日 9 次扫描)
 
-两阶段盘中缺口扫描器。**盘前(-20/-10/-5 分钟)**写 `MorningGapPre.txt`。**盘后(+5/+10/+15/+20/+25/+30 分钟)**写 `MorningGap.txt`,并加一层盘中累计量闸门——挑出在开盘头 30 分钟就已经把当日全天均量跑完的股票,这是 Kullamägi 判断 catalyst 驱动的机构买入的信号。
+两阶段盘中缺口扫描器。**盘前(开盘前 20/10/5 分钟)**写 `MorningGapPre.txt`;**盘后(开盘后 5/10/15/20/25/30 分钟)**写 `MorningGap.txt`,并多加一层盘中累计量闸门,专挑那些开盘头 30 分钟就已经跑完当日全天均量的股票——按 Kullamägi 的判断,这是催化剂驱动、机构进场的信号。
 
 **Phase 1 — Futu 快照 discovery(取代 Finviz `ta_topgainers`——后者按常规盘 perf 排名、错过盘前 gapper):**
 
@@ -195,11 +199,11 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 | 20 日 Avg Volume | ≥ 500K 股/天                             | ✓    | ✓    |
 | 盘中累计量       | 自 9:30 ET 起的 RTH 累计量 ≥ 20 日均日量 | —    | ✓    |
 
-需要 FutuOpenD 运行,且有 US Lv1 BBO 实时报价权限。没有它,Phase 1 discovery 和盘后量过滤都返回空——没有 Finviz 兜底。每次扫描若浮现*新*票(今天早些扫描里没见过的)会推一条 ntfy 通知。
+需要 FutuOpenD 在线,并具备 US Lv1 BBO 实时报价权限;否则 Phase 1 discovery 和盘后量过滤都会返回空,且没有 Finviz 兜底。每轮扫描一旦发现*新*票(当天更早的扫描里没出现过),就推一条 ntfy 通知。
 
 ## 每日 CANSLIM 报告
 
-每次 EOD 跑完后,`--mode report --market {us,hk}` 读取当天带日期的长线侧 `.txt` 文件,按分组优先级排序,每市场上限 30 只,调用所配置的 LLM 后端为每只 ticker 生成 CANSLIM 风格的基本面 + 展望简报。输出:`output/Reports/<date>_{us,hk}.md` 和一个自包含的 `<date>_{us,hk}.html`(内联 CSS、无外部依赖——双击即可在任何浏览器打开)。
+每次 EOD 跑完后,`--mode report --market {us,hk}` 会读取当天带日期的长线侧 `.txt` 文件,按分组优先级排序、每个市场上限 30 只,再调用所配置的 LLM 后端,为每只 ticker 生成 CANSLIM 风格的基本面加展望简报。输出为 `output/Reports/<date>_{us,hk}.md`,以及一个自包含的 `<date>_{us,hk}.html`(CSS 内联、无外部依赖,双击即可在任意浏览器打开)。
 
 **后端(`[report] backend`,大小写不敏感;两者都走 Anthropic Python SDK):**
 
@@ -220,11 +224,11 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 | **排除**          | US Shorts, HK Shorts, Morning Gap——技术/盘中打法,基本面不驱动入场。                                                                                                                                                                                                                     |
 | **成本区间**      | DeepSeek + Tavily ~$0.5/天/市场(默认,便宜约 80%);Anthropic 原生 `web_search` ~$1–2/天/市场。                                                                                                                                                                                            |
 
-**配置:** 把后端密钥放进 `.env`(拷 `.env.example`)——默认 DeepSeek 后端需 `DEEPSEEK_API_KEY` + `TAVILY_API_KEY`,Anthropic 后端需 `ANTHROPIC_API_KEY`。wrapper 脚本(`scripts/run_eod.sh` / `scripts/run_hk_eod.sh`)在报告步之前 `source .env`;交互式运行时 `report/state.py` 也会自动从项目根加载 `.env`。
+**配置:** 把后端密钥写进 `.env`(可从 `.env.example` 拷一份):默认的 DeepSeek 后端需要 `DEEPSEEK_API_KEY` + `TAVILY_API_KEY`,Anthropic 后端需要 `ANTHROPIC_API_KEY`。wrapper 脚本(`scripts/run_eod.sh` / `scripts/run_hk_eod.sh`)会在报告步之前 `source .env`;交互式运行时 `report/state.py` 也会自动从项目根加载 `.env`。
 
 ### 盘前 catalyst 报告
 
-一个**独立**的短报告,当盘前扫描发现新的 US gapper 时从 morning-gap 路径 **spawn 出的 detached 子进程**(`[morning_gap_catalyst]`)。它绝不能阻塞 morning-gap 进程,无论 `[report] backend` 设成什么都**固定用 DeepSeek + Tavily**,且只读 JSON 快照 sidecar(不调 Futu / yfinance)。输出:`output/Reports/<date>_us_premarket.md`,跨 −20/−10 两次扫描追加(上限 `max_tickers_per_run`,默认 10;每只 ticker 最多 `max_search_calls` = 3 次搜索)。
+一份**独立**的短报告。当盘前扫描发现新的 US gapper 时,由 morning-gap 路径 **spawn 出一个 detached 子进程**来生成(`[morning_gap_catalyst]`),绝不能阻塞 morning-gap 主进程。无论 `[report] backend` 配成什么,它都**固定用 DeepSeek + Tavily**,且只读 JSON 快照 sidecar(不碰 Futu / yfinance)。输出为 `output/Reports/<date>_us_premarket.md`,在开盘前 20、10 两次扫描间累加(上限 `max_tickers_per_run`,默认 10;每只 ticker 最多搜索 `max_search_calls` = 3 次)。
 
 ## Dedup(去重)
 
@@ -257,13 +261,13 @@ output/
     └── hk_rs_rating_<date>.csv      # HK RS 云端 CSV 的本地缓存(12M + 3M, vs HSI)
 ```
 
-每次运行都为每个分组写一个全新的带日期 `.txt`(为空时写 0 字节文件)。结果为空时 Futu 同步会**跳过**,这样休市日不会清掉已有分组。
+每次运行都会为每个分组写一个全新的带日期 `.txt`(结果为空时写 0 字节文件)。结果为空时 Futu 同步会**跳过**,以免在休市日清掉已有分组。
 
 **TradingView ticker 格式:** US 分组用 `NASDAQ:AAPL` / `NYSE:WMT` / `AMEX:GLD`(Finviz 派生)。HK 分组用 `HKEX:NNN` 并**去掉前导零**——TradingView 会静默拒绝 `HKEX:0148` 这种,必须是 `HKEX:148`。≥ 1000 的代码(4 位)原样写:`HKEX:1810`(小米)、`HKEX:9988`(阿里)。< 1000 的代码去掉补位:`HKEX:148`(凯基)、`HKEX:522`(ASMPT)、`HKEX:700`(腾讯)。
 
 ## Futu 自动同步
 
-在 `config.toml` 配 `[futu]`。同步 hook 在每次自选写成功后触发——失败只 warning,绝不阻塞 `.txt` 输出。
+在 `config.toml` 里配 `[futu]`。同步 hook 会在每次自选写成功后触发,失败只记 warning,绝不阻塞 `.txt` 输出。
 
 **一次性设置:**
 
@@ -275,11 +279,11 @@ output/
 
 ## TradingView 自动同步(可选,`tv_sync.py`)
 
-`[tv_sync]`(默认 **`enabled = false`**)把同一批自选同步到 TradingView 列表,走其**非官方 REST API**,用 `sessionid` cookie 认证。凭证读取顺序:先 env(`TV_SESSIONID`, `TV_SESSIONID_SIGN`),再 `~/.config/momentum-scanner/tv_cookie.json`。18 个列表须先在 TV 网页手动建好(名字区分大小写、精确匹配)——找不到的名字会 warning 并跳过该列表。与 Futu 同样的软失败契约(cookie 过期绝不阻塞 `.txt` 输出)。Append-only 语义镜像 `[futu].append_only_groups`;注意 TV 把 `MorningGap` 保留为独立列表(Futu 那边并入 `EarningsGap`)。
+`[tv_sync]`(默认 **`enabled = false`**)把同一批自选同步到 TradingView 列表,走其**非官方 REST API**,用 `sessionid` cookie 认证。凭证读取顺序:先看环境变量(`TV_SESSIONID`、`TV_SESSIONID_SIGN`),再看 `~/.config/momentum-scanner/tv_cookie.json`。18 个列表须先在 TV 网页手动建好(名字区分大小写、精确匹配),找不到的名字会记 warning 并跳过。软失败契约与 Futu 一致——cookie 过期也绝不阻塞 `.txt` 输出。Append-only 语义沿用 `[futu].append_only_groups`;注意 TV 把 `MorningGap` 保留为独立列表,而 Futu 那边并入了 `EarningsGap`。
 
 ## 推送通知 (ntfy)
 
-Morning-gap 扫描在**新**票(今天早些扫描里没见过的)出现时推一条 [ntfy.sh](https://ntfy.sh) 通知。在 `config.toml` 配 `[notify]`;在 ntfy iOS/Android app 里订阅该 topic。
+Morning-gap 扫描一旦出现**新**票(当天更早的扫描里没见过的),就推一条 [ntfy.sh](https://ntfy.sh) 通知。在 `config.toml` 里配 `[notify]`,并在 ntfy 的 iOS/Android app 里订阅对应 topic。
 
 ## 安装 (Setup)
 
@@ -294,11 +298,11 @@ uv run main.py --mode report --market hk --date YYYY-MM-DD   # 回填某一天
 uv run main.py --mode rs-line-audit --market both    # 按 RS-line 趋势给跨日 master 打分,提示裁剪(手动)
 ```
 
-> `--mode eod`(裸)仍会 US + HK 一起跑,但计划槽用分市场的 `us-eod` / `hk-eod`(10:00 HKT 时 HK bar 未完成)。
+> 不带后缀的 `--mode eod` 仍会 US、HK 一起跑,但计划槽用分市场的 `us-eod` / `hk-eod`(10:00 HKT 时 HK 的当日 bar 还没收完)。
 
 ## 自动化(macOS launchd + pmset)
 
-两个每日 EOD 槽(按收盘拆分)、两个盘中 morning-gap 扫描器、两个 RS-workflow 自触发。各写各自的日志到 `output/` 下:
+两个每日 EOD 槽(按收盘时间拆分)、两个盘中 morning-gap 扫描器、两个 RS-workflow 自触发,各自把日志写到 `output/` 下:
 
 | 槽             | 触发                                 | Mode             | Plist                                         |
 | -------------- | ------------------------------------ | ---------------- | --------------------------------------------- |
@@ -309,9 +313,9 @@ uv run main.py --mode rs-line-audit --market both    # 按 RS-line 趋势给跨�
 | US RS trigger  | Tue–Sat 08:45 HKT(`gh workflow run`) | —                | `com.xue.finviz-to-tv.us-rs-3m-trigger.plist` |
 | HK RS trigger  | Mon–Fri 18:45 HKT(`gh workflow run`) | —                | `com.xue.finviz-to-tv.hk-rs-trigger.plist`    |
 
-所有 plist 都放在 `~/Library/LaunchAgents/`(源拷贝在 `scripts/`)。两个 RS trigger 在每个 EOD 前 **75 分钟**派发云端 RS/metrics workflow,因为 GitHub 的计划 cron 不可靠(观察到延迟数小时 / 被跳过);workflow 的 commit 步是幂等的,所以双重触发(GH cron + launchd)无害。
+所有 plist 都放在 `~/Library/LaunchAgents/`,源文件副本在 `scripts/`。两个 RS trigger 会在每个 EOD 前 **75 分钟**派发云端 RS/metrics workflow——因为 GitHub 自带的计划 cron 不可靠(观察到延迟数小时,甚至被跳过);好在 workflow 的 commit 步是幂等的,GH cron 与 launchd 双重触发也无害。
 
-10:00 HKT 槽落在 EDT 和 EST 两种情况下的美股收盘之后,且在每日上游 RS Rating commit 之后。20:00 HKT 槽在 HK 收盘(16:00 HKT)后留了 4 小时余量给 k 线数据定稿。US 槽用 `--mode us-eod`(刻意跳过 HK——10:00 HKT 时 HK 才开市 30 分钟、今日 k 线 bar 未完成)。每个 EOD 步成功后,wrapper 脚本会软失败地调一次 `--mode report --market {us,hk}`,让当天 CANSLIM 简报在同一窗口产出——那里失败不影响 EOD 退出码。
+10:00 HKT 槽落在美股收盘之后(EDT、EST 两种夏令时都覆盖),也在每日上游 RS Rating commit 之后。20:00 HKT 槽在 HK 收盘(16:00 HKT)后留了 4 小时余量,等 k 线数据定稿。US 槽用 `--mode us-eod`,刻意跳过 HK——10:00 HKT 时 HK 才开市 30 分钟,当日 k 线 bar 还没收完。每个 EOD 步成功后,wrapper 脚本会以软失败方式调一次 `--mode report --market {us,hk}`,让当天的 CANSLIM 简报在同一窗口产出;这一步失败不影响 EOD 退出码。
 
 ```bash
 # US 槽
@@ -326,12 +330,12 @@ launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist
 sudo uv run scripts/schedule_morning_gap_wakes.py    # 排一次性唤醒(每周重跑)
 ```
 
-morning-gap 脚本在每次触发时自校验 ET 时间,窗口外干净退出。
+morning-gap 脚本每次触发都会自校验 ET 时间,不在窗口内就直接干净退出。
 
 ## 导入 (Importing)
 
-- **TradingView**:Watchlist → "Import list..." → 选最新的 `output/TV/{US,HK}/<date>_*.txt`。HK ticker 写成不带前导零(`HKEX:148`,不是 `HKEX:0148`)——TradingView 会静默拒绝补位形式。
-- **Webull**:Watchlist → "Upload as File" → 从 `output/Webull/{US,HK}/` 选对应文件(换行分隔;逗号格式会被静默截断)。
+- **TradingView**:Watchlist → "Import list..." → 选最新的 `output/TV/{US,HK}/<date>_*.txt`。HK ticker 一律不带前导零(写 `HKEX:148` 而非 `HKEX:0148`),否则 TradingView 会静默拒绝。
+- **Webull**:Watchlist → "Upload as File" → 从 `output/Webull/{US,HK}/` 选对应文件(换行分隔,逗号格式会被静默截断)。
 
 ## 配置 (Configuration)
 
