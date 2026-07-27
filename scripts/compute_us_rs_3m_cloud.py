@@ -29,9 +29,7 @@ import tomllib  # noqa: E402
 from rs_rating import fetch_rs_table  # noqa: E402
 from rs_line import (  # noqa: E402
     compute_rs_line_features,
-    compute_rs_new_high,
     is_enabled,
-    new_high_params_from_config,
     params_from_config,
 )
 from us_rs_3m import (  # noqa: E402
@@ -114,9 +112,6 @@ def main() -> int:
         feats = compute_rs_line_features(klines, spy_kline, **params_from_config(_cfg))
         table = table.join(feats, how="left")
         logger.info(f"[Cloud RS 3M] RS-line features merged for {len(feats)} tickers")
-        nh = compute_rs_new_high(klines, spy_kline, **new_high_params_from_config(_cfg))
-        table = table.join(nh, how="left")
-        logger.info(f"[Cloud RS 3M] RS-new-high column merged for {len(nh)} tickers")
 
     # 5. Coverage guard.
     coverage = len(table) / len(universe) if universe else 0

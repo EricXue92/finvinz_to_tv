@@ -128,17 +128,18 @@ def test_save_and_load_3m_cache_roundtrip(tmp_path):
     assert load_cache(_date(2026, 5, 21), tmp_path) is None
 
 
-def test_extract_rs_line_includes_pct_off_high():
+def test_extract_rs_line_pulls_ma_columns_and_drops_legacy():
     combined = pd.DataFrame(
         {
             "rs_percentile_12m": [85.0, 40.0],
             "rs_below_ma": [0, 1],
             "rs_days_below_ma": [0, 5],
             "rs_frac_below_ma": [0.0, 0.8],
-            "rs_pct_off_high": [0.004, 0.12],
+            "rs_pct_off_high": [0.004, 0.12],  # legacy column in older CSVs — must be ignored
         },
         index=pd.Index(["HK.00001", "HK.00002"], name="code"),
     )
     out = _extract_rs_line(combined)
-    assert "rs_pct_off_high" in out.columns
-    assert float(out.loc["HK.00001", "rs_pct_off_high"]) == 0.004
+    assert list(out.columns) == ["rs_below_ma", "rs_days_below_ma", "rs_frac_below_ma"]
+    assert "rs_pct_off_high" not in out.columns
+    assert int(out.loc["HK.00002", "rs_days_below_ma"]) == 5

@@ -80,20 +80,6 @@ local (throttle-prone) k-line fetch.
   `--yes` skips the prompt (auto-prune, legacy non-interactive behavior);
   `--dry-run` writes the report + sidecars but does NOT touch the master
   (no prompt, no backup). Manual, operator-triggered; not on the launchd schedule.
-- **RS New High sub-list (positive highlight, the inverse of RS-line trend):**
-  cloud scripts also publish `rs_pct_off_high` (= RS line's distance below its
-  own all-history ~6mo max; 0 = at the high) into `data/{us_rs_3m,hk_rs}/<date>.csv`.
-  EOD filters the day's **long-side survivors** (US Longs+Leaders / HK Longs+Leaders;
-  **RS group and Shorts excluded**) to those within `nh_tolerance` of the high and
-  writes a separate `<date>_{RSNewHigh,HKRSNewHigh}.txt` (+ Webull mirror + Futu/TV
-  sync). Threshold is **local-side** (`[rs_line] nh_tolerance`, default 0.02) — band
-  changes never refetch klines; each run logs the `<=1%/<=2%/<=5%` distribution for
-  calibration. **Unknown** (missing column/ticker, short history) is **EXCLUDED**,
-  not kept — the opposite of the RS-gate missing→KEPT policy. **No own cross-day
-  master** (pure subset of already-deduped output; re-detected daily like RS/Shorts).
-  Futu groups `RSNewHigh` / `HKRSNewHigh` are diff-based (**not** in
-  `append_only_groups`) and must be hand-created in the client. Spec:
-  `docs/superpowers/specs/2026-06-30-rs-new-high-filter-design.md`.
 
 ## Futu sync
 
@@ -104,13 +90,14 @@ Ticker format: US `AAPL`→`US.AAPL`, HK `522`→`HK.00522` (5-digit). The 17 cu
 groups must be created by hand in the client (API can't create groups).
 
 **Gotchas (do not regress):**
+
 - TCP probe `_opend_reachable` (1.5s) before `OpenQuoteContext` — without it the
   SDK retries forever on `ECONNREFUSED`. **Do not remove.**
 - `get_market_snapshot` has no `change_rate` — derive from `(last_price -
-  prev_close_price) / prev_close_price`. `pre_/after_change_rate` do exist.
+prev_close_price) / prev_close_price`. `pre_/after_change_rate` do exist.
 - `suspension` is a string (`"N/A"`), not bool — use bool `delisting` instead.
-- HK long-side data fetch hard-depends on OpenD (Futu *sync* being soft-fail does
-  not make the *fetch* soft).
+- HK long-side data fetch hard-depends on OpenD (Futu _sync_ being soft-fail does
+  not make the _fetch_ soft).
 
 ## Scheduling (launchd, HKT)
 

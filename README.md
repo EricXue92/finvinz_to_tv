@@ -88,25 +88,9 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 
 过滤:Small Cap+, Avg Vol > 500K, Price > $10, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 12M ∩ 3M ≥ 90**(双闸)。
 
-### RS New High(强势子清单 — 正向高亮)
+### RS-line 趋势标注(仅日志)
 
-> **当前已停用**(`[rs_line] nh_enabled = false`)。US(`main.py`)和 HK(`hk_eod.py`)两处的整个 RS-NH 块都被 `rs_line.nh_is_enabled(config)` 这道闸包着,关闭时不产出 `RSNewHigh.txt` / `HKRSNewHigh.txt`,也不做对应的 Futu/TV 同步。以下描述的是把 `nh_enabled = true` 打开后的行为。
-
-第二遍过滤,挑"强中之强":从当日已选出的**长线侧 survivors** 里,挑出 TraderLion 式 **RS line**(价 ÷ 基准)正贴在或接近其自身 ~6 个月高点的票。输出是一个**独立子清单**(`<date>_RSNewHigh.txt` / `<date>_HKRSNewHigh.txt` + Webull 镜像 + Futu/TV 同步)——不动母清单。
-
-| 方面             | 细节                                                                                                                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **作用范围**     | US Longs + Leaders,HK Longs + Leaders。**RS 组和 Shorts 排除**(RS-NH 不适用于做空 setup)。                                                           |
-| **信号**         | `rs_pct_off_high` = `(window_max − rs_now) / window_max`,`window_max` 是 RS line 在全部可用(~6mo)历史里的最大值。`0` = RS line 今天创新高;越大越弱。 |
-| **区间**         | `0 ≤ rs_pct_off_high ≤ nh_tolerance` 则保留(`[rs_line] nh_tolerance`,默认 **0.02** = 距高点 2% 以内)。                                               |
-| **计算拆分**     | 连续列 `rs_pct_off_high` 在**云端**(GitHub Actions)计算并发布进 `data/{us_rs_3m,hk_rs}/<date>.csv`;阈值在**本地**套用。改区间不会重拉 k 线。         |
-| **Unknown 处理** | 缺列 / 缺 ticker / `< nh_min_history`(42 根)→ **排除**(正向精选——新高无法确认就不纳入)。这与 RS 闸 缺失→保留 的策略相反。                            |
-| **Dedup**        | **无自己的跨日 master**——它是已去重长线侧输出的纯子集,故每天重新检测(像 RS 组和 Shorts 一样)。                                                       |
-| **校准日志**     | 每次跑都记录 `≤1% / ≤2% / ≤5%` 分布(及 unknown 计数),以便按真实数据调 `nh_tolerance`。                                                               |
-
-**互补信号 — RS-line 趋势标注:** 同一批云端脚本还发布 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma`(RS line vs 它自己的 EMA21)。EOD 日志会*标注*那些 RS line 持续在其均线下方的长线侧 survivors——是 RS New High 的反面(走弱而非领跑)。这是**仅日志**(不影响 `.txt` / dedup);跨日 master 的手动裁剪走 `--mode rs-line-audit`。配置:`[rs_line]`。
-
-**Futu 分组 `RSNewHigh` / `HKRSNewHigh`** 是 diff-based(非 append-only),首次运行前须在 Futu 客户端手动建好。
+云端脚本发布 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma`(TraderLion 式 **RS line** = 价 ÷ 基准 vs 它自己的 EMA21)进 `data/{us_rs_3m,hk_rs}/<date>.csv`。EOD 日志会*标注*那些 RS line 持续在其均线下方(走弱)的长线侧 survivors。这是**仅日志**(不影响 `.txt` / dedup);跨日 master 的手动裁剪走 `--mode rs-line-audit`。配置:`[rs_line]`。
 
 ### IPO(自动收集的 sidecar)
 
@@ -254,8 +238,8 @@ Oliver Kell 的相对强度打法。**只有当 SPY _和_ QQQ 当日都跌 ≥ 1
 ```
 output/
 ├── TV/                        # 逗号分隔,供 TradingView "Import list..."
-│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,RSNewHigh,IPO,MorningGapPre,MorningGap}.txt
-│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,HKRSNewHigh,IPO,HKMorningGap}.txt
+│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap}.txt
 ├── Webull/                    # 换行分隔镜像,供 Webull "Upload as File"
 │   ├── US/<date>_*.txt
 │   └── HK/<date>_*.txt
@@ -285,9 +269,9 @@ output/
 
 1. 启动 [FutuOpenD](https://openapi.futunn.com/futu-api-doc/intro/intro.html),登录(默认 `127.0.0.1:11111`)。
 2. 在 Futu PC 客户端手动建这些自定义分组(API 只能改已存在的分组,不能新建):
-   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `RSNewHigh`, `IPO`(US)外加 `HKRSNewHigh`(HK)。其中 `RSNewHigh` / `HKRSNewHigh` 对应的 RS New High 功能**当前已停用**(`nh_enabled = false`),重新启用前可先不建这两个分组。
+   `EarningsGap`, `HighVolume`, `GapUp`, `NewHigh52W`, `TopGainers`, `Leaders`, `Shorts`, `RS`, `IPO`(US)。
 
-多数 EOD 分组是 append-only——太满时在客户端手动清空(Futu 上限:非交易户 500/组,活跃交易户 2000)。两个 **`RSNewHigh` / `HKRSNewHigh`** 分组是例外:它们 diff-based(每次一 DEL + 一 ADD),跟踪最新一天的强势子清单而非累积。
+多数 EOD 分组是 append-only——太满时在客户端手动清空(Futu 上限:非交易户 500/组,活跃交易户 2000)。
 
 ## TradingView 自动同步(可选,`tv_sync.py`)
 

@@ -2052,32 +2052,6 @@ def main() -> int:
             if _s:
                 logger.info(f"[RS] {_s}")
 
-        # --- RS New High strong sub-list (US) ---
-        # Positive highlight filter: of today's long-side survivors, keep those
-        # whose RS line sits within nh_tolerance of its 6-month high (cloud
-        # column rs_pct_off_high). Pure subset of already-deduped output → no
-        # own cross-day master; re-detected daily like RS/Shorts. Unknown
-        # (missing column/ticker, short history) is EXCLUDED, not kept.
-        if rs_line.nh_is_enabled(config):
-            nh_candidates = set()
-            for _t in written_longs.values():
-                nh_candidates.update(_t)
-            if config.get("leaders"):
-                nh_candidates.update(sorted_leaders)
-            nh_tol = rs_line.nh_tolerance_from_config(config)
-            nh_selected, nh_stats = rs_line.select_rs_new_high(
-                sorted(nh_candidates), rs_table_3m, nh_tol
-            )
-            dated = us_output_dir / f"{today}_RSNewHigh.txt"
-            write_watchlist(nh_selected, dated, fmt)
-            logger.info(
-                f"[RS-NH] {rs_line.format_rs_new_high_summary(nh_stats)} "
-                f"(tol={nh_tol:.0%}) -> {dated}"
-            )
-            _write_webull(nh_selected, dated, output_dir)
-            _futu_sync(config, "rs_new_high", nh_selected, "US")
-            _tv_sync(config, "rs_new_high", nh_selected, "US")
-
         # --- Write IPO list ---
         # Tickers dropped by yfinance across the long-side pipeline are
         # passed through a depth-conditional ladder (mirror of HK's
