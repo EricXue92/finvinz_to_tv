@@ -2,7 +2,7 @@
 
 一套多数据源的动量(momentum)与做空(short)选股扫描器:美股用 Finviz 选股,盘中缺口取自 Futu 快照。结果导出为可直接导入 TradingView / Webull 的自选列表,并通过 OpenAPI 自动同步到 Futu(富途牛牛)的自定义分组;也可选同步到 TradingView 列表(走其非官方 REST API)。此外每天还生成一份 CANSLIM 风格的研究简报。选股方法主要参考 Oliver Kell 与 Kristjan Kullamägi。
 
-> **状态(2026-07-26):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 只负责港股市值、条件 RS 触发所需的 HSI 实时日涨幅快照,以及自选同步。
+> **状态(2026-07-31):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 在港股侧只负责市值和条件 RS 触发所需的 HSI 实时日涨幅快照,在美股侧负责盘中缺口 discovery 与 Shorts 市值快照,外加两个市场的自选分组同步。
 >
 > **百分位 RS 表(美股 3M、港股 12M+3M)和港股长线侧 metrics frame 每天在 GitHub Actions 上算好,以 CSV 发布到 `data/`;本地流水线只负责拉取**——因为家用 IP 上的 yfinance 计算跑到一半就会被限流。两个市场的 Leaders/RS/Shorts 都走 **12M ∩ 3M RS 双闸**(Longs 5 组只用 12M),历史不足 12 个月的新股则走**按历史深度分级的 IPO ladder**。
 >
@@ -102,7 +102,7 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 | 闸门         | 阈值                             | 条件                                          |
 | ------------ | -------------------------------- | --------------------------------------------- |
-| min history  | ≥ 20 交易日                      | 总是(砍掉第 1-19 天——量太吵)                  |
+| min history  | ≥ 20 交易日                      | 总是(前 19 天成交量噪声太大,直接剔除)         |
 | cap          | ≥ $300M                          | 总是(cap 来自 screener pass 时抓的 Finviz 值) |
 | price        | ≥ $10                            | 总是                                          |
 | avg vol      | ≥ 500K 股/天                     | 仅当 ≥ 20 天                                  |
@@ -120,7 +120,7 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 ### HK Shorts
 
-方法学与 US Shorts 一致,数据源换成 HKEX 股票列表(约 2,400 只主板股)加 yfinance,阈值全部用 HKD 原生值:cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空侧独有的下限,长线侧是 500K),dollar volume ≥ HKD 100M,ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三档市值分别对应 perf 50/200/300%,连续 3 天以上上涨;输出 `HKEX:NNN` 格式并去掉前导零。已于 2026-05-06 重新启用。
+方法学与 US Shorts 一致,数据源换成 HKEX 股票列表(约 2,400 只主板股)加 yfinance,阈值全部用 HKD 原生值:cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空侧独有的下限,长线侧是 500K),dollar volume ≥ HKD 100M,ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三档市值分别对应 perf 50/200/300%,连续上涨 ≥ 3 天;输出 `HKEX:NNN` 格式并去掉前导零。已于 2026-05-06 重新启用。
 
 ### HK 长线侧:EarningsGap / HighVolume / GapUp / Leaders / RS
 
@@ -177,7 +177,7 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 ### Morning Gap(盘前 + 盘中,每日 9 次扫描)
 
-两阶段盘中缺口扫描器。**盘前(开盘前 20/10/5 分钟)**写 `MorningGapPre.txt`;**盘后(开盘后 5/10/15/20/25/30 分钟)**写 `MorningGap.txt`,并多加一层盘中累计量闸门,专挑那些开盘头 30 分钟就已经跑完当日全天均量的股票——按 Kullamägi 的判断,这是催化剂驱动、机构进场的信号。
+两阶段盘中缺口扫描器。**盘前(开盘前 20/10/5 分钟)**写 `MorningGapPre.txt`;**盘后(开盘后 5/10/15/20/25/30 分钟)**写 `MorningGap.txt`,并多加一层盘中累计量闸门,专挑开盘头 30 分钟成交量就已追平 20 日均日量的股票——按 Kullamägi 的判断,这是催化剂驱动、机构进场的信号。
 
 **Phase 1 — Futu 快照 discovery(取代 Finviz `ta_topgainers`——后者按常规盘 perf 排名、错过盘前 gapper):**
 
@@ -207,34 +207,34 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 **后端(`[report] backend`,大小写不敏感;两者都走 Anthropic Python SDK):**
 
-| 后端                              | Web 上下文                             | 模型                                  | 密钥                                  |
-| --------------------------------- | -------------------------------------- | ------------------------------------- | ------------------------------------- |
-| `deepseek`(**shipped 默认**)      | 手动 tool-loop → Tavily 搜索           | `deepseek-v4-pro`(Anthropic 兼容端点) | `DEEPSEEK_API_KEY` + `TAVILY_API_KEY` |
-| `anthropic`(密钥未设时的代码兜底) | 原生 `web_search_20250305` server tool | `claude-sonnet-4-6`                   | `ANTHROPIC_API_KEY`                   |
+| 后端                                      | Web 上下文                             | 模型                                  | 密钥                                  |
+| ----------------------------------------- | -------------------------------------- | ------------------------------------- | ------------------------------------- |
+| `deepseek`(**shipped 默认**)              | 手动 tool-loop → Tavily 搜索           | `deepseek-v4-pro`(Anthropic 兼容端点) | `DEEPSEEK_API_KEY` + `TAVILY_API_KEY` |
+| `anthropic`(`backend` 未配置时的代码默认) | 原生 `web_search_20250305` server tool | `claude-sonnet-4-6`                   | `ANTHROPIC_API_KEY`                   |
 
-| 方面              | 细节                                                                                                                                                                                                                                                                                    |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **输入 (US)**     | 8 个带日期文件:`EarningsGap`, `HighVolume`, `Leaders`, `GapUp`, `NewHigh52W`, `IPO`, `TopGainers`, `RS`                                                                                                                                                                                 |
-| **输入 (HK)**     | 6 个带日期文件:`EarningsGap`, `HighVolume`, `Leaders`, `GapUp`, `IPO`, `RS`(无 NewHigh52W / TopGainers)                                                                                                                                                                                 |
-| **上限 & 优先级** | 30 只/市场(`MAX_TICKERS_PER_REPORT`);`EarningsGap > HighVolume > Leaders > GapUp > NewHigh52W > IPO > TopGainers > RS`。溢出的列在 "Truncated" 尾部小节。                                                                                                                               |
-| **结构化字段**    | yfinance:Market Cap, Price, EPS(最新季 + YoY), Revenue(最新季 + YoY), **3 年年度 YoY**(两者), PE, ROE, Inst. Hold %, 最近财报日。RS 百分位取自缓存的 IBD/HSI 表。                                                                                                                       |
-| **定性小节**      | 模型生成,每只 ticker 最多 2 次 web 搜索(`web_search_max_uses` / `max_search_calls`):公司速览, 基本面/财报, 竞争力, 政策/政府支持, 新产品/催化剂, 风险点, 综合判断。                                                                                                                     |
-| **双语**          | 快照字段保持英文/数字;定性分析用简体中文。                                                                                                                                                                                                                                              |
-| **软失败**        | 与 Futu-sync 契约一致——wrapper 退出码只反映 EOD 步。缺后端密钥(DeepSeek 缺 `DEEPSEEK_API_KEY`/`TAVILY_API_KEY`,Anthropic 缺 `ANTHROPIC_API_KEY`)→ 该步跳过并 warning,`.txt` 产物不受影响。4xx 配置错误快速失败,给出独立的 `[配置错误]` 占位;5xx/429/超时重试一次后回退到 `[分析失败]`。 |
-| **排除**          | US Shorts, HK Shorts, Morning Gap——技术/盘中打法,基本面不驱动入场。                                                                                                                                                                                                                     |
-| **成本区间**      | DeepSeek + Tavily ~$0.5/天/市场(默认,便宜约 80%);Anthropic 原生 `web_search` ~$1–2/天/市场。                                                                                                                                                                                            |
+| 方面              | 细节                                                                                                                                                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **输入 (US)**     | 8 个带日期文件:`EarningsGap`, `HighVolume`, `Leaders`, `GapUp`, `NewHigh52W`, `IPO`, `TopGainers`, `RS`                                                                                                                                                                                                   |
+| **输入 (HK)**     | 6 个带日期文件:`EarningsGap`, `HighVolume`, `Leaders`, `GapUp`, `IPO`, `RS`(无 NewHigh52W / TopGainers)                                                                                                                                                                                                   |
+| **上限 & 优先级** | 30 只/市场(`MAX_TICKERS_PER_REPORT`);`EarningsGap > HighVolume > Leaders > GapUp > NewHigh52W > IPO > TopGainers > RS`。溢出的列在 "Truncated" 尾部小节。                                                                                                                                                 |
+| **结构化字段**    | US 基本面 **SEC EDGAR companyfacts 优先**、yfinance 逐字段兜底(缓存于 `output/state/edgar_cache/`);HK 直接用 yfinance。字段:Market Cap, Price, EPS(最新季 + YoY), Revenue(最新季 + YoY), **5 年年度 YoY + 最近 4 季 YoY 轨迹**(两者), PE, ROE, Inst. Hold %, 最近财报日。RS 百分位取自缓存的 IBD/HSI 表。 |
+| **定性小节**      | 模型生成,每只 ticker 最多 2 次 web 搜索(`web_search_max_uses` / `max_search_calls`):公司速览, 基本面/财报, 竞争力, 政策/政府支持, 新产品/催化剂, 风险点, 综合判断。                                                                                                                                       |
+| **双语**          | 快照字段保持英文/数字;定性分析用简体中文。                                                                                                                                                                                                                                                                |
+| **软失败**        | 与 Futu-sync 契约一致——wrapper 退出码只反映 EOD 步。缺后端密钥(DeepSeek 缺 `DEEPSEEK_API_KEY`/`TAVILY_API_KEY`,Anthropic 缺 `ANTHROPIC_API_KEY`)→ 该步跳过并 warning,`.txt` 产物不受影响。4xx 配置错误快速失败,给出独立的 `[配置错误]` 占位;5xx/429/超时重试一次后回退到 `[分析失败]`。                   |
+| **排除**          | US Shorts, HK Shorts, Morning Gap——技术/盘中打法,基本面不驱动入场。                                                                                                                                                                                                                                       |
+| **成本区间**      | DeepSeek + Tavily ~$0.5/天/市场(默认,便宜约 80%);Anthropic 原生 `web_search` ~$1–2/天/市场。                                                                                                                                                                                                              |
 
 **配置:** 把后端密钥写进 `.env`(可从 `.env.example` 拷一份):默认的 DeepSeek 后端需要 `DEEPSEEK_API_KEY` + `TAVILY_API_KEY`,Anthropic 后端需要 `ANTHROPIC_API_KEY`。wrapper 脚本(`scripts/run_eod.sh` / `scripts/run_hk_eod.sh`)会在报告步之前 `source .env`;交互式运行时 `report/state.py` 也会自动从项目根加载 `.env`。
 
 ### 盘前 catalyst 报告
 
-一份**独立**的短报告。当盘前扫描发现新的 US gapper 时,由 morning-gap 路径 **spawn 出一个 detached 子进程**来生成(`[morning_gap_catalyst]`),绝不能阻塞 morning-gap 主进程。无论 `[report] backend` 配成什么,它都**固定用 DeepSeek + Tavily**,且只读 JSON 快照 sidecar(不碰 Futu / yfinance)。输出为 `output/Reports/<date>_us_premarket.md`,在开盘前 20、10 两次扫描间累加(上限 `max_tickers_per_run`,默认 10;每只 ticker 最多搜索 `max_search_calls` = 3 次)。
+一份**独立**的短报告。当盘前扫描发现新的 US gapper 时,由 morning-gap 路径 **spawn 出一个 detached 子进程**来生成(`[morning_gap_catalyst]`),绝不能阻塞 morning-gap 主进程。无论 `[report] backend` 配成什么,它都**固定用 DeepSeek + Tavily**,且只读 JSON 快照 sidecar(不碰 Futu / yfinance)。输出为 `output/Reports/<date>_us_premarket.md`,盘前任一扫描(-20/-10/-5)发现新票都会触发,报告在多次扫描间累加(单次上限 `max_tickers_per_run`,默认 10;每只 ticker 最多搜索 `max_search_calls` = 3 次)。写完后再推一条 "Catalyst Report Ready" 的 ntfy 通知,附上报告路径。
 
 ## Dedup(去重)
 
 - **Longs 内部** — 5 个策略互斥(优先级 `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`)。
 - **跨组** — 长线侧优先级 `Longs > Leaders > RS`。
-- **跨日 master** — `output/state/eod_seen_{US,IPO}.txt`。每只 ticker 首次出现时进且仅进一个长线侧分组;后续运行只发*新*票。IPO 有自己的 master,这样一只晋升的票之后能出现在它本该的分组。删文件即重置。
+- **跨日 master** — `output/state/eod_seen_{US,HK,IPO,HKIPO}.txt`。每只 ticker 首次出现时进且仅进一个长线侧分组;后续运行只发*新*票。两个市场互相独立;IPO/HKIPO 各有自己的 master,这样一只晋升的票之后能出现在它本该属于的分组。删文件即重置。
 - **不进跨日 master**:Shorts, Morning Gap。对它们来说重新检测才有意义。
 
 ## 输出 (Output)
@@ -250,15 +250,18 @@ output/
 ├── Reports/                   # 每日 CANSLIM 简报(Markdown + 独立 HTML)+ 盘前 catalyst 报告
 │   ├── <date>_{us,hk}.{md,html}
 │   └── <date>_us_premarket.md
-└── state/                     # 跨日 "seen" master、RS 表缓存、morning-gap 每日 seen
+└── state/                     # 跨日 "seen" master、RS 表缓存、morning-gap 每日 seen、EDGAR 缓存
     ├── eod_seen_US.txt        # US 长线侧 master(5 Longs 组 + Leaders + RS)
     ├── eod_seen_HK.txt        # HK 长线侧 master(EarningsGap/HighVolume/GapUp/Leaders/RS)
     ├── eod_seen_IPO.txt       # US IPO sidecar(独立——就绪时晋升进 US 分组)
     ├── eod_seen_HKIPO.txt     # HK IPO sidecar(独立——就绪时晋升进 HK 分组)
-    ├── morning_gap_seen_{pre,post}_<date>.txt  # 每日 MorningGap 去重(盘前/盘后,每日自动重置)
+    ├── morning_gap_seen_{pre,post}_<date>.txt   # US MorningGap 每日去重(盘前/盘后,每日自动重置)
+    ├── hk_morning_gap_seen_post_<date>.txt      # HK MorningGap 每日去重(仅盘后,与 US 独立)
+    ├── ntfy_last_seen.txt           # ntfy 订阅器的断点续传进度(Unix 时间戳)
     ├── rs_rating_<date>.csv         # US 12M IBD RS 百分位缓存(来自 Fred6725/rs-log)
     ├── rs_rating_3m_<date>.csv      # US 3M RS 云端 CSV 的本地缓存(raw_score + 百分位, vs SPY)
-    └── hk_rs_rating_<date>.csv      # HK RS 云端 CSV 的本地缓存(12M + 3M, vs HSI)
+    ├── hk_rs_rating_<date>.csv      # HK RS 云端 CSV 的本地缓存(12M + 3M, vs HSI)
+    └── edgar_cache/                 # SEC EDGAR companyfacts 缓存(CANSLIM 报告用)
 ```
 
 每次运行都会为每个分组写一个全新的带日期 `.txt`(结果为空时写 0 字节文件)。结果为空时 Futu 同步会**跳过**,以免在休市日清掉已有分组。
@@ -283,7 +286,13 @@ output/
 
 ## 推送通知 (ntfy)
 
-Morning-gap 扫描一旦出现**新**票(当天更早的扫描里没见过的),就推一条 [ntfy.sh](https://ntfy.sh) 通知。在 `config.toml` 里配 `[notify]`,并在 ntfy 的 iOS/Android app 里订阅对应 topic。
+Morning-gap 扫描通过 [ntfy.sh](https://ntfy.sh) 推送三类通知:
+
+- **常规**——本轮出现**新**票(当天同阶段更早的扫描里没见过的)时推一条,正文列出全部入选票;
+- **PROMOTED(高优先级)**——盘前见过的 gapper 在盘后首次通过累计量闸门(盘前缺口被 RTH 成交量确认)时单独推一条;
+- **Catalyst Report Ready**——盘前 catalyst 报告写完后推一条,附报告路径。
+
+在 `config.toml` 里配 `[notify]`,并在 ntfy 的 iOS/Android app 里订阅对应 topic。Mac 本机还有一个常驻 launchd 订阅器,把同一 topic 的消息桥接到 macOS 通知中心(见「自动化」一节)。
 
 ## 安装 (Setup)
 
@@ -302,7 +311,7 @@ uv run main.py --mode rs-line-audit --market both    # 按 RS-line 趋势给跨�
 
 ## 自动化(macOS launchd + pmset)
 
-两个每日 EOD 槽(按收盘时间拆分)、两个盘中 morning-gap 扫描器、两个 RS-workflow 自触发,各自把日志写到 `output/` 下:
+两个每日 EOD 槽(按收盘时间拆分)、两个盘中 morning-gap 扫描器、两个 RS-workflow 自触发,外加一个常驻 ntfy 订阅器和一个每周唤醒重排,各自把日志写到 `output/` 下:
 
 | 槽             | 触发                                 | Mode             | Plist                                         |
 | -------------- | ------------------------------------ | ---------------- | --------------------------------------------- |
@@ -312,8 +321,10 @@ uv run main.py --mode rs-line-audit --market both    # 按 RS-line 趋势给跨�
 | HK Morning Gap | Mon–Fri × 6 offsets(9:40–10:30 HKT)  | `hk-morning-gap` | `com.xue.finviz-to-tv.hk-morning-gap.plist`   |
 | US RS trigger  | Tue–Sat 08:45 HKT(`gh workflow run`) | —                | `com.xue.finviz-to-tv.us-rs-3m-trigger.plist` |
 | HK RS trigger  | Mon–Fri 18:45 HKT(`gh workflow run`) | —                | `com.xue.finviz-to-tv.hk-rs-trigger.plist`    |
+| ntfy 订阅器    | 常驻(KeepAlive)                      | —                | `com.xue.finviz-to-tv.ntfy-subscriber.plist`  |
+| 唤醒重排       | 每周日 18:00(root LaunchDaemon)      | —                | `com.xue.finviz-to-tv.schedule-wakes.plist`   |
 
-所有 plist 都放在 `~/Library/LaunchAgents/`,源文件副本在 `scripts/`。两个 RS trigger 会在每个 EOD 前 **75 分钟**派发云端 RS/metrics workflow——因为 GitHub 自带的计划 cron 不可靠(观察到延迟数小时,甚至被跳过);好在 workflow 的 commit 步是幂等的,GH cron 与 launchd 双重触发也无害。
+除唤醒重排装在 `/Library/LaunchDaemons/`(`pmset` 需要 root)外,其余 plist 都放在 `~/Library/LaunchAgents/`,源文件副本在 `scripts/`。ntfy 订阅器把 morning-gap topic 的每条消息桥接到 macOS 通知中心,并用 `output/state/ntfy_last_seen.txt` 记录进度,睡眠/重启后只补发漏掉的消息。两个 RS trigger 会在每个 EOD 前 **75 分钟**派发云端 RS/metrics workflow——因为 GitHub 自带的计划 cron 不可靠(观察到延迟数小时,甚至被跳过);好在 workflow 的 commit 步是幂等的,GH cron 与 launchd 双重触发也无害。
 
 10:00 HKT 槽落在美股收盘之后(EDT、EST 两种夏令时都覆盖),也在每日上游 RS Rating commit 之后。20:00 HKT 槽在 HK 收盘(16:00 HKT)后留了 4 小时余量,等 k 线数据定稿。US 槽用 `--mode us-eod`,刻意跳过 HK——10:00 HKT 时 HK 才开市 30 分钟,当日 k 线 bar 还没收完。每个 EOD 步成功后,wrapper 脚本会以软失败方式调一次 `--mode report --market {us,hk}`,让当天的 CANSLIM 简报在同一窗口产出;这一步失败不影响 EOD 退出码。
 
@@ -327,7 +338,7 @@ launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.hk-eod.plist
 
 # Morning-gap(独立 plist,90 条日历项:Mon–Fri × 9 offsets × EDT/EST)
 launchctl load ~/Library/LaunchAgents/com.xue.finviz-to-tv.morning-gap.plist
-sudo uv run scripts/schedule_morning_gap_wakes.py    # 排一次性唤醒(每周重跑)
+sudo uv run scripts/schedule_morning_gap_wakes.py    # 排一次性唤醒(首次装机手动跑;之后由 schedule-wakes LaunchDaemon 每周日 18:00 自动重排)
 ```
 
 morning-gap 脚本每次触发都会自校验 ET 时间,不在窗口内就直接干净退出。
