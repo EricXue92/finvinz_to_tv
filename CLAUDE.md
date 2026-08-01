@@ -40,6 +40,10 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   touches** `eod_seen_*`, `ntfy_last_seen.txt`, `edgar_cache/`, logs.
 - **HK data-day rule:** only the 20:00 HKT slot uses today's close; earlier runs
   trim today's incomplete bar (and skip the conditional HSI-trigger RS group).
+  Weekends map to the previous Friday (`hk_effective_data_day`): Friday's close
+  is settled, so weekend reruns fetch Friday's cloud metrics/RS CSVs at full
+  coverage, don't trim, and don't skip the HSI-trigger group. Weekday holidays
+  have no calendar — they 404 into the yfinance fallback as before.
 - **Report** is soft-fail (wrapper exit code reflects only the EOD step). Shorts /
   HK Shorts / Morning Gap are excluded from it.
 - **Catalyst report (pre-market)** is a **detached subprocess** spawned

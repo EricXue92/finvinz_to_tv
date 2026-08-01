@@ -310,3 +310,32 @@ def test_hk_rs_line_group_note():
     assert _rs_line_group_note(["HK.00001"], tline) == ""   # none below → no note
     assert _rs_line_group_note(["HK.00001"], None) == ""     # no table → no note
     assert _rs_line_group_note([], tline) == ""              # empty group → no note
+
+
+# ── hk_effective_data_day ────────────────────────────────────────────────
+
+def test_effective_data_day_weekend_maps_to_friday():
+    from datetime import datetime, date
+    from zoneinfo import ZoneInfo
+    from hk_eod import hk_effective_data_day
+    hkt = ZoneInfo("Asia/Hong_Kong")
+    # 2026-08-01 = Saturday, 2026-08-02 = Sunday → both map to Fri 2026-07-31
+    sat = datetime(2026, 8, 1, 12, 33, tzinfo=hkt)
+    sun = datetime(2026, 8, 2, 9, 0, tzinfo=hkt)
+    assert hk_effective_data_day(sat) == date(2026, 7, 31)
+    assert hk_effective_data_day(sun) == date(2026, 7, 31)
+
+
+def test_effective_data_day_weekday_unchanged():
+    from datetime import datetime, date
+    from zoneinfo import ZoneInfo
+    from hk_eod import hk_effective_data_day
+    hkt = ZoneInfo("Asia/Hong_Kong")
+    # Weekdays return the calendar date regardless of time-of-day — pre-20:00
+    # incompleteness is handled by the bar-trim/use_yesterday logic, not here.
+    fri_early = datetime(2026, 7, 31, 8, 0, tzinfo=hkt)
+    fri_late = datetime(2026, 7, 31, 20, 5, tzinfo=hkt)
+    mon = datetime(2026, 8, 3, 12, 0, tzinfo=hkt)
+    assert hk_effective_data_day(fri_early) == date(2026, 7, 31)
+    assert hk_effective_data_day(fri_late) == date(2026, 7, 31)
+    assert hk_effective_data_day(mon) == date(2026, 8, 3)

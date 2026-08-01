@@ -23,6 +23,22 @@ HKEX_SECURITIES_URL = (
 )
 
 
+def hk_effective_data_day(now_hkt: datetime) -> date:
+    """Map a run timestamp to the HK data day whose settled close it should use.
+
+    Weekends map to the previous Friday: Friday's close is fully settled, so a
+    weekend rerun can consume the cloud-published Friday artifacts (metrics +
+    RS tables) at full coverage instead of 404-ing into the throttled local
+    yfinance fallback. Weekdays return the calendar date unchanged — pre-20:00
+    incompleteness stays the job of the bar-trim/use_yesterday logic, and
+    weekday holidays (no holiday calendar here) still 404 into the existing
+    fallback path."""
+    d = now_hkt.date()
+    if d.weekday() >= 5:  # Sat=5 / Sun=6 → previous Friday
+        return d - timedelta(days=d.weekday() - 4)
+    return d
+
+
 def fetch_hkex_equities() -> list[str]:
     """Download the HKEX securities xlsx, parse with openpyxl, return Main
     Board equity stock codes as 5-digit strings (e.g., '00700')."""
@@ -898,8 +914,17 @@ def run_hk_eod(
     # skip the local ~2,400-ticker yfinance download (which throttles to
     # ~66% coverage). On any miss, fall back to the local live fetch — a
     # stale frame would carry wrong gap_pct/rvol, so there is no walk-back.
-    today_d = date.today()
-    metrics = build_hk_metrics_cloud(output_dir, today_d)
+    # On weekends the "data day" is the previous Friday (settled close), so
+    # a weekend rerun still hits the cloud path at full coverage.
+    hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    data_day = hk_effective_data_day(hkt_now)
+    weekend_run = data_day != hkt_now.date()
+    if weekend_run:
+        logger.info(
+            f"[HK Longs] Non-trading day ({hkt_now.date().isoformat()}); "
+            f"using settled data from {data_day.isoformat()}"
+        )
+    metrics = build_hk_metrics_cloud(output_dir, data_day)
 
     if metrics is not None:
         logger.info(
@@ -947,8 +972,9 @@ def run_hk_eod(
 
         # Trim incomplete today's bar if running before 20:00 HKT (only the
         # local-fetch path needs this — cloud metrics are always settled-close).
-        hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
-        use_yesterday = hkt_now.hour < 20
+        # On a weekend there is no today's bar and Friday's close is settled,
+        # so the trim (and the HSI-trigger RS-group skip it implies) is skipped.
+        use_yesterday = (not weekend_run) and hkt_now.hour < 20
         if use_yesterday and klines:
             today_d_local = hkt_now.date()
             trimmed = 0
@@ -987,13 +1013,15 @@ def run_hk_eod(
     # ~50% 覆盖), 让百分位分布只建立在半个宇宙上。"missing -> passthrough" 策略
     # 两层都遵守; 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
     from hk_rs import filter_by_rs, build_hk_rs_tables
-    rs_table_12m, rs_table_3m, rs_line_tbl = build_hk_rs_tables(output_dir, today_d)
+    rs_table_12m, rs_table_3m, rs_line_tbl = build_hk_rs_tables(output_dir, data_day)
 
     # --- Apply per-strategy filters ---
     # The conditional RS group keys off HSI's "today" day-change. When
     # use_yesterday is True the live HSI snapshot reflects a state that
     # doesn't match the trimmed k-line data, so the trigger is meaningless
-    # — skip the RS group in that case.
+    # — skip the RS group in that case. (On weekends use_yesterday is False:
+    # the snapshot still shows Friday's session change, which matches the
+    # Friday bars, so the trigger stays valid.)
     rs_trigger = hk_settings.get("hsi_rs_trigger", -1.2)
     if use_yesterday:
         hsi_change = None
