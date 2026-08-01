@@ -2,9 +2,9 @@
 
 一套多数据源的动量(momentum)与做空(short)选股扫描器:美股用 Finviz 选股,盘中缺口取自 Futu 快照。结果导出为可直接导入 TradingView / Webull 的自选列表,并通过 OpenAPI 自动同步到 Futu(富途牛牛)的自定义分组;也可选同步到 TradingView 列表(走其非官方 REST API)。此外每天还调用 LLM API(如 Claude、DeepSeek 等)生成一份 CANSLIM 风格的研究简报。选股方法主要参考 Oliver Kell 与 Kristjan Kullamägi。
 
-> **状态(2026-07-31):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 在港股侧只负责市值和条件 RS 触发所需的 HSI 实时日涨幅快照,在美股侧负责盘中缺口 discovery 与 Shorts 市值快照,外加两个市场的自选分组同步。
+> **状态(2026-08-01):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 在港股侧只负责市值和条件 RS 触发所需的 HSI 实时日涨幅快照,在美股侧负责盘中缺口 discovery 与 Shorts 市值快照,外加两个市场的自选分组同步。
 >
-> **百分位 RS 表(美股 3M、港股 12M+3M)和港股长线侧 metrics frame 每天在 GitHub Actions 上算好,以 CSV 发布到 `data/`;本地流水线只负责拉取**——因为家用 IP 上的 yfinance 计算跑到一半就会被限流。两个市场的 Leaders/RS/Shorts 都走 **12M ∩ 3M RS 双闸**(Longs 5 组只用 12M),历史不足 12 个月的新股则走**按历史深度分级的 IPO ladder**。
+> **百分位 RS 表(美股 3M、港股 12M+3M)和港股长线侧 metrics frame 每天在 GitHub Actions 上算好,以 CSV 发布到 `data/`;本地流水线只负责拉取**——因为家用 IP 上的 yfinance 计算跑到一半就会被限流。美股 Leaders/RS/Shorts 走 **12M ∩ 3M RS 双闸**(Longs 5 组只用 12M);港股长线侧同为双闸结构,但当前 12M 层设 0 关闭,实际只走 3M 单闸。历史不足 12 个月的新股则走**按历史深度分级的 IPO ladder**。
 >
 > 港股流水线有自己独立的 20:00 HKT 计划槽,美股则跑在 10:00 HKT,两者各写各自的分市场日志。每个 EOD 跑完后,wrapper 脚本会再对该市场跑一次 `--mode report`,为当天新发现的长线侧个股生成 CANSLIM 简报(Markdown + 独立 HTML)。报告后端可选:默认 DeepSeek V4 + Tavily,备选 Anthropic `web_search`。
 
@@ -45,7 +45,7 @@ Oliver Kell 的动量/突破 setup。按优先级排序,靠前的策略优先命
 | 优先级 | 策略          | Finviz 过滤                                                                                              |
 | ------ | ------------- | -------------------------------------------------------------------------------------------------------- |
 | 1      | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $10, Rel Vol > 1.5, Gap Up 5%+, Above SMA50 & SMA200 |
-| 2      | `HighVolume`  | Small Cap+, Avg Vol > 500K, Price > $10, Day Up, Above SMA50 & SMA200 + yfinance Rel Vol ≥ 3× 20 日均量  |
+| 2      | `HighVolume`  | Small Cap+, Avg Vol > 500K, Price > $10, Day Up, Above SMA50 & SMA200 + yfinance Rel Vol ≥ 2× 20 日均量  |
 | 3      | `GapUp`       | Small Cap+, Avg Vol > 500K, Price > $10, Gap Up 3%+, Above SMA50 & SMA200                                |
 | 4      | `NewHigh52W`  | Small Cap+, Avg Vol > 500K, Price > $10, New 52W High, Above SMA50 & SMA200                              |
 | 5      | `TopGainers`  | Small Cap+, Avg Vol > 500K, Price > $10, Above SMA50 & SMA200, Signal: Top Gainers                       |
@@ -120,7 +120,7 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 ### HK Shorts
 
-方法学与 US Shorts 一致,数据源换成 HKEX 股票列表(约 2,400 只主板股)加 yfinance,阈值全部用 HKD 原生值:cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空侧独有的下限,长线侧是 500K),dollar volume ≥ HKD 100M,ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三档市值分别对应 perf 50/200/300%,连续上涨 ≥ 3 天;输出 `HKEX:NNN` 格式并去掉前导零。已于 2026-05-06 重新启用。
+方法学与 US Shorts 一致,数据源换成 HKEX 股票列表(约 2,400 只主板股)加 yfinance,阈值全部用 HKD 原生值:cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空侧独有的下限,长线侧是 500K),dollar volume ≥ HKD 50M,ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三档市值分别对应 perf 50/200/300%,连续上涨 ≥ 3 天;输出 `HKEX:NNN` 格式并去掉前导零。已于 2026-05-06 重新启用。
 
 ### HK 长线侧:EarningsGap / HighVolume / GapUp / Leaders / RS
 
@@ -128,27 +128,27 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 **统一基线 (`[hk_settings]`):**
 
-| 闸门                 | 阈值                  | 备注                                                                                                            |
-| -------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Market Cap           | ≥ HK$300M             | 对小盘友好;HK 流动性约比美股薄 10×                                                                              |
-| Avg Volume           | ≥ 500K 股/天(20 日)   | 对齐 US `sh_avgvol_o500`                                                                                        |
-| Dollar Volume        | ≥ HK$50M(20 日)      | 与 HK Shorts 持平                                                                                               |
-| ADR%                 | ≥ 3.0%(20 日)         | 从 4.0% 调低;HK 蓝筹波动率结构性偏低                                                                            |
-| Last Price           | ≥ HK$20               | HK 原生(`min_price`)                                                                                            |
-| Above SMA50 & SMA200 | 两者                  | 对齐 US `ta_sma50_pa` + `ta_sma200_pa`,套在每个长线侧过滤上                                                     |
-| RS Percentile        | 12M ∩ 3M 双闸(vs HSI) | **12M ≥ 80, 3M ≥ 90**(`min_rs_percentile_longs` / `min_rs_percentile_longs_3m`);IBD 算法 vs HSI,非 Fred6725 CSV |
+| 闸门                 | 阈值                  | 备注                                                                                                                                     |
+| -------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Market Cap           | ≥ HK$300M             | 对小盘友好;HK 流动性约比美股薄 10×                                                                                                       |
+| Avg Volume           | ≥ 500K 股/天(20 日)   | 对齐 US `sh_avgvol_o500`                                                                                                                 |
+| Dollar Volume        | ≥ HK$50M(20 日)       | 与 HK Shorts 持平                                                                                                                        |
+| ADR%                 | ≥ 3.0%(20 日)         | 从 4.0% 调低;HK 蓝筹波动率结构性偏低                                                                                                     |
+| Last Price           | ≥ HK$20               | HK 原生(`min_price`)                                                                                                                     |
+| Above SMA50 & SMA200 | 两者                  | 对齐 US `ta_sma50_pa` + `ta_sma200_pa`,套在每个长线侧过滤上                                                                              |
+| RS Percentile        | 12M ∩ 3M 双闸(vs HSI) | **12M = 0(已关闭), 3M ≥ 90**(`min_rs_percentile_longs` / `min_rs_percentile_longs_3m`,任一层设 0 即关闭);IBD 算法 vs HSI,非 Fred6725 CSV |
 
 **各策略闸门**(按优先级排序,靠前的优先命中,每只 ticker 每天最多进一个 HK 长线侧文件)。五个策略都继承上面的统一基线(现已含 SMA50 & SMA200 趋势过滤),所以下表列的是叠加在基线之上的附加闸门:
 
 | 优先级 | 策略           | 附加闸门                                                                     |
 | ------ | -------------- | ---------------------------------------------------------------------------- |
-| 1      | HK EarningsGap | gap ≥ 3% + RVol ≥ 3(形态代理——HK 无财报日历)                                 |
-| 2      | HK HighVolume  | RVol ≥ 3                                                                     |
-| 3      | HK GapUp       | gap ≥ 5%                                                                     |
+| 1      | HK EarningsGap | gap ≥ 3% + RVol ≥ 2(形态代理——HK 无财报日历)                                 |
+| 2      | HK HighVolume  | RVol ≥ 2                                                                     |
+| 3      | HK GapUp       | gap ≥ 3%                                                                     |
 | 4      | HK Leaders     | 满足任一(4w +30 / 13w +50 / 26w +100 / YTD +100 / 52w +150)                  |
 | 5      | HK RS          | 基线之外无附加;**条件触发**——仅当 HSI 日涨幅 ≤ −1.2%(`hsi_rs_trigger`)时运行 |
 
-**HK RS 算法**:沿用美股那套 `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` 加权季度收益公式(再叠一层 3M),基准换成 HSI(`^HSI`),百分位在 HK 主板 universe 内排名。**计算放在 GitHub Actions 云端**,把 12M、3M 和 RS-line 三部分合成一张 CSV 发布到 `data/hk_rs/<date>.csv`;`hk_rs.py` 负责拉取并拆分,拉不到就往前回退最多 3 天。HK 长线侧的 **metrics frame** 同样云端发布到 `data/hk_metrics/`,由 `hk_metrics.build_hk_metrics_cloud` 拉取,云端取不到时再回退到本地实时 yfinance 抓取。
+**HK RS 算法**:沿用美股那套 `0.4·R3 + 0.2·R6 + 0.2·R9 + 0.2·R12` 加权季度收益公式(再叠一层 3M),基准换成 HSI(`^HSI`),百分位在 HK 主板 universe 内排名。**计算放在 GitHub Actions 云端**,把 12M、3M 和 RS-line 三部分合成一张 CSV 发布到 `data/hk_rs/<date>.csv`;`hk_rs.py` 负责拉取并拆分,拉不到就往前回退最多 3 天。HK 长线侧的 **metrics frame** 同样云端发布到 `data/hk_metrics/`,由 `hk_metrics.build_hk_metrics_cloud` 拉取,云端取不到时再回退到本地实时 yfinance 抓取。**周末补跑**会把数据日映射到上周五(`hk_effective_data_day`)——周五收盘已结算,直接命中周五的云端 metrics/RS CSV 全覆盖运行,不裁剪 K 线也不跳过 HSI 条件 RS 组;平日假期没有日历数据,仍走 404 → 本地回退。
 
 **OpenD 软依赖**:HK 长线侧的 k 线与 HSI 历史都来自 yfinance,所以 OpenD 挂掉不会清空 .txt 文件。OpenD 不在线时,市值取不到会变 NaN(cap ≥ HK$300M 的基线会把所有票筛掉),条件 RS 的 HSI 触发快照和 Futu 同步都跳过,但排序与写文件本身照常跑完;OpenD 在线时则完整填充。每个策略写进各自的 append-only Futu 分组(`HKEarningsGap`、`HKHighVolume`、`HKGapUp`、`HKLeaders`、`HKRS`),这些分组须在首次运行前于 Futu PC 客户端手动建好。
 
@@ -158,18 +158,18 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 - **基线按历史深度分级、逐档启用。** 每道闸门只在 ticker 攒够数据后才生效——上市第 1 天的新股仍能浮现,上市 200 天的则要通过几乎完整的长线基线:
 
-  | 闸门         | 阈值         | 条件                          |
-  | ------------ | ------------ | ----------------------------- |
-  | cap          | ≥ HK$300M    | 总是                          |
-  | price        | ≥ HK$20      | 总是                          |
-  | avg vol      | ≥ 500K 股/天 | 仅当 ≥ 20 交易日              |
-  | $vol         | ≥ HK$100M    | 仅当 ≥ 20 交易日              |
-  | ADR%         | ≥ 3.5%       | 仅当 ≥ 20 交易日              |
-  | above SMA50  | —            | 仅当 ≥ 50 交易日              |
-  | above SMA200 | —            | 仅当 ≥ 200 交易日             |
-  | RS           | —            | 总是跳过(按定义就是 sub-12mo) |
+  | 闸门         | 阈值         | 条件                             |
+  | ------------ | ------------ | -------------------------------- |
+  | cap          | ≥ HK$300M    | 总是                             |
+  | price        | ≥ HK$20      | 总是                             |
+  | avg vol      | ≥ 500K 股/天 | 仅当 ≥ 20 交易日                 |
+  | $vol         | ≥ HK$50M     | 仅当 ≥ 20 交易日                 |
+  | ADR%         | ≥ 3.0%       | 仅当 ≥ 20 交易日                 |
+  | above SMA50  | —            | 仅当 ≥ 50 交易日                 |
+  | above SMA200 | —            | 仅当 ≥ 200 交易日                |
+  | 3M RS        | ≥ 90(vs HSI) | 仅当 ≥ 64 交易日(12M 按定义跳过) |
 
-  ADR 阈值对齐长线侧的 3.5% 下限,让 IPO 基线与 HK 长线侧的其余部分保持一致,历史攒满 253 行时可无缝晋升。
+  各档阈值直接读 `[hk_settings]`,与 HK 长线侧基线保持一致,历史攒满 253 行时可无缝晋升。
 
 - **输出:** `output/TV/HK/<date>_IPO.txt`,镜像到 Webull。
 - **独立跨日 master:** `output/state/eod_seen_HKIPO.txt`。一旦新股攒到 ≥ 253 行,就从 IPO 桶里退出,在第一个合格日落进本该属于的长线侧分组(长线侧 master `eod_seen_HK.txt` 与之分开,互不污染)。
@@ -186,8 +186,8 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 | Universe   | NASDAQ / NYSE / AMEX, listed, `stock_type = STOCK`  | Futu `get_stock_basicinfo` |
 | Market Cap | ≥ $300M                                             | `total_market_val`         |
 | Price      | ≥ $10                                               | `last_price`               |
-| Gap(盘前)  | `pre_change_rate` ≥ 5%(且 `pre_volume > 0`)         | `pre_change_rate`          |
-| Gap(盘后)  | `(last_price − prev_close) / prev_close × 100` ≥ 5% | 由快照推导                 |
+| Gap(盘前)  | `pre_change_rate` ≥ 3%(且 `pre_volume > 0`)         | `pre_change_rate`          |
+| Gap(盘后)  | `(last_price − prev_close) / prev_close × 100` ≥ 3% | 由快照推导                 |
 
 **Phase 2 — yfinance 后处理 + Futu 盘中量:**
 
