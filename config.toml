@@ -145,7 +145,7 @@ filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_
 [morning_gap]
 name = "Morning Gap Up"
 exchanges = ["US_NASDAQ", "US_NYSE", "US_AMEX"]
-min_gap_percent = 5.0           # 盘前 & 盘后 discovery 共用
+min_gap_percent = 3.0           # 盘前 & 盘后 discovery 共用
 min_market_cap = 300_000_000    # USD; = Finviz cap_smallover
 min_price = 10.0                # USD; = Finviz sh_price_o10
 min_avg_volume = 500_000        # 20日股/天; = Finviz sh_avgvol_o500
@@ -211,7 +211,7 @@ min_relative_volume = 2
 [[hk_longs]]
 key = "gap_up"
 name = "HK Gap Up"
-min_gap_percent = 5.0
+min_gap_percent = 3.0
 
 # HK Leaders: 5 个 perf 窗口合并去重，输出 Leaders.txt。
 [[hk_leaders]]
@@ -245,7 +245,7 @@ name = "HK Relative Strength"
 [hk_morning_gap]
 name = "HK Morning Gap Up"
 exchanges = ["HK_MAINBOARD"]
-min_gap_percent = 5.0           # 同 US
+min_gap_percent = 3.0           # 同 US
 min_market_cap = 300_000_000    # HKD
 min_price = 20.0                # HKD
 min_avg_volume = 500_000        # 20日股/天
