@@ -176,7 +176,7 @@ min_price               = 20.0            # HKD
 #   只看 3M            : 12M=0,  3M=90
 #   只看 12M (旧单闸)   : 12M=90, 3M=0
 #   完全关闭           : 12M=0,  3M=0
-min_rs_percentile_longs    = 80           # 12月 RS (≥80 = top 20%)
+min_rs_percentile_longs    = 0          # 12月 RS (≥80 = top 20%)
 min_rs_percentile_longs_3m = 90           # 3月 RS  (≥90 = top 10%)
 hsi_rs_trigger          = -1.2            # HSI 当日跌幅 ≤ 此值则触发 RS 组
 
