@@ -78,7 +78,7 @@ filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500
 key = "high_volume"
 name = "Relative Volume Surge"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_dup","ta_sma50_pa","ta_sma200_pa"]
-min_relative_volume = 3
+min_relative_volume = 2
 relative_volume_days = 20
 
 [[longs]]
@@ -200,13 +200,13 @@ mid_cap_threshold = 2_000_000_000
 [[hk_longs]]
 key = "earnings_gap"
 name = "HK Earnings Gap"
-min_relative_volume = 3
+min_relative_volume = 2
 min_gap_percent = 3.0
 
 [[hk_longs]]
 key = "high_volume"
 name = "HK Relative Volume Surge"
-min_relative_volume = 3
+min_relative_volume = 2
 
 [[hk_longs]]
 key = "gap_up"
