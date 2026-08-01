@@ -132,8 +132,8 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 | -------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Market Cap           | ≥ HK$300M             | 对小盘友好;HK 流动性约比美股薄 10×                                                                              |
 | Avg Volume           | ≥ 500K 股/天(20 日)   | 对齐 US `sh_avgvol_o500`                                                                                        |
-| Dollar Volume        | ≥ HK$100M(20 日)      | 与 HK Shorts 持平                                                                                               |
-| ADR%                 | ≥ 3.5%(20 日)         | 从 4.0% 调低;HK 蓝筹波动率结构性偏低                                                                            |
+| Dollar Volume        | ≥ HK$50M(20 日)      | 与 HK Shorts 持平                                                                                               |
+| ADR%                 | ≥ 3.0%(20 日)         | 从 4.0% 调低;HK 蓝筹波动率结构性偏低                                                                            |
 | Last Price           | ≥ HK$20               | HK 原生(`min_price`)                                                                                            |
 | Above SMA50 & SMA200 | 两者                  | 对齐 US `ta_sma50_pa` + `ta_sma200_pa`,套在每个长线侧过滤上                                                     |
 | RS Percentile        | 12M ∩ 3M 双闸(vs HSI) | **12M ≥ 80, 3M ≥ 90**(`min_rs_percentile_longs` / `min_rs_percentile_longs_3m`);IBD 算法 vs HSI,非 Fred6725 CSV |
