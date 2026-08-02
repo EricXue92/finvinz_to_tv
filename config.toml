@@ -24,12 +24,12 @@ adr_days = 20
 #   US Shorts    → 12M (min_rs_percentile_longs) + 3M
 #   US IPO(≥64天) → 仅 3M
 min_rs_percentile        = 0   # Leaders 12M (≥80 = top 20%) # 80
-min_rs_percentile_longs  = 90    # Longs 5 组 + RS 组 + US Shorts 12M (≥90 = top 10%)
+min_rs_percentile_longs  = 0    # Longs 5 组 + RS 组 + US Shorts 12M (≥90 = top 10%)
 min_rs_percentile_3m     = 90    # 3M 层
 
 # 美股 IPO ladder 阈值 (Finviz 屏过但 yfinance 历史不足的票)
 min_market_cap = 300_000_000     # USD; = Finviz cap_smallover
-min_price      = 10.0            # USD; = Finviz sh_price_o10
+min_price      = 20.0            # USD; = Finviz sh_price_o10
 min_avg_volume = 500_000         # 20日股/天; = Finviz sh_avgvol_o500
 # min_dollar_volume / min_adr_percent 复用上方 [settings] 值
 
@@ -78,7 +78,7 @@ filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500
 key = "high_volume"
 name = "Relative Volume Surge"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_dup","ta_sma50_pa","ta_sma200_pa"]
-min_relative_volume = 2
+min_relative_volume = 3
 relative_volume_days = 20
 
 [[longs]]
@@ -147,7 +147,7 @@ name = "Morning Gap Up"
 exchanges = ["US_NASDAQ", "US_NYSE", "US_AMEX"]
 min_gap_percent = 3.0           # 盘前 & 盘后 discovery 共用
 min_market_cap = 300_000_000    # USD; = Finviz cap_smallover
-min_price = 10.0                # USD; = Finviz sh_price_o10
+min_price = 20.0                # USD; = Finviz sh_price_o10
 min_avg_volume = 500_000        # 20日股/天; = Finviz sh_avgvol_o500
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
@@ -178,7 +178,7 @@ min_price               = 20.0            # HKD
 #   完全关闭           : 12M=0,  3M=0
 min_rs_percentile_longs    = 0          # 12月 RS (≥80 = top 20%)
 min_rs_percentile_longs_3m = 90           # 3月 RS  (≥90 = top 10%)
-hsi_rs_trigger          = -1.2            # HSI 当日跌幅 ≤ 此值则触发 RS 组
+hsi_rs_trigger          = -1.0            # HSI 当日跌幅 ≤ 此值则触发 RS 组
 
 # HK Shorts: 基于 HKEX 数据的做空筛选，输出 output/TV/HK/<date>_Shorts.txt。
 # 保留独立 1M 日均量门槛 (与 US Shorts 对称)。
@@ -200,13 +200,13 @@ mid_cap_threshold = 2_000_000_000
 [[hk_longs]]
 key = "earnings_gap"
 name = "HK Earnings Gap"
-min_relative_volume = 2
+min_relative_volume = 3
 min_gap_percent = 3.0
 
 [[hk_longs]]
 key = "high_volume"
 name = "HK Relative Volume Surge"
-min_relative_volume = 2
+min_relative_volume = 3
 
 [[hk_longs]]
 key = "gap_up"
