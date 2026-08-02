@@ -1662,13 +1662,19 @@ def main() -> int:
     adr_days = settings.get("adr_days", 20)
     # IBD RS Rating gate, applied right after run_screener (before yfinance
     # dollar-volume) to cut downstream work by ~10x. Leaders use
-    # min_rs_percentile (default 80 = top 20%); Longs (every split), the
-    # conditional RS group, and US Shorts share min_rs_percentile_longs
-    # (default 90 = top 10%). min_rs_percentile_3m adds a 3M layer on Leaders /
-    # RS group / Shorts (double gate). Any knob = 0 disables that tier.
+    # min_rs_percentile (default 80 = top 20%); Longs (every split) use
+    # min_rs_percentile_longs (default 90 = top 10%); the conditional RS
+    # group and US Shorts use min_rs_percentile_rs / min_rs_percentile_shorts,
+    # each falling back to min_rs_percentile_longs when unset.
+    # min_rs_percentile_3m adds a 3M layer on Leaders / RS group / Shorts
+    # (double gate). Any knob = 0 disables that tier.
     # 12M source: Fred6725/rs-log (refreshed weekday ~01:30 UTC).
     min_rs_percentile = settings.get("min_rs_percentile", 0)
     min_rs_percentile_longs = settings.get("min_rs_percentile_longs", 0)
+    min_rs_percentile_rs = settings.get("min_rs_percentile_rs", min_rs_percentile_longs)
+    min_rs_percentile_shorts = settings.get(
+        "min_rs_percentile_shorts", min_rs_percentile_longs
+    )
     min_rs_percentile_3m = settings.get("min_rs_percentile_3m", 0)
 
     today = date.today().strftime("%Y_%m_%d")
@@ -1766,7 +1772,12 @@ def main() -> int:
         # any failure; downstream filter calls degrade to no-ops with warnings.
         rs_table = (
             fetch_rs_table(output_dir, today)
-            if max(min_rs_percentile, min_rs_percentile_longs) > 0
+            if max(
+                min_rs_percentile,
+                min_rs_percentile_longs,
+                min_rs_percentile_rs,
+                min_rs_percentile_shorts,
+            ) > 0
             else None
         )
 
@@ -1915,7 +1926,7 @@ def main() -> int:
                     adr_days=shorts_cfg.get("adr_days", adr_days),
                     futu_cfg=config.get("futu") or {},
                     rs_table=rs_table,
-                    min_rs_percentile=min_rs_percentile_longs,
+                    min_rs_percentile=min_rs_percentile_shorts,
                     rs_table_3m=rs_table_3m,
                     min_rs_percentile_3m=min_rs_percentile_3m,
                 )
@@ -1949,9 +1960,9 @@ def main() -> int:
                         capture_caps=ipo_finviz_caps,
                     )
                     logger.info(f"  Found {len(found)} tickers")
-                    if min_rs_percentile_longs > 0 and found:
+                    if min_rs_percentile_rs > 0 and found:
                         found = filter_by_rs(
-                            found, rs_table, min_rs_percentile_longs, "  [RS]"
+                            found, rs_table, min_rs_percentile_rs, "  [RS]"
                         )
                     if min_rs_percentile_3m > 0 and rs_table_3m is not None and found:
                         before = len(found)

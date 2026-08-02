@@ -1040,15 +1040,26 @@ def run_hk_eod(
 
     raw = apply_strategy_filters(metrics, hk_settings, hk_longs, hk_leaders, rs_enabled)
 
-    # --- RS double gate (12M ∩ 3M) ---
+    # --- RS gate (mirrors US wiring) ---
+    # Event groups (EarningsGap/HighVolume/GapUp ≙ US Longs) gate on 12M only;
+    # Leaders and the conditional RS group gate on 3M only (≙ US Leaders/RS/
+    # Shorts). Either knob = 0 disables its layer (filter_by_rs short-circuits).
     threshold_12m = int(hk_settings.get("min_rs_percentile_longs", 90))
     threshold_3m  = int(hk_settings.get("min_rs_percentile_longs_3m", 90))
+    event_groups = ("EarningsGap", "HighVolume", "GapUp")
     pre_counts   = {n: len(c) for n, c in raw.items()}
-    after_12m    = {n: filter_by_rs(c, rs_table_12m, threshold_12m) for n, c in raw.items()}
-    after_3m     = {n: filter_by_rs(c, rs_table_3m,  threshold_3m)  for n, c in after_12m.items()}
+    after_12m = {
+        n: (filter_by_rs(c, rs_table_12m, threshold_12m) if n in event_groups else c)
+        for n, c in raw.items()
+    }
+    after_3m = {
+        n: (c if n in event_groups else filter_by_rs(c, rs_table_3m, threshold_3m))
+        for n, c in after_12m.items()
+    }
     raw = after_3m
     logger.info(
-        f"[HK Longs] RS 12m>={threshold_12m} ∩ 3m>={threshold_3m}: "
+        f"[HK Longs] RS gate (event groups 12m>={threshold_12m}, "
+        f"Leaders/RS 3m>={threshold_3m}): "
         + ", ".join(
             f"{n} {pre_counts[n]}→{len(after_12m[n])}→{len(after_3m[n])}"
             for n in HK_STRATEGY_PRIORITY

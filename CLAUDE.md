@@ -63,7 +63,12 @@ same workflow) and fetched locally via `hk_metrics.build_hk_metrics_cloud`, so
 discovery runs on the full universe on the happy path; a cloud miss falls back to the
 local (throttle-prone) k-line fetch.
 
-- US Longs: 12M only. US Leaders + RS + Shorts, and all HK long-side: 12M ∩ 3M.
+- Event groups gate on 12M only: US Longs 5 组; HK EarningsGap/HighVolume/GapUp
+  (per-group wiring in `run_hk_eod`, mirrors US). Everything else long-side gates
+  on 3M only: US Leaders / conditional RS / Shorts (keys `min_rs_percentile_rs` /
+  `_shorts`, each defaulting to `min_rs_percentile_longs` when unset), HK Leaders +
+  conditional RS. The 12M∩3M double gate is currently nowhere active (all knobs
+  remain independently tunable).
 - Not gated: HK Shorts, Morning Gap. IPO: conditional 3M only (≥ 64-day history).
 - **Do NOT make fetch failure hard-fail:** walk back ≤ 3 days of stale cache, then
   pass through (no gate) with a warning. Tickers **missing** from the table are
