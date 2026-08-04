@@ -45,11 +45,11 @@ Oliver Kell 的动量/突破 setup。按优先级排序,靠前的策略优先命
 
 | 优先级 | 策略          | Finviz 过滤                                                                                              |
 | ------ | ------------- | -------------------------------------------------------------------------------------------------------- |
-| 1      | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $10, Rel Vol > 1.5, Gap Up 5%+, Above SMA50 & SMA200 |
-| 2      | `HighVolume`  | Small Cap+, Avg Vol > 500K, Price > $10, Day Up, Above SMA50 & SMA200 + yfinance Rel Vol ≥ 3× 20 日均量  |
-| 3      | `GapUp`       | Small Cap+, Avg Vol > 500K, Price > $10, Gap Up 3%+, Above SMA50 & SMA200                                |
-| 4      | `NewHigh52W`  | Small Cap+, Avg Vol > 500K, Price > $10, New 52W High, Above SMA50 & SMA200                              |
-| 5      | `TopGainers`  | Small Cap+, Avg Vol > 500K, Price > $10, Above SMA50 & SMA200, Signal: Top Gainers                       |
+| 1      | `EarningsGap` | Small Cap+, Earnings Today, Avg Vol > 500K, Price > $20, Rel Vol > 1.5, Gap Up 5%+, Above SMA50 & SMA200 |
+| 2      | `HighVolume`  | Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200 + yfinance Rel Vol ≥ 3× 20 日均量  |
+| 3      | `GapUp`       | Small Cap+, Avg Vol > 500K, Price > $20, Gap Up 3%+, Above SMA50 & SMA200                                |
+| 4      | `NewHigh52W`  | Small Cap+, Avg Vol > 500K, Price > $20, New 52W High, Above SMA50 & SMA200                              |
+| 5      | `TopGainers`  | Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50 & SMA200, Signal: Top Gainers                       |
 
 这 5 组同样要过全局的 Dollar Volume / ADR% 闸以及 IBD RS 12M ≥ 90。**Longs 不加 3M 层**——事件过滤本身选的就是新鲜动量。
 
@@ -57,7 +57,7 @@ Oliver Kell 的动量/突破 setup。按优先级排序,靠前的策略优先命
 
 站上 SMA50 与 SMA200 的长期趋势领头羊。五个策略共用同一套基础过滤,只在 perf 窗口上有所不同。
 
-**基础过滤:** Small Cap+, Avg Vol > 500K, Price > $10, Above SMA50, Above SMA200,外加全局闸(**RS 走 3M ≥ 90 单闸**,12M 层 `min_rs_percentile` 当前设 0 关闭)。
+**基础过滤:** Small Cap+, Avg Vol > 500K, Price > $20, Above SMA50, Above SMA200,外加全局闸(**RS 走 3M ≥ 90 单闸**,12M 层 `min_rs_percentile` 当前设 0 关闭)。
 
 | 策略              | Performance 阈值  |
 | ----------------- | ----------------- |
@@ -91,7 +91,7 @@ Kullamägi 抛物线 blow-off setup。分两阶段:先用 Finviz Ownership 预�
 
 Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 和 QQQ 当日都跌 ≥ 1.2% 时才运行**(`check_market_down`,阈值写在代码里)。
 
-过滤:Small Cap+, Avg Vol > 500K, Price > $10, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 3M ≥ 90**(12M 层 `min_rs_percentile_rs` 当前设 0 关闭)。
+过滤:Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 3M ≥ 90**(12M 层 `min_rs_percentile_rs` 当前设 0 关闭)。
 
 ### RS-line 趋势标注(仅日志)
 

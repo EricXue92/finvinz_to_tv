@@ -31,7 +31,7 @@ min_rs_percentile_3m     = 90    # 3M 层
 
 # 美股 IPO ladder 阈值 (Finviz 屏过但 yfinance 历史不足的票)
 min_market_cap = 300_000_000     # USD; = Finviz cap_smallover
-min_price      = 20.0            # USD; = Finviz sh_price_o10
+min_price      = 20.0            # USD; = Finviz sh_price_o20
 min_avg_volume = 500_000         # 20日股/天; = Finviz sh_avgvol_o500
 # min_dollar_volume / min_adr_percent 复用上方 [settings] 值
 
@@ -74,53 +74,53 @@ adr_mult  = 1.0         # TUNE ⭐ 反转豁免: 5日涨幅 ≥ adr_mult×ADR% �
 [[longs]]
 key = "earnings_gap"
 name = "Earnings Gap"
-filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o10","sh_relvol_o1.5","ta_gap_u5","ta_sma50_pa","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","earningsdate_today","sh_avgvol_o500","sh_price_o20","sh_relvol_o1.5","ta_gap_u5","ta_sma50_pa","ta_sma200_pa"]
 
 [[longs]]
 key = "high_volume"
 name = "Relative Volume Surge"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_dup","ta_sma50_pa","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma50_pa","ta_sma200_pa"]
 min_relative_volume = 3
 relative_volume_days = 20
 
 [[longs]]
 key = "gap_up"
 name = "Gap Up"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_gap_u3","ta_sma50_pa","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_gap_u3","ta_sma50_pa","ta_sma200_pa"]
 
 [[longs]]
 key = "new_high_52w"
 name = "52W New High"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_highlow52w_nh","ta_sma200_pa","ta_sma50_pa"]
 
 [[longs]]
 key = "top_gainers"
 name = "Top Gainers"
 signal = "ta_topgainers"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_sma50_pa","ta_sma200_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_sma50_pa","ta_sma200_pa"]
 
 # Leaders: 强势 + 站上 SMA50/SMA200，5 个 perf 窗口合并去重，输出 Leaders.txt。
-# 共同条件: cap ≥ small、avg vol > 500K、price > $10。
+# 共同条件: cap ≥ small、avg vol > 500K、price > $20。
 # 全局 min_dollar_volume ($100M) 和 min_adr_percent (≥4.0%) 自动套用。
 [[leaders]]
 name = "Leaders 4W +30%"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_4w30o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_4w30o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders 13W +50%"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_13w50o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_13w50o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders 26W +100%"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_26w100o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_26w100o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders YTD +100%"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_ytd100o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_ytd100o","ta_sma200_pa","ta_sma50_pa"]
 
 [[leaders]]
 name = "Leaders 52W +150%"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_52w150o","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_52w150o","ta_sma200_pa","ta_sma50_pa"]
 
 # Shorts: 基于 Kristjan Kullamägi 的做空筛选，输出 Shorts.txt。
 [shorts]
@@ -136,7 +136,7 @@ perf_small_cap = 300    # $300M–$2B
 # RS: 条件触发，仅当 SPY 和 QQQ 当日都跌 ≥ 1.2% 时运行。
 [rs]
 name = "Relative Strength"
-filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o10","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
+filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
 
 # Morning Gap: 盘前 -20/-10/-5 + 盘后 +5/+10/+15/+20/+25/+30 分钟扫描。
 # 负 offset = 盘前 (→ MorningGapPre.txt, 跳过盘中累计量过滤);
@@ -149,7 +149,7 @@ name = "Morning Gap Up"
 exchanges = ["US_NASDAQ", "US_NYSE", "US_AMEX"]
 min_gap_percent = 3.0           # 盘前 & 盘后 discovery 共用
 min_market_cap = 300_000_000    # USD; = Finviz cap_smallover
-min_price = 20.0                # USD; = Finviz sh_price_o10
+min_price = 20.0                # USD; = Finviz sh_price_o20
 min_avg_volume = 500_000        # 20日股/天; = Finviz sh_avgvol_o500
 avg_volume_days = 20
 min_dollar_volume = 100_000_000
