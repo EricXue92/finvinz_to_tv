@@ -361,6 +361,7 @@ Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 
 - _How to Make Money in Stocks_ — William O'Neil(CANSLIM 与 IBD RS 体系的源头)
 - _Victory in Stock Trading: Strategy and Tactics of the 2020 U.S. Investing Champion_ — Oliver Kell
+- _Trade Like a Stock Market Wizard_ — Mark Minervini
 - _Think & Trade Like a Champion_ — Mark Minervini
 - _A Complete Guide to Volume Price Analysis_ — Anna Coulling
 - _The Power of Japanese Candlestick Charts_ — Fred K.H. Tam
