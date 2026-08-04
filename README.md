@@ -1,5 +1,7 @@
 # 每日选股扫描流水线 (Daily Stock Screener Pipeline)
 
+**一句话:每天定时用 Finviz、yfinance、Futu 快照和 GitHub Actions 云端 RS 表,按 O'Neil / Kell / Kullamägi 的动量体系自动扫描美股与港股的做多/做空候选,输出 TradingView / Webull / Futu 自选列表,并调用 LLM 生成 CANSLIM 简报。**
+
 一套多数据源的动量(momentum)与做空(short)选股扫描器:美股用 Finviz 选股,盘中缺口取自 Futu 快照。结果导出为可直接导入 TradingView / Webull 的自选列表,并通过 OpenAPI 自动同步到 Futu(富途牛牛)的自定义分组;也可选同步到 TradingView 列表(走其非官方 REST API)。此外每天还调用 LLM API(如 Claude、DeepSeek 等)生成一份 CANSLIM 风格的研究简报。选股方法主要参考 William O'Neil、Oliver Kell 与 Kristjan Kullamägi。
 
 > **状态(2026-08-02):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 在港股侧只负责市值和条件 RS 触发所需的 HSI 实时日涨幅快照,在美股侧负责盘中缺口 discovery 与 Shorts 市值快照,外加两个市场的自选分组同步。
