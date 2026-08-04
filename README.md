@@ -1,6 +1,6 @@
 # 每日选股扫描流水线 (Daily Stock Screener Pipeline)
 
-一套多数据源的动量(momentum)与做空(short)选股扫描器:美股用 Finviz 选股,盘中缺口取自 Futu 快照。结果导出为可直接导入 TradingView / Webull 的自选列表,并通过 OpenAPI 自动同步到 Futu(富途牛牛)的自定义分组;也可选同步到 TradingView 列表(走其非官方 REST API)。此外每天还调用 LLM API(如 Claude、DeepSeek 等)生成一份 CANSLIM 风格的研究简报。选股方法主要参考 Oliver Kell 与 Kristjan Kullamägi。
+一套多数据源的动量(momentum)与做空(short)选股扫描器:美股用 Finviz 选股,盘中缺口取自 Futu 快照。结果导出为可直接导入 TradingView / Webull 的自选列表,并通过 OpenAPI 自动同步到 Futu(富途牛牛)的自定义分组;也可选同步到 TradingView 列表(走其非官方 REST API)。此外每天还调用 LLM API(如 Claude、DeepSeek 等)生成一份 CANSLIM 风格的研究简报。选股方法主要参考 William O'Neil、Oliver Kell 与 Kristjan Kullamägi。
 
 > **状态(2026-08-02):** 美股、港股均已上线。美股数据来自 Finviz 与 yfinance,外加一张 12M IBD RS CSV 和一张 3M RS 表;港股用 yfinance 取 k 线与 HSI 历史(最早的 Futu-only 方案已弃用——Futu 免费/Lv1 档只能覆盖主板约 12% 的 12 个月历史)。如今 Futu 在港股侧只负责市值和条件 RS 触发所需的 HSI 实时日涨幅快照,在美股侧负责盘中缺口 discovery 与 Shorts 市值快照,外加两个市场的自选分组同步。
 >
@@ -354,3 +354,22 @@ morning-gap 脚本每次触发都会自校验 ET 时间,不在窗口内就直接
 ## 依赖 (Dependencies)
 
 Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariostoev/finviz), [yfinance](https://github.com/ranaroussi/yfinance), [openpyxl](https://openpyxl.readthedocs.io/), [curl-cffi](https://pypi.org/project/curl-cffi/), [futu-api](https://pypi.org/project/futu-api/), [anthropic](https://pypi.org/project/anthropic/)(报告——Anthropic 和 DeepSeek 两个后端都用它), [httpx](https://www.python-httpx.org/)(Tavily 搜索 + TV 同步), [markdown](https://pypi.org/project/Markdown/)。开发:pytest + pytest-asyncio。
+
+## 参考资料 (References)
+
+**书籍:**
+
+- _How to Make Money in Stocks_ — William O'Neil(CANSLIM 与 IBD RS 体系的源头)
+- _Victory in Stock Trading: Strategy and Tactics of the 2020 U.S. Investing Champion_ — Oliver Kell
+- _Think & Trade Like a Champion_ — Mark Minervini
+- _A Complete Guide to Volume Price Analysis_ — Anna Coulling
+- _The Power of Japanese Candlestick Charts_ — Fred K.H. Tam
+- _The Trader's Handbook: Winning Habits and Routines of Successful Traders_ — Richard Moglen, Nick Schmidt, et al.
+
+**网站与频道:**
+
+- [TraderLion](https://traderlion.com/)(RS line 趋势判据的出处)
+- [Stockbee](https://stockbee.biz/)
+- [Investor's Business Daily](https://www.youtube.com/@investorsbusinessdaily)(YouTube)
+- [Real Simple Ariel](https://www.youtube.com/@RealSimpleAriel)(YouTube)
+- [TheOneLanceB](https://www.youtube.com/@TheOneLanceB)(YouTube)
