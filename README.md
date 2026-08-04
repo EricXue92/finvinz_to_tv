@@ -368,6 +368,7 @@ Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 
 **网站与频道:**
 
+- [Qullamaggie](https://qullamaggie.com/)(Kristjan Kullamägi——Shorts 与 Morning Gap 打法的出处)
 - [TraderLion](https://traderlion.com/)(RS line 趋势判据的出处)
 - [Stockbee](https://stockbee.biz/)
 - [Investor's Business Daily](https://www.youtube.com/@investorsbusinessdaily)(YouTube)
