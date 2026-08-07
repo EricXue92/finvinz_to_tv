@@ -371,13 +371,13 @@ Python ≥ 3.12(見 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 
 **網站與頻道:**
 
-- [Qullamaggie](https://qullamaggie.com/)(Kristjan Kullamägi——Shorts 與 Morning Gap 打法的出處)
-- [TraderLion](https://traderlion.com/)(RS line 趨勢判據的出處)
+- [Qullamaggie](https://qullamaggie.com/)
+- [TraderLion](https://traderlion.com/)
 - [Stockbee](https://stockbee.biz/)
-- [Investor's Business Daily](https://www.youtube.com/@investorsbusinessdaily)(YouTube)
-- [Real Simple Ariel](https://www.youtube.com/@RealSimpleAriel)(YouTube)
-- [TheOneLanceB](https://www.youtube.com/@TheOneLanceB)(YouTube)
-- [TA Plot](https://www.youtube.com/@TAPlot)(YouTube)
+- [Investor's Business Daily](https://www.youtube.com/@investorsbusinessdaily)(YouTuber)
+- [Real Simple Ariel](https://www.youtube.com/@RealSimpleAriel)(YouTuber)
+- [TheOneLanceB](https://www.youtube.com/@TheOneLanceB)(YouTuber)
+- [TA Plot](https://www.youtube.com/@TAPlot)(YouTuber)
 
 **YouTube videos:**
 
