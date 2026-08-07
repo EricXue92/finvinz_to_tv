@@ -377,3 +377,21 @@ Python ≥ 3.12(見 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 - [Investor's Business Daily](https://www.youtube.com/@investorsbusinessdaily)(YouTube)
 - [Real Simple Ariel](https://www.youtube.com/@RealSimpleAriel)(YouTube)
 - [TheOneLanceB](https://www.youtube.com/@TheOneLanceB)(YouTube)
+- [TA Plot](https://www.youtube.com/@TAPlot)(YouTube)
+
+**視頻(TraderLion 訪談與教學):**
+
+- [The Simple Trading Setup That Made Lance Breitstein Millions](https://youtu.be/R215f4fj7V8)
+- [Trading Super-performance. Trade Like Market Wizard David Ryan](https://youtu.be/ZK5cnVQ2V3Q)
+- [How Hedge Fund Managers Trade Pullbacks — Exclusive with Charles Harris](https://youtu.be/ivL6E6Lc6gM)
+- [The Wedge Pop Trading Setup of Trading Champion Oliver Kell](https://youtu.be/m8F3KkBDtC0)
+- [The 10 Principles of Trading with Investing Champion Oliver Kell](https://youtu.be/ElocJ-b_NTs)
+- [How to Find and Trade the Next Tesla — Swing Trading Strategy](https://youtu.be/eu8onWJ5y34)
+- [The $1,000,000 Simple Trading System That Took 13 Years to Build](https://youtu.be/iu2gdI1cO88)
+
+**視頻(TA Plot 實戰教學):**
+
+- [Low Risk Stock Setups + PDF File](https://youtu.be/R5ScKXy1ytg)
+- [How To Pyramid Into Stocks (21 Stock Setup Examples + PDF File)](https://youtu.be/11h6iSQkzuA)
+- [Sitting Tight for the Right Low Risk Entry](https://youtu.be/Mt3iZ_Orv0g)
+- [How Do You Know It's Time to Get In a Stock? Analyzing Recent Trades.](https://youtu.be/hfwQUpEflEg)
