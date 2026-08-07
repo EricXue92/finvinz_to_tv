@@ -395,4 +395,4 @@ Python ≥ 3.12(見 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 
 **Podcast:**
 
-- [Stock Market Today With IBD](https://podcasts.apple.com/us/podcast/stock-market-today-with-ibd/id1685322096)(每個交易日盤前市場解讀 + 個股 setup)
+- [Stock Market Today With IBD](https://podcasts.apple.com/us/podcast/stock-market-today-with-ibd/id1685322096)
