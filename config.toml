@@ -236,6 +236,7 @@ name = "HK Leaders 52W +150%"
 min_perf_52w = 150
 
 # HK RS: 条件触发，仅当 HSI 当日跌幅 ≤ hsi_rs_trigger 时运行。
+# 入选须当日收红 (last > prev_close, ≙ 美股 ta_perf_dup)。
 [hk_rs]
 name = "HK Relative Strength"
 

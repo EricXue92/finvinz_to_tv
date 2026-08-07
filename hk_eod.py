@@ -636,9 +636,12 @@ def apply_strategy_filters(
     ).fillna(False)
 
     leaders_mask = base & perf_any
-    # RS group: baseline (incl. SMA50/200), no perf window. Always computed,
-    # caller decides whether to actually emit it based on HSI trigger.
-    rs_mask = base
+    # RS group: baseline (incl. SMA50/200) + day closed up, no perf window.
+    # Day-up mirrors the US [rs] group's ta_perf_dup — on the HSI-trigger
+    # down day the group should hold only tickers that actually closed green,
+    # not everything with a strong 3M percentile. Always computed, caller
+    # decides whether to actually emit it based on HSI trigger.
+    rs_mask = base & (metrics["last_price"] > metrics["prev_close"])
 
     # Per-strategy diagnostic — show pre-RS-gate counts so operator can see
     # which strategy had no setups today vs which got cut by a downstream gate.
@@ -648,7 +651,7 @@ def apply_strategy_filters(
         f"HighVolume (rvol>={hv_min_rvol}) {int(high_volume_mask.sum())}; "
         f"GapUp (gap>={gu_min_gap}%) {int(gap_up_mask.sum())}; "
         f"Leaders (+SMA & perf) {int(leaders_mask.sum())}; "
-        f"RS (+SMA) {int(rs_mask.sum())}"
+        f"RS (+SMA & day-up) {int(rs_mask.sum())}"
     )
 
     return {

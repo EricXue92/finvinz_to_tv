@@ -98,6 +98,41 @@ def test_apply_strategy_filters_baseline_and_priority_inputs():
     assert out["RS"] == ["HK.00001"]
 
 
+def test_apply_strategy_filters_rs_requires_day_up():
+    """RS 组要求当日收红 (last_price > prev_close), 对齐美股 [rs] 的
+    ta_perf_dup; 其他组不受当日涨跌影响。"""
+    df = pd.DataFrame([
+        # Full baseline + strong perf, but closed DOWN today → Leaders yes, RS no
+        dict(market_cap=1e9, last_price=25.0, prev_close=26.0, gap_pct=0.0,
+             rvol=1.0, avg_vol_20d=1e6, avg_dollar_vol_20d=2e8, adr_pct=5.0,
+             sma50=22.0, sma200=20.0, above_sma50=True, above_sma200=True,
+             perf_4w=40.0, perf_13w=60.0, perf_26w=120.0, perf_ytd=120.0,
+             perf_52w=160.0, consecutive_up_days=0),
+        # Same but closed UP today → Leaders and RS
+        dict(market_cap=1e9, last_price=25.0, prev_close=24.0, gap_pct=0.0,
+             rvol=1.0, avg_vol_20d=1e6, avg_dollar_vol_20d=2e8, adr_pct=5.0,
+             sma50=22.0, sma200=20.0, above_sma50=True, above_sma200=True,
+             perf_4w=40.0, perf_13w=60.0, perf_26w=120.0, perf_ytd=120.0,
+             perf_52w=160.0, consecutive_up_days=1),
+    ], index=["HK.00003", "HK.00004"])
+
+    settings = dict(min_market_cap=3e8, min_dollar_volume=1e8,
+                    min_avg_volume=5e5, min_adr_percent=4.0, min_price=20.0)
+    longs = [
+        {"key": "earnings_gap", "min_relative_volume": 3, "min_gap_percent": 3.0},
+        {"key": "high_volume", "min_relative_volume": 3},
+        {"key": "gap_up", "min_gap_percent": 5.0},
+    ]
+    leaders = [
+        {"min_perf_4w": 30}, {"min_perf_13w": 50}, {"min_perf_26w": 100},
+        {"min_perf_ytd": 100}, {"min_perf_52w": 150},
+    ]
+    out = apply_strategy_filters(df, settings, longs, leaders, rs_enabled=True)
+
+    assert out["Leaders"] == ["HK.00003", "HK.00004"]
+    assert out["RS"] == ["HK.00004"]
+
+
 def test_dedup_by_priority_strips_lower_priority_duplicates():
     raw = {
         "EarningsGap": ["A", "B"],
