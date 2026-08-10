@@ -35,7 +35,7 @@
 | US Shorts                                                       | `min_rs_percentile_shorts` = 0(關;缺省繼承 longs 鍵) | `min_rs_percentile_3m` = **90**                                      |
 | US IPO ladder (≥ 64 天)                                         | —                                                    | `min_rs_percentile_3m`(用 `np.searchsorted` 對 Fred6725 `raw_score`) |
 
-當前口徑:**事件組看長期強度(12M ≥ 90),其餘長線側看近期強度(3M ≥ 90)**。12M ≥ 90 表示"長期領頭羊",3M ≥ 90 表示"近期仍在領跑"。**Longs 5 組只用 12M 是有意為之**——它們本身的事件過濾已經足夠強(EarningsGap / RVol 放量 / GapUp / 52W 新高 / Top Gainer),再疊一層 3M 會把 universe 收得過窄。每個旋鈕都能單獨調,設為 `0` 即關閉該層;`_rs` / `_shorts` 兩個鍵不配置時缺省繼承 `min_rs_percentile_longs`(把 12M ∩ 3M 雙閘隨時可以按組加回來)。把 `min_rs_percentile_3m` 設為 `0` 就能關掉整個 3M 層(連雲端 CSV 也不再拉取)。HK Shorts 和 Morning Gap 不做 RS 閘。
+當前口徑:**事件組看長期強度(12M ≥ 90),其餘長線側看近期強度(3M ≥ 90)**。12M ≥ 90 表示"長期領頭羊",3M ≥ 90 表示"近期仍在領跑"。**Longs 5 組只用 12M 是有意為之**——它們本身的事件過濾已經足夠強(EarningsGap / RVol 放量 / GapUp / 52W 新高 / Top Gainer),再疊一層 3M 會把 universe 收得過窄。每個旋鈕都能單獨調,設為 `0` 即關閉該層;`_rs` / `_shorts` 兩個鍵不配置時缺省繼承 `min_rs_percentile_longs`(把 12M ∩ 3M 雙閘隨時可以按組加回來)。把 `min_rs_percentile_3m` 設為 `0` 就能關掉整個 3M 層(連雲端 CSV 也不再拉取)。HK Shorts 走 3M ≥ 90 單閘(`[hk_shorts].min_rs_percentile_3m`,缺省繼承 `min_rs_percentile_longs_3m`,在 yfinance 批量下載前先篩 universe);Morning Gap 不做 RS 閘。
 
 ADR% 取代了過去的 Finviz `beta > 1.5` 過濾:beta 反映的是多年來與大盤的相關性,容易誤殺那些眼下正活躍、真正 in-play 的中大盤催化劑票;而 ADR%(Kullamägi 式)直接衡量一隻股票當下的波動幅度。
 
@@ -121,7 +121,7 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 ### HK Shorts
 
-方法學與 US Shorts 一致,數據源換成 HKEX 股票列表(約 2,400 隻主板股)加 yfinance,閾值全部用 HKD 原生值:cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空側獨有的下限,長線側是 500K),dollar volume ≥ HKD 100M(對齊美股 $100M),ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三檔市值分別對應 perf 50/200/300%,連續上漲 ≥ 3 天;輸出 `HKEX:NNN` 格式並去掉前導零。已於 2026-05-06 重新啟用。
+方法學與 US Shorts 一致,數據源換成 HKEX 股票列表(約 2,400 隻主板股)加 yfinance,閾值全部用 HKD 原生值:**3M RS ≥ 90 單閘**(vs HSI,對齊 US Shorts;在 yfinance 批量下載前先篩 universe,表中缺失的票保留),cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空側獨有的下限,長線側是 500K),dollar volume ≥ HKD 100M(對齊美股 $100M),ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三檔市值分別對應 perf 50/200/300%,連續上漲 ≥ 3 天;輸出 `HKEX:NNN` 格式並去掉前導零。已於 2026-05-06 重新啟用。
 
 ### HK 長線側:EarningsGap / HighVolume / GapUp / Leaders / RS
 

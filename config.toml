@@ -176,6 +176,7 @@ min_price               = 20.0            # HKD
 #   事件组 EarningsGap/HighVolume/GapUp → 仅 12M (min_rs_percentile_longs, ≙ 美股 Longs)
 #   Leaders / 条件 RS 组                → 仅 3M  (min_rs_percentile_longs_3m, ≙ 美股 Leaders/RS)
 #   HK IPO (≥64天)                      → 仅 3M (复用 min_rs_percentile_longs_3m)
+#   HK Shorts                           → 仅 3M ([hk_shorts].min_rs_percentile_3m, ≙ 美股 Shorts)
 # 任一键设 0 关闭对应层。
 min_rs_percentile_longs    = 90           # 事件组 12M (≥90 = top 10%)
 min_rs_percentile_longs_3m = 90           # Leaders/RS/IPO 3M (≥90 = top 10%)
@@ -185,6 +186,9 @@ hsi_rs_trigger          = -1.0            # HSI 当日跌幅 ≤ 此值则触发
 # 保留独立 1M 日均量门槛 (与 US Shorts 对称)。
 [hk_shorts]
 name = "HK Short Candidates"
+# 3M RS 单闸 (对齐美股 Shorts): 在 yfinance 批量下载前先筛 universe;
+# 表中缺失的票保留; 缺省继承 [hk_settings].min_rs_percentile_longs_3m; 设 0 关闭。
+min_rs_percentile_3m = 90
 min_avg_volume = 1_000_000             # 日均成交量 (股) — Shorts 独有
 min_market_cap = 300_000_000           # HKD
 min_dollar_volume = 100_000_000        # HKD; 对齐美股 Shorts $100M

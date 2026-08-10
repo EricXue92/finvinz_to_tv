@@ -374,3 +374,38 @@ def test_effective_data_day_weekday_unchanged():
     assert hk_effective_data_day(fri_early) == date(2026, 7, 31)
     assert hk_effective_data_day(fri_late) == date(2026, 7, 31)
     assert hk_effective_data_day(mon) == date(2026, 8, 3)
+
+
+# --- HK Shorts 3M RS gate (universe pre-filter, ≙ US Shorts 3M 单闸) ---
+
+def _shorts_rs_table(rows: dict[str, int]) -> pd.DataFrame:
+    """rows: Futu code → rs_percentile, e.g. {'HK.00700': 95}."""
+    return pd.DataFrame(
+        {"rs_percentile": list(rows.values())},
+        index=pd.Index(list(rows.keys()), name="code"),
+    )
+
+
+def test_rs_gate_shorts_universe_drops_below_threshold_keeps_missing():
+    from hk_eod import _rs_gate_shorts_universe
+    table = _shorts_rs_table({"HK.00700": 95, "HK.00148": 40, "HK.00005": 90})
+    # '9999' 不在表里 → 保留 (missing passthrough, 与 filter_by_rs 政策一致)
+    codes = ["0700", "0148", "0005", "9999"]
+    assert _rs_gate_shorts_universe(codes, table, 90) == ["0700", "0005", "9999"]
+
+
+def test_rs_gate_shorts_universe_passthrough_on_none_or_zero_threshold():
+    from hk_eod import _rs_gate_shorts_universe
+    codes = ["0700", "0148"]
+    assert _rs_gate_shorts_universe(codes, None, 90) == codes
+    table = _shorts_rs_table({"HK.00700": 10})
+    assert _rs_gate_shorts_universe(codes, table, 0) == codes
+    assert _rs_gate_shorts_universe(codes, pd.DataFrame(), 90) == codes
+
+
+def test_rs_gate_shorts_universe_code_format_mapping():
+    from hk_eod import _rs_gate_shorts_universe
+    # 4 位 yfinance/TV 码 '0700' 必须映射为 5 位 Futu 码 'HK.00700' 再查表;
+    # 若映射错误, 表内低分票会因 "missing" 被误保留。
+    table = _shorts_rs_table({"HK.00700": 10})
+    assert _rs_gate_shorts_universe(["0700"], table, 90) == []

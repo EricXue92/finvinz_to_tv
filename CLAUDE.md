@@ -67,9 +67,11 @@ local (throttle-prone) k-line fetch.
   (per-group wiring in `run_hk_eod`, mirrors US). Everything else long-side gates
   on 3M only: US Leaders / conditional RS / Shorts (keys `min_rs_percentile_rs` /
   `_shorts`, each defaulting to `min_rs_percentile_longs` when unset), HK Leaders +
-  conditional RS. The 12M∩3M double gate is currently nowhere active (all knobs
-  remain independently tunable).
-- Not gated: HK Shorts, Morning Gap. IPO: conditional 3M only (≥ 64-day history).
+  conditional RS, HK Shorts (`[hk_shorts].min_rs_percentile_3m`, defaults to
+  `min_rs_percentile_longs_3m`; applied as a universe pre-filter before the
+  yfinance batch in `filter_hk_shorts`). The 12M∩3M double gate is currently
+  nowhere active (all knobs remain independently tunable).
+- Not gated: Morning Gap. IPO: conditional 3M only (≥ 64-day history).
 - **Do NOT make fetch failure hard-fail:** walk back ≤ 3 days of stale cache, then
   pass through (no gate) with a warning. Tickers **missing** from the table are
   KEPT, not dropped.

@@ -81,12 +81,31 @@ def fetch_hkex_equities() -> list[str]:
     return codes
 
 
+def _rs_gate_shorts_universe(
+    codes: list[str],
+    rs_table_3m: "pd.DataFrame | None",
+    threshold: int,
+) -> list[str]:
+    """3M RS gate for the HK Shorts universe (≙ US Shorts' 3M single gate).
+    ``codes`` are 4-digit HKEX codes ('0700'); the RS table is indexed by
+    Futu code ('HK.00700'). Missing tickers / missing table / threshold<=0
+    pass through (same policy as filter_by_rs)."""
+    from hk_rs import filter_by_rs
+
+    futu = {c: "HK." + c.zfill(5) for c in codes}
+    kept = set(filter_by_rs(list(futu.values()), rs_table_3m, threshold))
+    return [c for c in codes if futu[c] in kept]
+
+
 def filter_hk_shorts(
-    config: dict, futu_cfg: dict | None = None
+    config: dict,
+    futu_cfg: dict | None = None,
+    rs_table_3m: "pd.DataFrame | None" = None,
+    min_rs_percentile_3m: int = 0,
 ) -> tuple[int, list[str]]:
-    """Run HK shorts pipeline: fetch HKEX universe, download data via yfinance,
-    apply SMA20/volume/cap/dollar-volume/performance/up-days filters.
-    Returns (universe_size, filtered_tickers_in_tv_format)."""
+    """Run HK shorts pipeline: fetch HKEX universe, gate on 3M RS, download
+    data via yfinance, apply SMA20/volume/cap/dollar-volume/performance/up-days
+    filters. Returns (universe_size, filtered_tickers_in_tv_format)."""
     from main import (
         _yf_download_with_retry,
         _get_market_cap,
@@ -98,6 +117,17 @@ def filter_hk_shorts(
     logger.info("[HK Shorts] Fetching HKEX equity universe...")
     codes = fetch_hkex_equities()
     logger.info(f"  Found {len(codes)} Main Board equities")
+    universe_size = len(codes)
+
+    # 3M RS gate before the yfinance batch (mirrors US Shorts, which filters
+    # after Finviz phase 1 but before its yfinance download) — also cuts the
+    # throttle-prone ~2,400-ticker download to the RS survivors.
+    if min_rs_percentile_3m > 0 and rs_table_3m is not None:
+        codes = _rs_gate_shorts_universe(codes, rs_table_3m, min_rs_percentile_3m)
+        logger.info(
+            f"  {len(codes)} after RS_3M >= {min_rs_percentile_3m} "
+            f"(dropped {universe_size - len(codes)}; missing-from-table kept)"
+        )
 
     yf_tickers = [code + ".HK" for code in codes]
 
@@ -162,7 +192,7 @@ def filter_hk_shorts(
 
     logger.info(f"  {len(phase1)} after SMA20 +20%, SMA50, and volume filter")
     if not phase1:
-        return len(codes), []
+        return universe_size, []
 
     # Phase 2: Market cap. Prefer Futu snapshot (one batch call for all
     # phase1 tickers, real-time `total_market_val` in HKD) over a per-ticker
@@ -197,7 +227,7 @@ def filter_hk_shorts(
             f"(yfinance, >= {min_market_cap:,.0f} HKD)"
         )
     if not phase2:
-        return len(codes), []
+        return universe_size, []
 
     # Phase 3: Dollar volume (price * 20-day avg volume)
     min_dv = config.get("min_dollar_volume", 100_000_000)
@@ -213,7 +243,7 @@ def filter_hk_shorts(
 
     logger.info(f"  {len(phase3)} after dollar volume filter (>= {min_dv:,.0f} HKD)")
     if not phase3:
-        return len(codes), []
+        return universe_size, []
 
     # Phase 4: Cap-conditional performance over 2, 3, 4 week windows
     large_cap_thr = config.get("large_cap_threshold", 80_000_000_000)
@@ -251,7 +281,7 @@ def filter_hk_shorts(
 
     logger.info(f"  {len(phase4)} after performance filter (2/3/4 week combined)")
     if not phase4:
-        return len(codes), []
+        return universe_size, []
 
     # Phase 4b: ADR% filter
     min_adr = config.get("min_adr_percent", 0)
@@ -277,7 +307,7 @@ def filter_hk_shorts(
         phase4 = adr_passed
         logger.info(f"  {len(phase4)} after ADR% filter (>= {min_adr}%, {adr_days}d)")
         if not phase4:
-            return len(codes), []
+            return universe_size, []
 
     # Phase 5: Consecutive up days
     min_up_days = config.get("min_consecutive_up_days", 3)
@@ -305,7 +335,7 @@ def filter_hk_shorts(
     # import — must be HKEX:148); strip leading zeros from the 4-digit
     # yfinance code before prefixing.
     tv_tickers = ["HKEX:" + (t.replace(".HK", "").lstrip("0") or "0") for t in phase5]
-    return len(codes), tv_tickers
+    return universe_size, tv_tickers
 
 
 def fetch_hk_klines_yf(
@@ -883,7 +913,33 @@ def run_hk_eod(
     host = futu_cfg.get("host", "127.0.0.1")
     port = int(futu_cfg.get("port", 11111))
 
-    # --- HK Shorts (existing pipeline, unchanged) ---
+    # --- Data day + RS tables (shared by Shorts' 3M gate and the long side) ---
+    # 双闸门素材: 12M + 3M 两张表由 GitHub Actions 在新 IP 上跑全宇宙
+    # (.github/workflows/update_hk_rs.yml) 并发布到 data/hk_rs/<date>.csv;
+    # 本地只做 HTTP 拉取 + 3 天陈旧回退, 命中后镜像到 hk_rs_rating_<date>.csv /
+    # hk_rs_rating_3m_<date>.csv 供当天重跑短路。计算搬到云端是因为家用 IP 抓
+    # ~2400 港股会被 yfinance 限流 (2026-05-25 仅 ~50% 覆盖), 让百分位分布只
+    # 建立在半个宇宙上。"missing -> passthrough" 策略所有层都遵守; 任一阈值设
+    # 为 0 即关闭该层 (filter_by_rs 内部短路)。周末的 data day 映射到上周五
+    # (hk_effective_data_day) — 周五收盘已结算, 直接命中周五的云端 CSV。
+    from hk_rs import filter_by_rs, build_hk_rs_tables
+    hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    data_day = hk_effective_data_day(hkt_now)
+    weekend_run = data_day != hkt_now.date()
+    if weekend_run:
+        logger.info(
+            f"[HK EOD] Non-trading day ({hkt_now.date().isoformat()}); "
+            f"using settled data from {data_day.isoformat()}"
+        )
+    try:
+        rs_table_12m, rs_table_3m, rs_line_tbl = build_hk_rs_tables(
+            output_dir, data_day
+        )
+    except Exception as e:  # never let an RS fetch surprise kill the pipeline
+        logger.warning(f"[HK RS] build_hk_rs_tables failed: {e} — passthrough")
+        rs_table_12m, rs_table_3m, rs_line_tbl = None, None, None
+
+    # --- HK Shorts (3M RS gate mirrors US Shorts; rest of pipeline unchanged) ---
     hk_shorts_cfg = config.get("hk_shorts")
     if hk_shorts_cfg:
         hk_shorts_cfg.setdefault(
@@ -893,8 +949,19 @@ def run_hk_eod(
         hk_shorts_cfg.setdefault(
             "adr_days", config.get("settings", {}).get("adr_days", 20)
         )
+        shorts_rs_3m = int(
+            hk_shorts_cfg.get(
+                "min_rs_percentile_3m",
+                hk_settings.get("min_rs_percentile_longs_3m", 90),
+            )
+        )
         try:
-            total, hk_shorts_tv = filter_hk_shorts(hk_shorts_cfg, futu_cfg=futu_cfg)
+            total, hk_shorts_tv = filter_hk_shorts(
+                hk_shorts_cfg,
+                futu_cfg=futu_cfg,
+                rs_table_3m=rs_table_3m,
+                min_rs_percentile_3m=shorts_rs_3m,
+            )
             sorted_hk = sorted(hk_shorts_tv)
             dated = hk_output_dir / f"{today_iso}_Shorts.txt"
             write_watchlist(sorted_hk, dated, fmt)
@@ -919,14 +986,7 @@ def run_hk_eod(
     # stale frame would carry wrong gap_pct/rvol, so there is no walk-back.
     # On weekends the "data day" is the previous Friday (settled close), so
     # a weekend rerun still hits the cloud path at full coverage.
-    hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong"))
-    data_day = hk_effective_data_day(hkt_now)
-    weekend_run = data_day != hkt_now.date()
-    if weekend_run:
-        logger.info(
-            f"[HK Longs] Non-trading day ({hkt_now.date().isoformat()}); "
-            f"using settled data from {data_day.isoformat()}"
-        )
+    # (data_day / weekend_run computed above, before the Shorts section.)
     metrics = build_hk_metrics_cloud(output_dir, data_day)
 
     if metrics is not None:
@@ -1007,18 +1067,8 @@ def run_hk_eod(
 
     logger.info(f"  Metrics: {len(metrics)} tickers with usable history")
 
-    # --- RS tables (12M + 3M) ---
-    # 双闸门: 先过 12M RS >= threshold, 再过 3M RS >= threshold_3m.
-    # 两张表由 GitHub Actions 在新 IP 上跑全宇宙 (.github/workflows/update_hk_rs.yml)
-    # 并发布到 data/hk_rs/<date>.csv; 本地只做 HTTP 拉取 + 3 天陈旧回退, 命中后
-    # 镜像到 hk_rs_rating_<date>.csv / hk_rs_rating_3m_<date>.csv 供当天重跑短路。
-    # 计算搬到云端是因为家用 IP 抓 ~2400 港股会被 yfinance 限流 (2026-05-25 仅
-    # ~50% 覆盖), 让百分位分布只建立在半个宇宙上。"missing -> passthrough" 策略
-    # 两层都遵守; 任一阈值设为 0 即关闭该层 (filter_by_rs 内部短路)。
-    from hk_rs import filter_by_rs, build_hk_rs_tables
-    rs_table_12m, rs_table_3m, rs_line_tbl = build_hk_rs_tables(output_dir, data_day)
-
     # --- Apply per-strategy filters ---
+    # (RS tables 12M + 3M built above, before the Shorts section.)
     # The conditional RS group keys off HSI's "today" day-change. When
     # use_yesterday is True the live HSI snapshot reflects a state that
     # doesn't match the trimmed k-line data, so the trigger is meaningless
