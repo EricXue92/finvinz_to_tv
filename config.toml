@@ -166,7 +166,7 @@ offset_tolerance_minutes = 2
 # EarningsGap 用形态 (gap + RVol) 替代财报日历。
 [hk_settings]
 min_market_cap          = 300_000_000     # HKD
-min_dollar_volume       = 50_000_000     # HKD; 价 × 20日均量
+min_dollar_volume       = 100_000_000     # HKD; 价 × 20日均量, 对齐美股 $100M
 min_avg_volume          = 500_000         # 5 个长线组统一日均量 (Shorts 另设 1M)
 # ADR% 调低至 3.0 (US 用 4.0)。HK 蓝筹波动率结构性偏低 — 在"放过百强股"
 # 和"还能筛掉静态低波动股"之间取折中。
@@ -187,7 +187,7 @@ hsi_rs_trigger          = -1.0            # HSI 当日跌幅 ≤ 此值则触发
 name = "HK Short Candidates"
 min_avg_volume = 1_000_000             # 日均成交量 (股) — Shorts 独有
 min_market_cap = 300_000_000           # HKD
-min_dollar_volume = 50_000_000        # HKD
+min_dollar_volume = 100_000_000        # HKD; 对齐美股 Shorts $100M
 min_consecutive_up_days = 3
 # 按市值分级的月涨幅阈值 (%)
 perf_large_cap = 50                    # ≥ 100亿 HKD
