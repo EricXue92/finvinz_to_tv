@@ -374,7 +374,6 @@ Python ≥ 3.12 (see `pyproject.toml`) — [finviz](https://github.com/mariostoe
 **Sites & channels:**
 
 - [Qullamaggie](https://qullamaggie.com/)
-- [Qullamaggie] (https://www.youtube.com/@Qullamaggie)(Youtuber)
 - [TraderLion](https://traderlion.com/)
 - [Stockbee](https://stockbee.biz/)
 - [Investor's Business Daily](https://www.youtube.com/@investorsbusinessdaily) (YouTuber)
@@ -382,6 +381,7 @@ Python ≥ 3.12 (see `pyproject.toml`) — [finviz](https://github.com/mariostoe
 - [TheOneLanceB](https://www.youtube.com/@TheOneLanceB) (YouTuber)
 - [TA Plot](https://www.youtube.com/@TAPlot) (YouTuber)
 - [SMB Capital](https://www.youtube.com/@smbcapital)(Youtuber)
+- [Qullamaggie](https://www.youtube.com/@Qullamaggie)(Youtuber)
 
 
 **YouTube videos:**
