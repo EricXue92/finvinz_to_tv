@@ -380,6 +380,7 @@ Python ≥ 3.12 (see `pyproject.toml`) — [finviz](https://github.com/mariostoe
 - [Real Simple Ariel](https://www.youtube.com/@RealSimpleAriel) (YouTuber)
 - [TheOneLanceB](https://www.youtube.com/@TheOneLanceB) (YouTuber)
 - [TA Plot](https://www.youtube.com/@TAPlot) (YouTuber)
+- [SMB Capital](https://www.youtube.com/@smbcapital)(Youtuber)
 
 **YouTube videos:**
 
