@@ -252,7 +252,7 @@ name = "HK Relative Strength"
 [hk_morning_gap]
 name = "HK Morning Gap Up"
 exchanges = ["HK_MAINBOARD"]
-min_gap_percent = 3.0           # 同 US
+min_gap_percent = 5.0           # 港股仅盘后一档; 对齐美股盘前 (min_gap_percent_pre)
 min_market_cap = 300_000_000    # HKD
 min_price = 20.0                # HKD
 min_avg_volume = 500_000        # 20日股/天
