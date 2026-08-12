@@ -147,3 +147,129 @@ def test_gapquote_namedtuple_fields():
     q = GapQuote(price=106.46, gap=17.9)
     assert q.price == 106.46
     assert q.gap == 17.9
+
+
+class _FakeSnapshotCtx:
+    """Stands in for futu.OpenQuoteContext. Returns one basicinfo frame and
+    one snapshot frame, both built from plain dicts."""
+
+    def __init__(self, basic_rows, snap_rows):
+        self._basic = pd.DataFrame(basic_rows)
+        self._snap = pd.DataFrame(snap_rows)
+        self.closed = False
+
+    def get_stock_basicinfo(self, **kwargs):
+        return 0, self._basic
+
+    def get_market_snapshot(self, codes):
+        return 0, self._snap[self._snap["code"].isin(codes)]
+
+    def close(self):
+        self.closed = True
+
+
+def _install_fake_futu(monkeypatch, basic_rows, snap_rows):
+    """Patch out the futu import, the TCP probe, and OpenQuoteContext."""
+    import sys
+    import types
+
+    import futu_sync
+
+    ctx = _FakeSnapshotCtx(basic_rows, snap_rows)
+    fake = types.SimpleNamespace(
+        OpenQuoteContext=lambda host, port: ctx,
+        RET_OK=0,
+        Market=types.SimpleNamespace(US="US", HK="HK"),
+        SecurityType=types.SimpleNamespace(STOCK="STOCK"),
+    )
+    monkeypatch.setitem(sys.modules, "futu", fake)
+    monkeypatch.setattr(futu_sync, "_opend_reachable", lambda h, p, **kw: True)
+    return ctx
+
+
+US_BASIC = [
+    {"code": "US.NBIS", "exchange_type": "US_NASDAQ", "delisting": False},
+    {"code": "US.SMALL", "exchange_type": "US_NASDAQ", "delisting": False},
+]
+
+
+def test_us_discovery_premarket_returns_pre_price_and_gap(monkeypatch):
+    from futu_sync import discover_morning_gap_candidates
+
+    _install_fake_futu(monkeypatch, US_BASIC, [
+        {"code": "US.NBIS", "total_market_val": 5e10, "last_price": 193.23,
+         "prev_close_price": 193.23, "pre_price": 238.25,
+         "pre_change_rate": 23.3, "pre_volume": 100000},
+        {"code": "US.SMALL", "total_market_val": 1e6, "last_price": 5.0,
+         "prev_close_price": 4.0, "pre_price": 5.0,
+         "pre_change_rate": 25.0, "pre_volume": 100},
+    ])
+    out = discover_morning_gap_candidates(
+        min_gap_pct=5.0, min_market_cap=3e8, min_price=20.0,
+        pre_market=True, exchanges=["US_NASDAQ"],
+    )
+    assert list(out) == ["NBIS"]                 # SMALL fails cap + price
+    assert out["NBIS"].price == pytest.approx(238.25)
+    assert out["NBIS"].gap == pytest.approx(23.3)
+
+
+def test_us_discovery_premarket_falls_back_to_last_price(monkeypatch):
+    """pre_price arrives as the string 'N/A' outside the pre-auction window."""
+    from futu_sync import discover_morning_gap_candidates
+
+    _install_fake_futu(monkeypatch, US_BASIC[:1], [
+        {"code": "US.NBIS", "total_market_val": 5e10, "last_price": 193.23,
+         "prev_close_price": 193.23, "pre_price": "N/A",
+         "pre_change_rate": 23.3, "pre_volume": 100000},
+    ])
+    out = discover_morning_gap_candidates(
+        min_gap_pct=5.0, min_market_cap=3e8, min_price=20.0,
+        pre_market=True, exchanges=["US_NASDAQ"],
+    )
+    assert out["NBIS"].price == pytest.approx(193.23)
+
+
+def test_us_discovery_postopen_uses_last_price_and_derived_gap(monkeypatch):
+    from futu_sync import discover_morning_gap_candidates
+
+    _install_fake_futu(monkeypatch, US_BASIC[:1], [
+        {"code": "US.NBIS", "total_market_val": 5e10, "last_price": 238.25,
+         "prev_close_price": 193.23, "pre_price": "N/A",
+         "pre_change_rate": "N/A", "pre_volume": 0},
+    ])
+    out = discover_morning_gap_candidates(
+        min_gap_pct=5.0, min_market_cap=3e8, min_price=20.0,
+        pre_market=False, exchanges=["US_NASDAQ"],
+    )
+    assert out["NBIS"].price == pytest.approx(238.25)
+    assert out["NBIS"].gap == pytest.approx(23.30, abs=0.01)
+
+
+def test_hk_discovery_returns_quotes(monkeypatch):
+    from futu_sync import discover_hk_morning_gap_candidates
+
+    _install_fake_futu(
+        monkeypatch,
+        [{"code": "HK.00700", "exchange_type": "HK_MAINBOARD", "delisting": False}],
+        [{"code": "HK.00700", "total_market_val": 5e11, "last_price": 660.0,
+          "prev_close_price": 600.0}],
+    )
+    out = discover_hk_morning_gap_candidates(
+        min_gap_pct=5.0, min_market_cap=3e8, min_price=20.0,
+        exchanges=["HK_MAINBOARD"],
+    )
+    assert list(out) == ["0700.HK"]
+    assert out["0700.HK"].price == pytest.approx(660.0)
+    assert out["0700.HK"].gap == pytest.approx(10.0)
+
+
+def test_discovery_returns_none_when_opend_unreachable(monkeypatch):
+    import futu_sync
+    from futu_sync import discover_morning_gap_candidates
+
+    monkeypatch.setattr(futu_sync, "_opend_reachable", lambda h, p, **kw: False)
+    out = discover_morning_gap_candidates(
+        min_gap_pct=5.0, min_market_cap=3e8, min_price=20.0,
+        pre_market=True, exchanges=["US_NASDAQ"],
+    )
+    assert out is None

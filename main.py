@@ -764,7 +764,8 @@ def run_morning_gap(
             "skipping run"
         )
         return offset, []
-    tickers = discovery
+    quotes = discovery
+    tickers = list(quotes)
     logger.info(f"  Found {len(tickers)} tickers from Futu snapshot discovery")
     if not tickers:
         return offset, []
@@ -949,7 +950,8 @@ def run_hk_morning_gap(
             "API error), skipping run"
         )
         return offset, []
-    tickers = discovery
+    quotes = discovery
+    tickers = list(quotes)
     logger.info(f"  Found {len(tickers)} tickers from Futu HK snapshot discovery")
     if not tickers:
         return offset, []

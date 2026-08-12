@@ -387,7 +387,7 @@ def discover_morning_gap_candidates(
     exchanges: list[str],
     host: str = "127.0.0.1",
     port: int = 11111,
-) -> list[str] | None:
+) -> dict[str, GapQuote] | None:
     """Discover US morning-gap candidates via Futu snapshot.
 
     Pipeline:
@@ -401,9 +401,12 @@ def discover_morning_gap_candidates(
          (the snapshot DataFrame has no plain ``change_rate`` column in this SDK
          version, so we derive it).
 
-    Returns plain US tickers (e.g. ``"TWLO"``, not ``"US.TWLO"``).
-    Returns ``None`` on any failure so callers can decide whether to fall
-    back. Logs a single warning per failure mode.
+    Returns ``{plain_ticker: GapQuote}`` (e.g. ``{"TWLO": GapQuote(...)}``,
+    not ``"US.TWLO"``), insertion-ordered. ``price`` is ``pre_price`` during a
+    pre-market scan (falling back to ``last_price`` when Futu reports
+    ``N/A``) and ``last_price`` post-open. Returns ``None`` on any failure so
+    callers can decide whether to fall back. Logs a single warning per
+    failure mode.
     """
     try:
         from futu import OpenQuoteContext, RET_OK, Market, SecurityType
@@ -442,9 +445,9 @@ def discover_morning_gap_candidates(
             f"after exchange/delisting filter={len(codes)}"
         )
         if not codes:
-            return []
+            return {}
 
-        survivors: list[str] = []
+        survivors: dict[str, GapQuote] = {}
         BATCH = 400
         for i in range(0, len(codes), BATCH):
             batch = codes[i:i + BATCH]
@@ -474,6 +477,14 @@ def discover_morning_gap_candidates(
                         continue
                     if pre_vol <= 0 or gap < min_gap_pct:
                         continue
+                    # pre_price is "N/A" outside the pre-auction window; the
+                    # last regular-session trade is the honest fallback.
+                    try:
+                        basis = float(row.get("pre_price"))
+                    except (TypeError, ValueError):
+                        basis = 0.0
+                    if basis <= 0:
+                        basis = price
                 else:
                     try:
                         prev_close = float(row.get("prev_close_price", 0) or 0)
@@ -484,7 +495,8 @@ def discover_morning_gap_candidates(
                         continue
                     if gap < min_gap_pct:
                         continue
-                survivors.append(code[len("US."):])
+                    basis = price
+                survivors[code[len("US."):]] = GapQuote(price=basis, gap=gap)
 
         logger.info(
             f"  Futu discovery: {len(survivors)} candidates "
@@ -511,7 +523,7 @@ def discover_hk_morning_gap_candidates(
     exchanges: list[str],
     host: str = "127.0.0.1",
     port: int = 11111,
-) -> list[str] | None:
+) -> dict[str, GapQuote] | None:
     """Discover HK morning-gap candidates via Futu snapshot (post-open only).
 
     HK does not have a US-style pre-market session — Futu snapshot fields
@@ -521,9 +533,10 @@ def discover_hk_morning_gap_candidates(
     API at our account permission level. So this function only does the
     post-open path: gap = (last_price - prev_close_price) / prev_close_price.
 
-    Returns plain HK tickers in yfinance format (e.g. ``"0700.HK"``) to feed
-    directly into the existing HK yfinance metrics pipeline. Returns ``None``
-    on any failure.
+    Returns ``{yfinance_ticker: GapQuote}`` (e.g. ``{"0700.HK": GapQuote(...)}``)
+    so the keys feed directly into the existing HK yfinance metrics pipeline.
+    ``price`` is ``last_price`` — HK has no usable pre-market basis. Returns
+    ``None`` on any failure.
     """
     try:
         from futu import OpenQuoteContext, RET_OK, Market, SecurityType
@@ -562,9 +575,9 @@ def discover_hk_morning_gap_candidates(
             f"after exchange/delisting filter={len(codes)}"
         )
         if not codes:
-            return []
+            return {}
 
-        survivors: list[str] = []
+        survivors: dict[str, GapQuote] = {}
         BATCH = 400
         for i in range(0, len(codes), BATCH):
             batch = codes[i:i + BATCH]
@@ -598,7 +611,7 @@ def discover_hk_morning_gap_candidates(
                     n = int(num_part)
                 except ValueError:
                     continue
-                survivors.append(f"{n:04d}.HK")
+                survivors[f"{n:04d}.HK"] = GapQuote(price=price, gap=gap)
 
         logger.info(
             f"  Futu HK discovery: {len(survivors)} candidates "
