@@ -742,11 +742,16 @@ def run_morning_gap(
     # bulk snapshot and filter by pre_change_rate / change_rate at the source.
     futu_host = (futu_cfg or {}).get("host", "127.0.0.1")
     futu_port = (futu_cfg or {}).get("port", 11111)
+    # 盘前门槛独立于盘后 (min_gap_percent_pre)，不设则沿用 min_gap_percent。
+    pre_market = offset < 0
+    min_gap_pct = config.get("min_gap_percent", 5.0)
+    if pre_market:
+        min_gap_pct = config.get("min_gap_percent_pre", min_gap_pct)
     discovery = discover_morning_gap_candidates(
-        min_gap_pct=config.get("min_gap_percent", 5.0),
+        min_gap_pct=min_gap_pct,
         min_market_cap=config.get("min_market_cap", 300_000_000),
         min_price=config.get("min_price", 10.0),
-        pre_market=(offset < 0),
+        pre_market=pre_market,
         exchanges=config.get(
             "exchanges", ["US_NASDAQ", "US_NYSE", "US_AMEX"]
         ),
