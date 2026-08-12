@@ -10,9 +10,23 @@ warning and return False without raising.
 
 import logging
 import socket
-from typing import Literal
+from typing import Literal, NamedTuple
 
 logger = logging.getLogger(__name__)
+
+
+class GapQuote(NamedTuple):
+    """One discovery survivor's live comparison basis and its gap.
+
+    ``price`` is what the trader is looking at right now — the pre-market
+    print during a negative-offset scan, the last trade during a post-open
+    one. The morning-gap trend gate compares against it instead of the
+    previous close, which is blind to the very move that surfaced the ticker.
+    ``gap`` is the same percentage the discovery threshold was applied to.
+    """
+
+    price: float
+    gap: float
 
 
 def _opend_reachable(host: str, port: int, timeout: float = 1.5) -> bool:

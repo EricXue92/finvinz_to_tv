@@ -1347,11 +1347,31 @@ def _filter_sma_trend(
     sma_long: int = 200,
     market_open: bool = True,
     single: bool | None = None,
+    live_prices: dict[str, float] | None = None,
+    gaps: dict[str, float] | None = None,
+    bypass_gap_pct: float | None = None,
 ) -> list[str]:
-    """Keep tickers whose latest completed daily close is above both
-    SMA50 and SMA200. Replaces Finviz `ta_sma50_pa`/`ta_sma200_pa` for the
-    Futu-discovery path. Strict: tickers with insufficient history
-    (< sma_long bars after trimming today's partial bar) are dropped."""
+    """Keep tickers trading above both SMA50 and SMA200. Replaces Finviz
+    `ta_sma50_pa`/`ta_sma200_pa` for the Futu-discovery path. Strict: tickers
+    with insufficient history (< sma_long bars after trimming today's partial
+    bar) are dropped.
+
+    The moving averages are always computed from completed bars — a half-formed
+    daily bar must never enter a 50/200-day mean. Only the *comparison basis*
+    is configurable: pass `live_prices` to compare the pre-market / intraday
+    price instead of the last completed close, which is what the trader is
+    actually looking at during a morning-gap scan. A ticker absent from
+    `live_prices`, or carrying a non-positive value there, falls back to the
+    close.
+
+    `bypass_gap_pct` exempts a big gapper from the SMA50 requirement only —
+    the SMA200 floor is never waived. This targets the long-term-uptrend /
+    mid-term-pullback / event-gap shape without admitting bottom-bounces in
+    genuine downtrends. Tickers missing from `gaps` take the strict path.
+
+    With all three new parameters omitted, behavior is identical to the
+    pre-2026-08-13 gate.
+    """
     if not tickers:
         return []
     if single is None:
@@ -1371,16 +1391,47 @@ def _filter_sma_trend(
                     f"({len(closes)}<{sma_long}), dropping"
                 )
                 continue
-            last = float(closes.iloc[-1])
+            last_close = float(closes.iloc[-1])
             sma_s = float(closes.iloc[-sma_short:].mean())
             sma_l = float(closes.iloc[-sma_long:].mean())
-            if last >= sma_s and last >= sma_l:
-                result.append(ticker)
-            else:
+
+            ref, basis = last_close, "close"
+            live = (live_prices or {}).get(ticker)
+            if live is not None:
+                try:
+                    live = float(live)
+                except (TypeError, ValueError):
+                    live = None
+                if live is not None and live > 0:
+                    ref, basis = live, "live"
+
+            gap = (gaps or {}).get(ticker)
+            bypass = (
+                bypass_gap_pct is not None
+                and bypass_gap_pct > 0
+                and gap is not None
+                and gap >= bypass_gap_pct
+            )
+
+            if ref < sma_l:
                 logger.info(
-                    f"  {ticker}: close {last:.2f} below SMA{sma_short}={sma_s:.2f} "
-                    f"or SMA{sma_long}={sma_l:.2f}, dropping"
+                    f"  {ticker}: {basis} {ref:.2f} below SMA{sma_long}={sma_l:.2f}"
+                    f"{' (gap bypass does not waive SMA200)' if bypass else ''}"
+                    ", dropping"
                 )
+                continue
+            if ref < sma_s and not bypass:
+                logger.info(
+                    f"  {ticker}: {basis} {ref:.2f} below SMA{sma_short}={sma_s:.2f}"
+                    ", dropping"
+                )
+                continue
+            if ref < sma_s and bypass:
+                logger.info(
+                    f"  {ticker}: {basis} {ref:.2f} below SMA{sma_short}={sma_s:.2f} "
+                    f"but gap {gap:.1f}% >= {bypass_gap_pct}%, SMA{sma_short} waived"
+                )
+            result.append(ticker)
         except (KeyError, TypeError, ValueError) as e:
             logger.warning(f"  {ticker}: SMA trend check failed ({e}), dropping")
 
