@@ -51,9 +51,10 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   only the comparison basis moved. `[*_morning_gap].sma_bypass_gap_percent`
   waives **SMA50 only** for big gappers — SMA200 is never waived. Both knobs
   are per-market config; `sma_use_live_price = false` restores the old basis.
-  Consequence, and it is intended: the gate drifts intraday, so a ticker
-  clearing it on any single scan gets pushed (cross-day master records
-  anything that ever surfaced). Spec:
+  Consequence, and it is intended: the gate drifts intraday, but each phase's
+  dated `.txt` is fully overwritten every scan (not cumulative, and morning-gap
+  never touches `eod_seen_*`), so drift only affects the one-time ntfy/catalyst
+  gate (`morning_gap_seen_{pre,post}_<date>.txt`), not what's written. Spec:
   `docs/superpowers/specs/2026-08-13-morning-gap-live-price-trend-gate-design.md`.
 - **Report** is soft-fail (wrapper exit code reflects only the EOD step). Shorts /
   HK Shorts / Morning Gap are excluded from it.

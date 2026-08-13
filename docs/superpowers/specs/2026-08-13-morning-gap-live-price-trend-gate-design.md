@@ -139,11 +139,20 @@ falls back rather than raising.
 ## Consequences
 
 The gate now drifts intraday: a ticker can clear it at +10min and fail at
-+20min. Because the cross-day master (`eod_seen_US`) records anything that ever
-surfaced, the practical effect is that **clearing the gate on any single scan is
-enough to get pushed** — looser, not less stable. Accepted deliberately; a
-"must hold above the MA for two consecutive scans" rule was considered and
-rejected as unnecessary complexity for v1.
++20min. This is safe because morning-gap's output model is not the EOD one:
+morning-gap never calls `_dedup_seen` / touches `eod_seen_{US,HK}` — that
+cross-day master is wired only into the `us-eod`/`hk-eod` dispatch. Instead,
+each phase's dated `.txt` (`MorningGapPre`, `MorningGap`, `HKMorningGap`) is
+fully **overwritten** by every scan of that phase, so a ticker that clears the
+gate at -10min and fails it at -5min simply is not in that day's file — it does
+not persist. The only per-day state is
+`morning_gap_seen_{pre,post}_<date>.txt` (`hk_morning_gap_seen_*` for HK), and
+it gates only the one-time ntfy notification and the catalyst-report spawn,
+not the watchlist contents. So the worst case from drift is a stray
+notification for a ticker that later drops back out of the list — a far
+milder failure than a list silently omitting a ticker forever. Accepted
+deliberately; a "must hold above the MA for two consecutive scans" rule was
+considered and rejected as unnecessary complexity for v1.
 
 ## Testing
 
