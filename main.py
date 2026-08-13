@@ -806,8 +806,23 @@ def run_morning_gap(
         return offset, []
 
     # Phase 3c: SMA50/SMA200 trend gate (replaces Finviz ta_sma50_pa / ta_sma200_pa).
-    tickers = _filter_sma_trend(tickers, daily_data, today_et)
-    logger.info(f"  {len(tickers)} after SMA50/SMA200 trend filter")
+    # Compared against the pre-market / live price rather than yesterday's close —
+    # a reversal's first day is by definition the day it has not yet reclaimed its
+    # averages, and that gap bar is exactly what `_trim_today` removes. A gap above
+    # `sma_bypass_gap_percent` waives SMA50 only; SMA200 is never waived.
+    use_live = config.get("sma_use_live_price", True)
+    bypass_pct = config.get("sma_bypass_gap_percent", 0)
+    tickers = _filter_sma_trend(
+        tickers, daily_data, today_et,
+        live_prices={t: q.price for t, q in quotes.items()} if use_live else None,
+        gaps={t: q.gap for t, q in quotes.items()},
+        bypass_gap_pct=bypass_pct,
+    )
+    logger.info(
+        f"  {len(tickers)} after SMA50/SMA200 trend filter "
+        f"(basis={'live' if use_live else 'prev close'}, "
+        f"SMA50 bypass at gap>={bypass_pct}%)"
+    )
     if not tickers:
         return offset, []
 
@@ -992,9 +1007,21 @@ def run_hk_morning_gap(
     if not tickers:
         return offset, []
 
-    # Phase 3c: SMA50/SMA200 trend gate
-    tickers = _filter_sma_trend(tickers, daily_data, today_hk)
-    logger.info(f"  {len(tickers)} after SMA50/SMA200 trend filter")
+    # Phase 3c: SMA50/SMA200 trend gate — same live-price basis and SMA50 gap
+    # bypass as US. HK is post-open only, so the basis is always `last_price`.
+    use_live = config.get("sma_use_live_price", True)
+    bypass_pct = config.get("sma_bypass_gap_percent", 0)
+    tickers = _filter_sma_trend(
+        tickers, daily_data, today_hk,
+        live_prices={t: q.price for t, q in quotes.items()} if use_live else None,
+        gaps={t: q.gap for t, q in quotes.items()},
+        bypass_gap_pct=bypass_pct,
+    )
+    logger.info(
+        f"  {len(tickers)} after SMA50/SMA200 trend filter "
+        f"(basis={'live' if use_live else 'prev close'}, "
+        f"SMA50 bypass at gap>={bypass_pct}%)"
+    )
     if not tickers:
         return offset, []
 

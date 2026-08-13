@@ -273,3 +273,17 @@ def test_discovery_returns_none_when_opend_unreachable(monkeypatch):
         pre_market=True, exchanges=["US_NASDAQ"],
     )
     assert out is None
+
+
+def test_config_exposes_live_price_and_bypass_knobs():
+    """Both morning-gap sections must ship the new knobs with the agreed
+    defaults, so a revert is a config edit rather than a code change."""
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = tomllib.loads((root / "config.toml").read_text(encoding="utf-8"))
+    for section in ("morning_gap", "hk_morning_gap"):
+        s = cfg[section]
+        assert s["sma_use_live_price"] is True, section
+        assert s["sma_bypass_gap_percent"] == 10.0, section

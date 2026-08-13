@@ -44,6 +44,17 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   is settled, so weekend reruns fetch Friday's cloud metrics/RS CSVs at full
   coverage, don't trim, and don't skip the HSI-trigger group. Weekday holidays
   have no calendar — they 404 into the yfinance fallback as before.
+- **Morning-gap trend gate uses the live price:** `_filter_sma_trend` compares
+  the pre-market print (US negative offsets) or `last_price` (US positive
+  offsets, all HK) against SMA50/SMA200 — **not** the previous close. The
+  averages themselves still come from `_trim_today`-trimmed completed bars;
+  only the comparison basis moved. `[*_morning_gap].sma_bypass_gap_percent`
+  waives **SMA50 only** for big gappers — SMA200 is never waived. Both knobs
+  are per-market config; `sma_use_live_price = false` restores the old basis.
+  Consequence, and it is intended: the gate drifts intraday, so a ticker
+  clearing it on any single scan gets pushed (cross-day master records
+  anything that ever surfaced). Spec:
+  `docs/superpowers/specs/2026-08-13-morning-gap-live-price-trend-gate-design.md`.
 - **Report** is soft-fail (wrapper exit code reflects only the EOD step). Shorts /
   HK Shorts / Morning Gap are excluded from it.
 - **Catalyst report (pre-market)** is a **detached subprocess** spawned

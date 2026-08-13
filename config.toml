@@ -156,6 +156,11 @@ avg_volume_days = 20
 min_dollar_volume = 100_000_000
 scan_offsets = [-20, -10, -5, 5, 10, 15, 20, 25, 30]
 offset_tolerance_minutes = 2
+# 趋势闸 (SMA50/SMA200) 的比较基准: true = 盘前/实时价, false = 昨收 (旧行为)。
+# 均线本身始终用已完成日线计算,不受此开关影响。
+sma_use_live_price = true
+# gap ≥ 此值时豁免 SMA50 (SMA200 永不豁免); 0 = 关闭豁免。
+sma_bypass_gap_percent = 10.0
 # ADR% 默认继承 [settings] (min_adr_percent / adr_days); 可在此覆盖。
 
 # ════════════════════════════════════════════════════════════
@@ -260,6 +265,9 @@ avg_volume_days = 20
 min_dollar_volume = 100_000_000 # HKD; 20日均量 × 最新收盘
 scan_offsets = [10, 20, 30, 40, 50, 60]
 offset_tolerance_minutes = 2
+# 同美股: 趋势闸比较基准用实时价 (港股仅盘后, 即 last_price), gap ≥ 10% 豁免 SMA50。
+sma_use_live_price = true
+sma_bypass_gap_percent = 10.0
 # min_adr_percent / adr_days 默认继承 [hk_settings] (3.5% / 20d); 可在此覆盖。
 
 
