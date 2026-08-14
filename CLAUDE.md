@@ -12,7 +12,7 @@ uv run main.py --mode hk-eod         # HK EOD (Shorts + Longs/Leaders/RS)   — 
 uv run main.py --mode morning-gap    # US intraday gap scan; clean-exits outside ET window
 uv run main.py --mode hk-morning-gap # HK intraday gap scan (post-open only)
 uv run main.py --mode report --market {us,hk}  # CANSLIM report from today's .txt files
-uv run python -m pytest tests/ -v   # `uv run pytest` fails to spawn; use python -m
+uv run pytest tests/ -v             # `uv run python -m pytest` works too
 ```
 
 ## Layout
@@ -36,8 +36,9 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   survivors minus master, survivors append. Markets independent; IPO/HKIPO have
   own masters. **RS and Shorts are excluded from all dedup** (re-detect by design).
   Reset masters only by deleting the file.
-- **Cleanup** (`cleanup_old_outputs`) is glob-driven and soft-fails; **never
-  touches** `eod_seen_*`, `ntfy_last_seen.txt`, `edgar_cache/`, logs.
+- **Cleanup** (`cleanup_old_outputs`) is driven by an explicit regex rule table
+  (`_RETENTION_RULES`, not globs) and soft-fails; **never touches**
+  `eod_seen_*`, `ntfy_last_seen.txt`, `edgar_cache/`, logs.
 - **HK data-day rule:** only the 20:00 HKT slot uses today's close; earlier runs
   trim today's incomplete bar (and skip the conditional HSI-trigger RS group).
   Weekends map to the previous Friday (`hk_effective_data_day`): Friday's close
@@ -48,9 +49,10 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   the pre-market print (US negative offsets) or `last_price` (US positive
   offsets, all HK) against SMA50/SMA200 — **not** the previous close. The
   averages themselves still come from `_trim_today`-trimmed completed bars;
-  only the comparison basis moved. `[*_morning_gap].sma_bypass_gap_percent`
-  waives **SMA50 only** for big gappers — SMA200 is never waived. Both knobs
-  are per-market config; `sma_use_live_price = false` restores the old basis.
+  only the comparison basis moved. `sma_bypass_gap_percent` (in `[morning_gap]`
+  US / `[hk_morning_gap]` HK) waives **SMA50 only** for big gappers — SMA200 is
+  never waived. Both knobs are per-market config; `sma_use_live_price = false`
+  restores the old basis.
   Consequence, and it is intended: the gate drifts intraday, but each phase's
   dated `.txt` is fully overwritten every scan (not cumulative, and morning-gap
   never touches `eod_seen_*`), so drift only affects the one-time ntfy/catalyst
@@ -76,13 +78,17 @@ discovery runs on the full universe on the happy path; a cloud miss falls back t
 local (throttle-prone) k-line fetch.
 
 - Event groups gate on 12M only: US Longs 5 组; HK EarningsGap/HighVolume/GapUp
-  (per-group wiring in `run_hk_eod`, mirrors US). Everything else long-side gates
-  on 3M only: US Leaders / conditional RS / Shorts (keys `min_rs_percentile_rs` /
-  `_shorts`, each defaulting to `min_rs_percentile_longs` when unset), HK Leaders +
-  conditional RS, HK Shorts (`[hk_shorts].min_rs_percentile_3m`, defaults to
+  (per-group wiring in `run_hk_eod`, mirrors US). US Leaders / conditional RS /
+  Shorts are structurally 12M+3M double-gated; config.toml sets their 12M keys
+  to 0 so they currently gate on 3M only. 12M keys: `min_rs_percentile`
+  (Leaders, defaults 0) and `min_rs_percentile_rs` / `_shorts` — the latter two
+  default to `min_rs_percentile_longs` when **unset**, so deleting the key
+  re-enables the 12M tier at the Longs threshold; keep them explicitly 0 to stay off. Effective
+  3M-only likewise for HK Leaders + conditional RS, and HK Shorts
+  (`[hk_shorts].min_rs_percentile_3m`, defaults to
   `min_rs_percentile_longs_3m`; applied as a universe pre-filter before the
-  yfinance batch in `filter_hk_shorts`). The 12M∩3M double gate is currently
-  nowhere active (all knobs remain independently tunable).
+  yfinance batch in `filter_hk_shorts`). The 12M∩3M double gate is thus
+  currently nowhere active (all knobs remain independently tunable).
 - Not gated: Morning Gap. IPO: conditional 3M only (≥ 64-day history).
 - **Do NOT make fetch failure hard-fail:** walk back ≤ 3 days of stale cache, then
   pass through (no gate) with a warning. Tickers **missing** from the table are
