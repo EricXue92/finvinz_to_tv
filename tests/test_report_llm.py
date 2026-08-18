@@ -52,6 +52,32 @@ def test_build_backend_unknown_raises():
         llm.build_backend({"backend": "gpt-future"})
 
 
+def test_build_backend_kimi_compat_provider(monkeypatch):
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-kimi-test")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    backend = llm.build_backend({"backend": "kimi"})
+    assert isinstance(backend, llm.ToolLoopBackend)
+    assert backend.name == "kimi"
+    assert backend.model_label() == "kimi-k2-turbo-preview (Moonshot)"
+
+
+def test_build_backend_compat_provider_config_overrides(monkeypatch):
+    monkeypatch.setenv("ZHIPUAI_API_KEY", "sk-glm-test")
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    backend = llm.build_backend(
+        {"backend": "GLM", "glm": {"model": "glm-4.6-air", "max_search_calls": 3}}
+    )
+    assert backend.model_label() == "glm-4.6-air (Zhipu)"
+    assert backend._max_search_calls == 3
+
+
+def test_build_backend_compat_provider_missing_vendor_key_raises(monkeypatch):
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    with pytest.raises(RuntimeError, match="MINIMAX_API_KEY"):
+        llm.build_backend({"backend": "minimax"})
+
+
 def test_anthropic_backend_model_label(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     backend = llm.build_backend({"anthropic": {"model": "claude-sonnet-4-6"}})

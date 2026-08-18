@@ -388,11 +388,14 @@ ntfy_topic = "xue-finviz-morning-gap-9f3k2"
 ntfy_server = "https://ntfy.sh"
 max_tickers_in_body = 100
 
-# 报告生成 LLM backend — 选哪个模型生成 CANSLIM 日报。两者走相同 Anthropic
-# SDK 协议 (DeepSeek 经 /anthropic 兼容端点)，区别在 web 搜索来源:
+# 报告生成 LLM backend — 选哪个模型生成 CANSLIM 日报。所有后端都走 Anthropic
+# SDK 协议 (非 Anthropic 厂商经各自的 /anthropic 兼容端点)，区别在 web 搜索来源:
 #   anthropic — 原生 web_search_20250305 (单次请求, 质量最好, ~$1-2/天 per market)
-#   deepseek  — DeepSeek V4 + Tavily (tool-call 循环, 便宜 ~80%, ~$0.5/天;
-#               需 DEEPSEEK_API_KEY + TAVILY_API_KEY)
+#   deepseek / kimi / glm / minimax — 各厂商模型 + Tavily (tool-call 循环, 便宜
+#               ~80%, ~$0.5/天; 需 TAVILY_API_KEY + 对应厂商 key:
+#               DEEPSEEK_API_KEY / MOONSHOT_API_KEY / ZHIPUAI_API_KEY / MINIMAX_API_KEY)
+# 每个后端可选配 [report.<name>] 段覆盖 model / base_url / max_tokens /
+# max_search_calls，缺省值见 report/llm.py 的 _COMPAT_PROVIDERS。
 [report]
 # backend = "anthropic"
 backend = "DeepSeek"
@@ -407,6 +410,13 @@ model = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/anthropic"
 max_tokens = 3500
 max_search_calls = 2
+
+# [report.kimi]
+# model = "kimi-k2-turbo-preview"           # base_url 缺省 https://api.moonshot.cn/anthropic
+# [report.glm]
+# model = "glm-4.6"                         # base_url 缺省 https://open.bigmodel.cn/api/anthropic
+# [report.minimax]
+# model = "MiniMax-M2"                      # base_url 缺省 https://api.minimax.io/anthropic
 
 [morning_gap_catalyst]
 # Pre-market catalyst report. Runs as detached subprocess after the

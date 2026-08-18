@@ -1,17 +1,18 @@
 """LLM backend abstraction for the daily report.
 
-Two implementations share the Anthropic Python SDK because DeepSeek exposes an
-Anthropic-compatible endpoint at https://api.deepseek.com/anthropic — only the
-`base_url` differs. The split lives in *how each backend gets web context*:
+All implementations share the Anthropic Python SDK. The split lives in *how
+each backend gets web context*:
 
 - AnthropicBackend uses the first-party `web_search_20250305` server tool —
   the model issues searches, Anthropic resolves them, the SDK returns the
   final text in one round trip.
-- DeepSeekBackend has no first-party search tool, so it runs a manual
-  tool-use loop: it offers a `web_search` tool whose `input_schema` takes a
-  query string, intercepts each `tool_use` block, calls Tavily, and feeds
-  the result back as a `tool_result`. Same Anthropic SDK protocol on both
-  sides — DeepSeek's compat layer accepts it.
+- Every other vendor (DeepSeek, Kimi, GLM, MiniMax, ...) exposes an
+  Anthropic-compatible endpoint but no first-party search tool, so
+  ToolLoopBackend runs a manual tool-use loop against that endpoint: it
+  offers a `web_search` tool whose `input_schema` takes a query string,
+  intercepts each `tool_use` block, calls Tavily, and feeds the result back
+  as a `tool_result`. Only `base_url` / model / key env var differ per
+  vendor — see _COMPAT_PROVIDERS.
 
 Backends are constructed once per process by `build_backend()` from the
 `[report]` config block. Callers `await backend.analyze(system, user)` and
@@ -116,9 +117,9 @@ class AnthropicBackend:
         return _extract_text(response)
 
 
-# Custom (non-server) tool definition used by DeepSeek to call Tavily.
-# Anthropic's compat layer treats this the same as any user-defined tool.
-_DEEPSEEK_SEARCH_TOOL = {
+# Custom (non-server) tool definition used by the tool-loop backends to call
+# Tavily. Anthropic-compat layers treat this the same as any user-defined tool.
+_TAVILY_SEARCH_TOOL = {
     "name": "web_search",
     "description": (
         "Search the web for recent equity-research context: catalysts, "
@@ -138,12 +139,10 @@ _DEEPSEEK_SEARCH_TOOL = {
 }
 
 
-class DeepSeekBackend:
-    """DeepSeek via Anthropic-compatible endpoint with manual tool-use loop
+class ToolLoopBackend:
+    """Any Anthropic-compatible vendor endpoint with a manual tool-use loop
     backed by Tavily. Up to `max_search_calls` searches per ticker; loop
     exits as soon as the model returns `end_turn`."""
-
-    name = "deepseek"
 
     def __init__(
         self,
@@ -154,6 +153,8 @@ class DeepSeekBackend:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         max_search_calls: int = 2,
         base_url: str = "https://api.deepseek.com/anthropic",
+        name: str = "deepseek",
+        vendor: str = "DeepSeek",
     ) -> None:
         self._client = anthropic.AsyncAnthropic(api_key=api_key, base_url=base_url)
         self._tavily = TavilyClient(tavily_api_key)
@@ -161,6 +162,8 @@ class DeepSeekBackend:
         self._model = model
         self._max_tokens = max_tokens
         self._max_search_calls = max_search_calls
+        self.name = name
+        self._vendor = vendor
 
     async def aclose(self) -> None:
         await self._client.close()
@@ -169,7 +172,7 @@ class DeepSeekBackend:
             self._tavily_ctx_open = False
 
     def model_label(self) -> str:
-        return f"{self._model} (DeepSeek)"
+        return f"{self._model} ({self._vendor})"
 
     async def _ensure_tavily(self) -> None:
         if not self._tavily_ctx_open:
@@ -194,7 +197,7 @@ class DeepSeekBackend:
                         "cache_control": {"type": "ephemeral"},
                     }
                 ],
-                tools=[_DEEPSEEK_SEARCH_TOOL],
+                tools=[_TAVILY_SEARCH_TOOL],
                 messages=messages,
             )
             if getattr(response, "stop_reason", None) != "tool_use":
@@ -235,6 +238,43 @@ class DeepSeekBackend:
         return _extract_text(final)
 
 
+# Backward-compat alias: the constructor's defaults are DeepSeek's, so
+# existing callers (report.morning, tests) keep working unchanged.
+DeepSeekBackend = ToolLoopBackend
+
+
+# Anthropic-compatible vendors served by ToolLoopBackend. Adding a vendor is
+# one registry row + (optionally) a `[report.<name>]` config section; every
+# row still needs TAVILY_API_KEY for web context. base_url/model are defaults
+# only — both can be overridden per vendor in config.toml.
+_COMPAT_PROVIDERS: dict[str, dict[str, str]] = {
+    "deepseek": {
+        "env": "DEEPSEEK_API_KEY",
+        "base_url": "https://api.deepseek.com/anthropic",
+        "model": "deepseek-v4-pro",
+        "vendor": "DeepSeek",
+    },
+    "kimi": {
+        "env": "MOONSHOT_API_KEY",
+        "base_url": "https://api.moonshot.cn/anthropic",
+        "model": "kimi-k2-turbo-preview",
+        "vendor": "Moonshot",
+    },
+    "glm": {
+        "env": "ZHIPUAI_API_KEY",
+        "base_url": "https://open.bigmodel.cn/api/anthropic",
+        "model": "glm-4.6",
+        "vendor": "Zhipu",
+    },
+    "minimax": {
+        "env": "MINIMAX_API_KEY",
+        "base_url": "https://api.minimax.io/anthropic",
+        "model": "MiniMax-M2",
+        "vendor": "MiniMax",
+    },
+}
+
+
 def build_backend(report_cfg: dict[str, Any] | None) -> LLMBackend:
     """Construct the backend named in `[report] backend = "..."`. Defaults to
     anthropic when the section is absent. Raises with a clear message when a
@@ -254,20 +294,24 @@ def build_backend(report_cfg: dict[str, Any] | None) -> LLMBackend:
             web_search_max_uses=int(sub.get("web_search_max_uses", 2)),
         )
 
-    if backend_name == "deepseek":
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if backend_name in _COMPAT_PROVIDERS:
+        spec = _COMPAT_PROVIDERS[backend_name]
+        api_key = os.environ.get(spec["env"])
         tavily_key = os.environ.get("TAVILY_API_KEY")
-        missing = [n for n, v in (("DEEPSEEK_API_KEY", api_key), ("TAVILY_API_KEY", tavily_key)) if not v]
+        missing = [n for n, v in ((spec["env"], api_key), ("TAVILY_API_KEY", tavily_key)) if not v]
         if missing:
-            raise RuntimeError(f"missing env var(s) for backend='deepseek': {', '.join(missing)}")
-        sub = cfg.get("deepseek") or {}
-        return DeepSeekBackend(
+            raise RuntimeError(f"missing env var(s) for backend='{backend_name}': {', '.join(missing)}")
+        sub = cfg.get(backend_name) or {}
+        return ToolLoopBackend(
             api_key=api_key,
             tavily_api_key=tavily_key,
-            model=sub.get("model", "deepseek-v4-pro"),
+            model=sub.get("model", spec["model"]),
             max_tokens=int(sub.get("max_tokens", DEFAULT_MAX_TOKENS)),
             max_search_calls=int(sub.get("max_search_calls", 2)),
-            base_url=sub.get("base_url", "https://api.deepseek.com/anthropic"),
+            base_url=sub.get("base_url", spec["base_url"]),
+            name=backend_name,
+            vendor=spec["vendor"],
         )
 
-    raise ValueError(f"unknown report backend: {backend_name!r} (expected 'anthropic' or 'deepseek')")
+    known = "', '".join(["anthropic", *_COMPAT_PROVIDERS])
+    raise ValueError(f"unknown report backend: {backend_name!r} (expected one of '{known}')")
