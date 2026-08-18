@@ -1,4 +1,4 @@
-[English](README.md) | **繁體中文**
+[English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md)
 
 # 每日選股掃描流水線 (Daily Stock Screener Pipeline)
 
@@ -380,6 +380,8 @@ Python ≥ 3.12(見 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 - [Real Simple Ariel](https://www.youtube.com/@RealSimpleAriel)(YouTuber)
 - [TheOneLanceB](https://www.youtube.com/@TheOneLanceB)(YouTuber)
 - [TA Plot](https://www.youtube.com/@TAPlot)(YouTuber)
+- [SMB Capital](https://www.youtube.com/@smbcapital)(YouTuber)
+- [Qullamaggie](https://www.youtube.com/@Qullamaggie)(YouTuber)
 
 **YouTube videos:**
 

@@ -1,4 +1,4 @@
-**English** | [繁體中文](README.zh-TW.md)
+**English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md)
 
 # Daily Stock Screener Pipeline
 
@@ -382,7 +382,6 @@ Python ≥ 3.12 (see `pyproject.toml`) — [finviz](https://github.com/mariostoe
 - [TA Plot](https://www.youtube.com/@TAPlot) (YouTuber)
 - [SMB Capital](https://www.youtube.com/@smbcapital)(Youtuber)
 - [Qullamaggie](https://www.youtube.com/@Qullamaggie)(Youtuber)
-
 
 **YouTube videos:**
 
