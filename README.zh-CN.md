@@ -10,7 +10,7 @@
 >
 > **百分位 RS 表(美股 3M、港股 12M+3M)和港股长线侧 metrics frame 每天在 GitHub Actions 上算好,以 CSV 发布到 `data/`;本地流水线只负责拉取**——因为家用 IP 上的 yfinance 计算跑到一半就会被限流。RS 闸两市结构对称:**事件组(美股 Longs 5 组、港股 EarningsGap/HighVolume/GapUp)走 12M ≥ 90 单闸,其余长线侧(两市 Leaders / 条件 RS 组、美股 Shorts)走 3M ≥ 90 单闸**;每组一个独立旋钮,双闸可按组随时加回。历史不足 12 个月的新股则走**按历史深度分级的 IPO ladder**。
 >
-> 港股流水线有自己独立的 20:00 HKT 计划槽,美股则跑在 10:00 HKT,两者各写各自的分市场日志。每个 EOD 跑完后,wrapper 脚本会再对该市场跑一次 `--mode report`,为当天新发现的长线侧个股生成 CANSLIM 简报(Markdown + 独立 HTML)。报告后端可选:默认 DeepSeek V4 + Tavily,备选 Anthropic `web_search`。
+> 港股流水线有自己独立的 20:00 HKT 计划槽,美股则跑在 10:00 HKT,两者各写各自的分市场日志。每个 EOD 跑完后,wrapper 脚本会再对该市场跑一次 `--mode report`,为当天新发现的长线侧个股生成 CANSLIM 简报(Markdown + 独立 HTML)。报告后端可选:默认 DeepSeek V4 + Tavily,备选 Anthropic `web_search`;也支持 Kimi / GLM / MiniMax(+ Tavily),走各自的 Anthropic 兼容端点。
 
 ## 筛选器 (Screeners)
 
@@ -208,12 +208,13 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 
 每次 EOD 跑完后,`--mode report --market {us,hk}` 会读取当天带日期的长线侧 `.txt` 文件,按分组优先级排序、每个市场上限 30 只,再调用所配置的 LLM 后端,为每只 ticker 生成 CANSLIM 风格的基本面加展望简报。输出为 `output/Reports/<date>_{us,hk}.md`,以及一个自包含的 `<date>_{us,hk}.html`(CSS 内联、无外部依赖,双击即可在任意浏览器打开)。
 
-**后端(`[report] backend`,大小写不敏感;两者都走 Anthropic Python SDK):**
+**后端(`[report] backend`,大小写不敏感;全部走 Anthropic Python SDK):**
 
-| 后端                                      | Web 上下文                             | 模型                                  | 密钥                                  |
-| ----------------------------------------- | -------------------------------------- | ------------------------------------- | ------------------------------------- |
-| `deepseek`(**shipped 默认**)              | 手动 tool-loop → Tavily 搜索           | `deepseek-v4-pro`(Anthropic 兼容端点) | `DEEPSEEK_API_KEY` + `TAVILY_API_KEY` |
-| `anthropic`(`backend` 未配置时的代码默认) | 原生 `web_search_20250305` server tool | `claude-sonnet-4-6`                   | `ANTHROPIC_API_KEY`                   |
+| 后端                                      | Web 上下文                             | 模型                                                                                                        | 密钥                                                                          |
+| ----------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `deepseek`(**shipped 默认**)              | 手动 tool-loop → Tavily 搜索           | `deepseek-v4-pro`(Anthropic 兼容端点)                                                                       | `DEEPSEEK_API_KEY` + `TAVILY_API_KEY`                                         |
+| `anthropic`(`backend` 未配置时的代码默认) | 原生 `web_search_20250305` server tool | `claude-sonnet-4-6`                                                                                         | `ANTHROPIC_API_KEY`                                                           |
+| `kimi` / `glm` / `minimax`                | 手动 tool-loop → Tavily 搜索           | `kimi-k2-turbo-preview` / `glm-4.6` / `MiniMax-M2`(各厂商的 Anthropic 兼容端点,可经 `[report.<name>]` 覆盖) | `MOONSHOT_API_KEY` / `ZHIPUAI_API_KEY` / `MINIMAX_API_KEY` + `TAVILY_API_KEY` |
 
 | 方面              | 细节                                                                                                                                                                                                                                                                                                      |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -223,11 +224,11 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 | **结构化字段**    | US 基本面 **SEC EDGAR companyfacts 优先**、yfinance 逐字段兜底(缓存于 `output/state/edgar_cache/`);HK 直接用 yfinance。字段:Market Cap, Price, EPS(最新季 + YoY), Revenue(最新季 + YoY), **5 年年度 YoY + 最近 4 季 YoY 轨迹**(两者), PE, ROE, Inst. Hold %, 最近财报日。RS 百分位取自缓存的 IBD/HSI 表。 |
 | **定性小节**      | 模型生成,每只 ticker 最多 2 次 web 搜索(`web_search_max_uses` / `max_search_calls`):公司速览, 基本面/财报, 竞争力, 政策/政府支持, 新产品/催化剂, 风险点, 综合判断。                                                                                                                                       |
 | **双语**          | 快照字段保持英文/数字;定性分析用简体中文。                                                                                                                                                                                                                                                                |
-| **软失败**        | 与 Futu-sync 契约一致——wrapper 退出码只反映 EOD 步。缺后端密钥(DeepSeek 缺 `DEEPSEEK_API_KEY`/`TAVILY_API_KEY`,Anthropic 缺 `ANTHROPIC_API_KEY`)→ 该步跳过并 warning,`.txt` 产物不受影响。4xx 配置错误快速失败,给出独立的 `[配置错误]` 占位;5xx/429/超时重试一次后回退到 `[分析失败]`。                   |
+| **软失败**        | 与 Futu-sync 契约一致——wrapper 退出码只反映 EOD 步。缺后端密钥(各后端所需见上表)→ 该步跳过并 warning,`.txt` 产物不受影响。4xx 配置错误快速失败,给出独立的 `[配置错误]` 占位;5xx/429/超时重试一次后回退到 `[分析失败]`。                                                                                   |
 | **排除**          | US Shorts, HK Shorts, Morning Gap——技术/盘中打法,基本面不驱动入场。                                                                                                                                                                                                                                       |
 | **成本区间**      | DeepSeek + Tavily ~$0.5/天/市场(默认,便宜约 80%);Anthropic 原生 `web_search` ~$1–2/天/市场。                                                                                                                                                                                                              |
 
-**配置:** 把后端密钥写进 `.env`(可从 `.env.example` 拷一份):默认的 DeepSeek 后端需要 `DEEPSEEK_API_KEY` + `TAVILY_API_KEY`,Anthropic 后端需要 `ANTHROPIC_API_KEY`。wrapper 脚本(`scripts/run_eod.sh` / `scripts/run_hk_eod.sh`)会在报告步之前 `source .env`;交互式运行时 `report/state.py` 也会自动从项目根加载 `.env`。
+**配置:** 把后端密钥写进 `.env`(可从 `.env.example` 拷一份,里面按后端列全了所需密钥):默认的 DeepSeek 后端需要 `DEEPSEEK_API_KEY` + `TAVILY_API_KEY`,Anthropic 后端需要 `ANTHROPIC_API_KEY`,Kimi/GLM/MiniMax 后端需要对应厂商密钥 + `TAVILY_API_KEY`。wrapper 脚本(`scripts/run_eod.sh` / `scripts/run_hk_eod.sh`)会在报告步之前 `source .env`;交互式运行时 `report/state.py` 也会自动从项目根加载 `.env`。
 
 ### 盘前 catalyst 报告
 
@@ -357,7 +358,7 @@ morning-gap 脚本每次触发都会自校验 ET 时间,不在窗口内就直接
 
 ## 依赖 (Dependencies)
 
-Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariostoev/finviz), [yfinance](https://github.com/ranaroussi/yfinance), [openpyxl](https://openpyxl.readthedocs.io/), [curl-cffi](https://pypi.org/project/curl-cffi/), [futu-api](https://pypi.org/project/futu-api/), [anthropic](https://pypi.org/project/anthropic/)(报告——Anthropic 和 DeepSeek 两个后端都用它), [httpx](https://www.python-httpx.org/)(Tavily 搜索 + TV 同步), [markdown](https://pypi.org/project/Markdown/)。开发:pytest + pytest-asyncio。
+Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariostoev/finviz), [yfinance](https://github.com/ranaroussi/yfinance), [openpyxl](https://openpyxl.readthedocs.io/), [curl-cffi](https://pypi.org/project/curl-cffi/), [futu-api](https://pypi.org/project/futu-api/), [anthropic](https://pypi.org/project/anthropic/)(报告——所有后端都走它,非 Anthropic 厂商经各自的 Anthropic 兼容端点), [httpx](https://www.python-httpx.org/)(Tavily 搜索 + TV 同步), [markdown](https://pypi.org/project/Markdown/)。开发:pytest + pytest-asyncio。
 
 ## 参考资料 (References)
 
