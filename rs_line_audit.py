@@ -159,20 +159,26 @@ def _load_seen(path: Path) -> list[str]:
     return [ln.strip() for ln in path.read_text().splitlines() if ln.strip()]
 
 
-def _prune_master(seen_path: Path, drops: list[str], dry_run: bool = False) -> None:
+def _prune_master(
+    seen_path: Path,
+    drops: list[str],
+    dry_run: bool = False,
+    label: str = "rs-line-audit",
+) -> None:
     """Remove drop ids from the cross-day master, backing up first.
 
     Backup name: ``<master>.bak.YYYYmmdd_HHMMSS`` next to the master. Repeated
     audit runs accumulate backups — operator prunes them by hand when stale.
     ``dry_run=True`` logs what would change but writes nothing (no backup, no
-    master mutation).
+    master mutation). ``label`` is the log prefix — other pruners (sma50_prune)
+    reuse this function under their own name.
     """
     if not drops:
-        logger.info(f"[rs-line-audit] no drops to prune from {seen_path.name}")
+        logger.info(f"[{label}] no drops to prune from {seen_path.name}")
         return
     if not seen_path.exists():
         logger.warning(
-            f"[rs-line-audit] master missing, cannot prune: {seen_path}"
+            f"[{label}] master missing, cannot prune: {seen_path}"
         )
         return
     current = [ln.strip() for ln in seen_path.read_text().splitlines() if ln.strip()]
@@ -181,12 +187,12 @@ def _prune_master(seen_path: Path, drops: list[str], dry_run: bool = False) -> N
     removed = len(current) - len(kept)
     if removed == 0:
         logger.info(
-            f"[rs-line-audit] {seen_path.name}: drops not present in master, nothing to do"
+            f"[{label}] {seen_path.name}: drops not present in master, nothing to do"
         )
         return
     if dry_run:
         logger.info(
-            f"[rs-line-audit] DRY-RUN: would prune {seen_path.name}: "
+            f"[{label}] DRY-RUN: would prune {seen_path.name}: "
             f"{len(current)} -> {len(kept)} (-{removed}); no backup written, master untouched"
         )
         return
@@ -195,7 +201,7 @@ def _prune_master(seen_path: Path, drops: list[str], dry_run: bool = False) -> N
     backup.write_text(seen_path.read_text())
     seen_path.write_text("\n".join(kept) + ("\n" if kept else ""))
     logger.info(
-        f"[rs-line-audit] pruned {seen_path.name}: "
+        f"[{label}] pruned {seen_path.name}: "
         f"{len(current)} -> {len(kept)} (-{removed}); backup: {backup.name}"
     )
 

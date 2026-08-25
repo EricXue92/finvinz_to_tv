@@ -35,7 +35,13 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   `output/state/eod_seen_{US,HK,IPO,HKIPO}.txt` (`_dedup_seen`) — daily output = within-day
   survivors minus master, survivors append. Markets independent; IPO/HKIPO have
   own masters. **RS and Shorts are excluded from all dedup** (re-detect by design).
-  Reset masters only by deleting the file.
+  Reset masters only by deleting the file. Two pruners may shrink the US master
+  (both back up as `.bak.<stamp>` first): manual `rs-line-audit`, and the
+  automatic **SMA50 prune** (`sma50_prune.py`, `[sma50_prune]` config) that runs
+  at the top of every us-eod before the master is loaded — close below SMA50 for
+  `consecutive_days` (2) completed days → removed, can re-qualify later.
+  Soft-fail: total yfinance failure skips the prune; missing/short-history
+  tickers are KEPT. US only.
 - **Cleanup** (`cleanup_old_outputs`) is driven by an explicit regex rule table
   (`_RETENTION_RULES`, not globs) and soft-fails; **never touches**
   `eod_seen_*`, `ntfy_last_seen.txt`, `edgar_cache/`, logs.

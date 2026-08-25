@@ -64,6 +64,13 @@ adr_mult  = 1.0         # TUNE ⭐ 反转豁免: 5日涨幅 ≥ adr_mult×ADR% �
 #   drop_days_below = ...   # 连续在均线下方天数
 #   drop_frac_below = ...   # persistence_window 内占比
 
+# SMA50 剪除: us-eod 开跑前排查 eod_seen_US.txt, 收盘价连续 N 天低于 SMA50
+# 的股票从 master 移除 (先备份 .bak.<stamp>), 走弱票未来重新走强可再入选。
+# 软失败: yfinance 整体失败则跳过; 单票数据缺失/历史不足 50 根 → 保留。仅 US。
+[sma50_prune]
+enabled = true
+consecutive_days = 2
+
 # ════════════════════════════════════════════════════════════
 #  美股 (US)
 # ════════════════════════════════════════════════════════════

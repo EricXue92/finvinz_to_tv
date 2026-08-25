@@ -1845,6 +1845,17 @@ def main() -> int:
         # MorningGap is intentionally excluded (has its own per-day seen flow).
         us_seen_path = _eod_seen_path(output_dir, "US")
         hk_seen_path = _eod_seen_path(output_dir, "HK")
+
+        # --- SMA50 prune (US master, before load) ---
+        # Tickers whose close sat below SMA50 for N consecutive completed days
+        # are removed from the master (backed up first) so they can re-qualify
+        # later. Soft-fail: any error skips the prune, EOD proceeds.
+        try:
+            from sma50_prune import prune_us_master
+            prune_us_master(us_seen_path, config.get("sma50_prune", {}))
+        except Exception as e:
+            logger.warning(f"[sma50-prune] failed, master untouched: {e}")
+
         us_seen = _load_seen(us_seen_path)
         hk_seen = _load_seen(hk_seen_path)
         logger.info(
