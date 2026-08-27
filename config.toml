@@ -106,6 +106,15 @@ name = "Top Gainers"
 signal = "ta_topgainers"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_sma50_pa","ta_sma200_pa"]
 
+# EOD Repeat: 已在跨日 master (output/state/eod_seen_US.txt) 里、今天又命中
+# 事件类 Longs 子组的老票 —— 汇总到 <date>_Repeat.txt 供每日复查。
+# 只读 master (不写回、不影响各组自身"只出新票"的语义)。keys 留空 = 关闭。
+# 刻意排除 new_high_52w / Leaders: 它们是持续状态，会天天复燃刷屏。
+[eod_repeat]
+enabled = true
+keys = ["earnings_gap", "high_volume", "gap_up", "top_gainers"]
+file_stem = "Repeat"
+
 # Leaders: 强势 + 站上 SMA50/SMA200，5 个 perf 窗口合并去重，输出 Leaders.txt。
 # 共同条件: cap ≥ small、avg vol > 500K、price > $20。
 # 全局 min_dollar_volume ($100M) 和 min_adr_percent (≥4.0%) 自动套用。
@@ -324,6 +333,9 @@ longs_high_volume = "HighVolume"
 longs_gap_up = "GapUp"
 longs_new_high_52w = "NewHigh52W"
 longs_top_gainers = "TopGainers"
+# eod_repeat: 老票复燃汇总。默认不同步 —— 想同步先在牛牛客户端手建
+# 同名分组 (API 建不了组)，再取消下面这行的注释。
+# eod_repeat = "Repeat"
 shorts = "Shorts"
 rs = "RS"
 leaders = "Leaders"
@@ -372,6 +384,8 @@ longs_high_volume  = "HighVolume"
 longs_gap_up       = "GapUp"
 longs_new_high_52w = "NewHigh52W"
 longs_top_gainers  = "TopGainers"
+# eod_repeat: 同上 —— 需先在 TV 网页手建同名列表后再取消注释。
+# eod_repeat        = "Repeat"
 shorts             = "Shorts"
 rs                 = "RS"
 leaders            = "Leaders"

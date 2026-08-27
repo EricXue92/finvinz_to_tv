@@ -42,6 +42,14 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   `consecutive_days` (2) completed days → removed, can re-qualify later.
   Soft-fail: total yfinance failure skips the prune; missing/short-history
   tickers are KEPT. US only.
+- **EOD Repeat (US):** tickers the master would drop that still fired an
+  *event* Longs group today are collected by `_repeat_hits` **before**
+  `_dedup_seen` (which mutates `us_seen`) and written to
+  `<date>_Repeat.txt`. Read-only w.r.t. the master — no write-back, and each
+  group's own `.txt` keeps its "new names only" meaning. Config `[eod_repeat]`
+  (`keys` = the 4 event groups; `new_high_52w`/Leaders deliberately excluded as
+  persistent states). Futu/TV mappings ship commented out (groups must be
+  hand-created), so sync is a no-op until you enable them.
 - **Cleanup** (`cleanup_old_outputs`) is driven by an explicit regex rule table
   (`_RETENTION_RULES`, not globs) and soft-fails; **never touches**
   `eod_seen_*`, `ntfy_last_seen.txt`, `edgar_cache/`, logs.

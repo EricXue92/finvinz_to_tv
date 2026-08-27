@@ -350,6 +350,19 @@ def _dedup_seen(
     return new
 
 
+def _repeat_hits(label: str, sorted_tickers: list[str], seen: set[str]) -> list[str]:
+    """The subset of `sorted_tickers` already in the cross-day master `seen`.
+
+    These are the tickers `_dedup_seen` is about to drop. Call it BEFORE
+    `_dedup_seen` (which mutates `seen`). Read-only: never touches the master
+    or its file — a repeat hit is already recorded there. Sorted-input →
+    sorted-output."""
+    hits = [t for t in sorted_tickers if t in seen]
+    if hits:
+        logger.info(f"{label} {len(hits)} repeat: {', '.join(hits)}")
+    return hits
+
+
 
 def _yf_download_with_retry(tickers, max_retries=3, **kwargs):
     """Download yfinance data with retries on failure."""
@@ -2102,11 +2115,17 @@ def main() -> int:
         # --- Write Longs (one file per strategy; Leaders/RS dedup already applied to union) ---
         # Filename matches Futu group name (PascalCase).
         futu_groups_cfg = (config.get("futu") or {}).get("groups") or {}
+        repeat_cfg = config.get("eod_repeat") or {}
+        repeat_keys = set(repeat_cfg.get("keys") or []) if repeat_cfg.get("enabled") else set()
+        repeat_tickers: set[str] = set()
         written_longs: dict[str, list[str]] = {}
         for key, name, tickers in longs_dedup:
             futu_key = f"longs_{key}"
             file_stem = futu_groups_cfg.get(futu_key) or key  # fallback to key if unmapped
             sorted_t = sorted(tickers)
+            # Collect repeats BEFORE _dedup_seen — it mutates us_seen.
+            if key in repeat_keys:
+                repeat_tickers.update(_repeat_hits(f"[Repeat/{key}]", sorted_t, us_seen))
             sorted_t = _dedup_seen(f"[Longs/{key}]", sorted_t, us_seen, us_seen_path)
             dated = us_output_dir / f"{today}_{file_stem}.txt"
             write_watchlist(sorted_t, dated, fmt)
@@ -2126,6 +2145,20 @@ def main() -> int:
             _write_webull(sorted_leaders, dated, output_dir)
             _futu_sync(config, "leaders", sorted_leaders, "US")
             _tv_sync(config, "leaders", sorted_leaders, "US")
+
+        # --- Write Repeat (old names that re-fired an event group today) ---
+        # These are already in the cross-day master, so they were dropped from
+        # their own group's .txt above. Read-only w.r.t. us_seen — writing them
+        # here neither consults nor mutates the master again.
+        if repeat_keys:
+            sorted_repeat = sorted(repeat_tickers)
+            repeat_stem = repeat_cfg.get("file_stem") or "Repeat"
+            dated = us_output_dir / f"{today}_{repeat_stem}.txt"
+            write_watchlist(sorted_repeat, dated, fmt)
+            logger.info(f"[Repeat] Total unique: {len(sorted_repeat)} -> {dated}")
+            _write_webull(sorted_repeat, dated, output_dir)
+            _futu_sync(config, "eod_repeat", sorted_repeat, "US")
+            _tv_sync(config, "eod_repeat", sorted_repeat, "US")
 
         # --- Write RS (only if it actually ran) ---
         # RS bypasses cross-day master dedup (eod_seen_US.txt) — see the
