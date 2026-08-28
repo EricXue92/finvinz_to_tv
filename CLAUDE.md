@@ -26,8 +26,13 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
 
 ## Invariants (don't break these)
 
-- **Dated files only**, no "latest" copy. `write_watchlist` always writes the
-  dated file even when empty (0-byte), no drop-guard.
+- **Dated files only**, no "latest" copy. `write_watchlist` skips empty lists
+  (no 0-byte artifacts) and deliberately does NOT delete an existing file — a
+  manual EOD rerun dedups today's names to 0 and must not wipe the earlier
+  run's output. The log is the record of a 0-result scan. Morning-gap files
+  are per-scan (`_gap_scan_stem`: `MorningGapPre20`/`MorningGap5`/
+  `HKMorningGap10`), one snapshot per offset, absent when that scan found
+  nothing.
 - **Webull mirror is newline-separated** (its file upload truncates comma lists);
   TV `.txt` stays comma-separated.
 - **Dedup, layered:** (1) within Longs, earlier `config.toml` entry wins; (2) Longs
@@ -43,7 +48,7 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   Soft-fail: total yfinance failure skips the prune; missing/short-history
   tickers are KEPT. US only.
 - **EOD Repeat (US):** tickers the master would drop that still fired an
-  *event* Longs group today are collected by `_repeat_hits` **before**
+  _event_ Longs group today are collected by `_repeat_hits` **before**
   `_dedup_seen` (which mutates `us_seen`) and written to
   `<date>_Repeat.txt`. Read-only w.r.t. the master — no write-back, and each
   group's own `.txt` keeps its "new names only" meaning. Config `[eod_repeat]`
@@ -67,9 +72,9 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   US / `[hk_morning_gap]` HK) waives **SMA50 only** for big gappers — SMA200 is
   never waived. Both knobs are per-market config; `sma_use_live_price = false`
   restores the old basis.
-  Consequence, and it is intended: the gate drifts intraday, but each phase's
-  dated `.txt` is fully overwritten every scan (not cumulative, and morning-gap
-  never touches `eod_seen_*`), so drift only affects the one-time ntfy/catalyst
+  Consequence, and it is intended: the gate drifts intraday, but each scan
+  writes its own per-offset `.txt` (not cumulative, and morning-gap never
+  touches `eod_seen_*`), so drift only affects the one-time ntfy/catalyst
   gate (`morning_gap_seen_{pre,post}_<date>.txt`), not what's written. Spec:
   `docs/superpowers/specs/2026-08-13-morning-gap-live-price-trend-gate-design.md`.
 - **Report** is soft-fail (wrapper exit code reflects only the EOD step). Shorts /

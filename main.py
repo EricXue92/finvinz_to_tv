@@ -1662,10 +1662,24 @@ def _get_et_scan_offset(
     return None
 
 
+def _gap_scan_stem(offset_min: int, *, hk: bool = False) -> str:
+    """Per-scan morning-gap file stem: each offset gets its own dated file
+    (`MorningGapPre20`, `MorningGap5`, `HKMorningGap10`) so every scan's
+    snapshot is preserved — a 0-ticker scan simply leaves no file for that
+    offset instead of overwriting the day's single file."""
+    if hk:
+        return f"HKMorningGap{offset_min}"
+    if offset_min < 0:
+        return f"MorningGapPre{-offset_min}"
+    return f"MorningGap{offset_min}"
+
+
 def _write_webull(tickers: list[str], dated_path: Path, output_dir: Path) -> None:
     """Mirror tickers as newline-separated .txt under output/Webull/{market}/.
     Webull's "Upload as File" only recognizes one ticker per line — comma-
     separated lists silently truncate after the first 1-2 entries."""
+    if not tickers:  # mirror write_watchlist: no 0-byte artifacts
+        return
     market = dated_path.parent.name  # "US" or "HK"
     webull_dir = output_dir / "Webull" / market
     webull_dir.mkdir(parents=True, exist_ok=True)
@@ -1673,14 +1687,18 @@ def _write_webull(tickers: list[str], dated_path: Path, output_dir: Path) -> Non
 
 
 def write_watchlist(tickers: list[str], output_path: Path, fmt: str = "comma") -> None:
-    """Write tickers to file. Always writes — empty list produces an empty
-    dated file for the day, so every run leaves an artifact regardless of
-    screener results."""
+    """Write tickers to file. Empty list writes nothing — no 0-byte artifact —
+    and deliberately does NOT delete an existing file: a manual EOD rerun
+    dedups today's names to 0 against the master, and deleting would destroy
+    the earlier run's legitimate output. The log is the record of a 0-result
+    scan."""
+    if not tickers:
+        return
     if fmt == "comma":
         content = ",".join(tickers)
     else:
         content = "\n".join(tickers)
-    output_path.write_text(content + "\n" if content else "")
+    output_path.write_text(content + "\n")
 
 
 def main() -> int:
@@ -2300,7 +2318,7 @@ def main() -> int:
         # Pre-market and post-open scans write to separate files / Futu groups
         # so each gets its own drop-guard baseline (filter strictness differs).
         is_pre = offset < 0
-        stem = "MorningGapPre" if is_pre else "MorningGap"
+        stem = _gap_scan_stem(offset)
         futu_key = "morning_gap_pre" if is_pre else "morning_gap"
         sign = "" if is_pre else "+"
 
@@ -2372,7 +2390,7 @@ def main() -> int:
             return f"HKEX:{stripped or '0'}"
 
         tv_tickers = sorted({_yf_to_tv(t) for t in yf_tickers})
-        dated = hk_output_dir / f"{today}_HKMorningGap.txt"
+        dated = hk_output_dir / f"{today}_{_gap_scan_stem(offset, hk=True)}.txt"
         write_watchlist(tv_tickers, dated, fmt)
         logger.info(
             f"[HK Morning Gap] +{offset}min: {len(tv_tickers)} tickers -> {dated}"

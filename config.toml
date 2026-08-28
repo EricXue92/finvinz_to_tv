@@ -155,8 +155,9 @@ name = "Relative Strength"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]
 
 # Morning Gap: 盘前 -20/-10/-5 + 盘后 +5/+10/+15/+20/+25/+30 分钟扫描。
-# 负 offset = 盘前 (→ MorningGapPre.txt, 跳过盘中累计量过滤);
-# 正 offset = 盘后 (→ MorningGap.txt, 累计量须 ≥ 20日均量)。
+# 负 offset = 盘前 (→ MorningGapPre{N}.txt, 跳过盘中累计量过滤);
+# 正 offset = 盘后 (→ MorningGap{N}.txt, 累计量须 ≥ 20日均量)。
+# 每个 offset 独立留档一个文件; 0 结果的扫描不生成文件。
 # Discovery 走 Futu snapshot (取代 Finviz ta_topgainers — 后者会surface上周
 # 盘中涨幅而非今日盘前 gapper)。盘前用 pre_change_rate; 盘后用
 # (last_price - prev_close_price) / prev_close_price 推导。
