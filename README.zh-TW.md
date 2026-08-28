@@ -73,19 +73,19 @@ Oliver Kell 的動量/突破 setup。按優先級排序,靠前的策略優先命
 
 Kullamägi 拋物線 blow-off setup。分兩階段:先用 Finviz Ownership 預過濾,再在一次共享下載上做 yfinance 後處理。
 
-**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M(Finviz 3 個月均量), Cap > $300M;隨後套 **IBD RS 3M ≥ 90**(12M 層 `min_rs_percentile_shorts` 當前設 0 關閉),在進 yfinance batch 之前先篩掉一批。
+**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M(Finviz 3 個月均量), Cap > $50M(2026-08-24 從 $300M 下調);隨後套 **IBD RS 3M ≥ 90**(12M 層 `min_rs_percentile_shorts` 當前設 0 關閉),在進 yfinance batch 之前先篩掉一批。
 
 **Phase 2 — yfinance + Futu 市值快照,順序:performance → dollar volume → ADR% → 連續上漲天數。**
 
-| 過濾                                | 閾值                                     | 數據源                                               |
-| ----------------------------------- | ---------------------------------------- | ---------------------------------------------------- |
-| 市值(perf 分桶用)                   | 實時 USD 值                              | Futu 快照 `total_market_val` → Finviz Ownership 兜底 |
-| Dollar Volume                       | ≥ $100M(20 日均量)                       | yfinance                                             |
-| ADR%                                | ≥ 4.0%(20 日)                            | yfinance                                             |
-| Performance — Large Cap (≥ $10B)    | 2、3 或 4 周內 Up 50%+                   | yfinance                                             |
-| Performance — Mid Cap ($2B–$10B)    | 2、3 或 4 周內 Up 200%+                  | yfinance                                             |
-| Performance — Small Cap ($300M–$2B) | 2、3 或 4 周內 Up 300%+                  | yfinance                                             |
-| 連續上漲天數                        | ≥ 3 個綠天(若開市則排除今日未完成的 bar) | yfinance                                             |
+| 過濾                               | 閾值                                     | 數據源                                               |
+| ---------------------------------- | ---------------------------------------- | ---------------------------------------------------- |
+| 市值(perf 分桶用)                  | 實時 USD 值                              | Futu 快照 `total_market_val` → Finviz Ownership 兜底 |
+| Dollar Volume                      | ≥ $100M(20 日均量)                       | yfinance                                             |
+| ADR%                               | ≥ 4.0%(20 日)                            | yfinance                                             |
+| Performance — Large Cap (≥ $10B)   | 2、3 或 4 周內 Up 50%+                   | yfinance                                             |
+| Performance — Mid Cap ($2B–$10B)   | 2、3 或 4 周內 Up 200%+                  | yfinance                                             |
+| Performance — Small Cap ($50M–$2B) | 2、3 或 4 周內 Up 300%+                  | yfinance                                             |
+| 連續上漲天數                       | ≥ 3 個綠天(若開市則排除今日未完成的 bar) | yfinance                                             |
 
 市值取自 Futu 的精確數值,而不是 Finviz 那種 `"6.96M"`/`"1.23B"` 的粗略字符串——後者在 $2B / $10B 分界附近很容易分錯桶。
 
@@ -123,7 +123,7 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 ### HK Shorts
 
-方法學與 US Shorts 一致,數據源換成 HKEX 股票列表(約 2,400 隻主板股)加 yfinance,閾值全部用 HKD 原生值:**3M RS ≥ 90 單閘**(vs HSI,對齊 US Shorts;在 yfinance 批量下載前先篩 universe,表中缺失的票保留),cap ≥ HKD 300M,avg vol ≥ 1M 股/天(做空側獨有的下限,長線側是 500K),dollar volume ≥ HKD 100M(對齊美股 $100M),ADR% ≥ 4.0%,按 HKD 10B / 2B / 300M 三檔市值分別對應 perf 50/200/300%,連續上漲 ≥ 3 天;輸出 `HKEX:NNN` 格式並去掉前導零。已於 2026-05-06 重新啟用。
+方法學與 US Shorts 一致,數據源換成 HKEX 股票列表(約 2,400 隻主板股)加 yfinance,閾值全部用 HKD 原生值:**3M RS ≥ 90 單閘**(vs HSI,對齊 US Shorts;在 yfinance 批量下載前先篩 universe,表中缺失的票保留),cap ≥ HKD 50M(2026-08-24 從 300M 下調,與美股 $50M 下限同步),avg vol ≥ 1M 股/天(做空側獨有的下限,長線側是 500K),dollar volume ≥ HKD 100M(對齊美股 $100M),ADR% ≥ 4.0%,按 HKD 10B / 2B / 50M 三檔市值分別對應 perf 50/200/300%,連續上漲 ≥ 3 天;輸出 `HKEX:NNN` 格式並去掉前導零。已於 2026-05-06 重新啟用。
 
 ### HK 長線側:EarningsGap / HighVolume / GapUp / Leaders / RS
 

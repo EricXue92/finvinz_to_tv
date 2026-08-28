@@ -73,19 +73,19 @@ Long-term trend leaders above SMA50 and SMA200. The five strategies share one ba
 
 Kullamägi's parabolic blow-off setup. Two phases: a Finviz Ownership pre-filter, then yfinance post-processing on one shared download.
 
-**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month average), Cap > $300M; then **IBD RS 3M ≥ 90** (the 12M layer `min_rs_percentile_shorts` is currently 0/off) prunes the list before the yfinance batch.
+**Phase 1 — Finviz Ownership:** SMA20 +20%, Above SMA50, Avg Vol > 1M (Finviz 3-month average), Cap > $50M (lowered from $300M on 2026-08-24); then **IBD RS 3M ≥ 90** (the 12M layer `min_rs_percentile_shorts` is currently 0/off) prunes the list before the yfinance batch.
 
 **Phase 2 — yfinance + Futu market-cap snapshot, in order: performance → dollar volume → ADR% → consecutive up days.**
 
-| Filter                              | Threshold                                                 | Source                                                       |
-| ----------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
-| Market cap (for perf bucketing)     | real-time USD value                                       | Futu snapshot `total_market_val` → Finviz Ownership fallback |
-| Dollar Volume                       | ≥ $100M (20-day avg volume)                               | yfinance                                                     |
-| ADR%                                | ≥ 4.0% (20-day)                                           | yfinance                                                     |
-| Performance — Large Cap (≥ $10B)    | Up 50%+ within 2, 3, or 4 weeks                           | yfinance                                                     |
-| Performance — Mid Cap ($2B–$10B)    | Up 200%+ within 2, 3, or 4 weeks                          | yfinance                                                     |
-| Performance — Small Cap ($300M–$2B) | Up 300%+ within 2, 3, or 4 weeks                          | yfinance                                                     |
-| Consecutive up days                 | ≥ 3 green days (excluding today's incomplete bar if open) | yfinance                                                     |
+| Filter                             | Threshold                                                 | Source                                                       |
+| ---------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| Market cap (for perf bucketing)    | real-time USD value                                       | Futu snapshot `total_market_val` → Finviz Ownership fallback |
+| Dollar Volume                      | ≥ $100M (20-day avg volume)                               | yfinance                                                     |
+| ADR%                               | ≥ 4.0% (20-day)                                           | yfinance                                                     |
+| Performance — Large Cap (≥ $10B)   | Up 50%+ within 2, 3, or 4 weeks                           | yfinance                                                     |
+| Performance — Mid Cap ($2B–$10B)   | Up 200%+ within 2, 3, or 4 weeks                          | yfinance                                                     |
+| Performance — Small Cap ($50M–$2B) | Up 300%+ within 2, 3, or 4 weeks                          | yfinance                                                     |
+| Consecutive up days                | ≥ 3 green days (excluding today's incomplete bar if open) | yfinance                                                     |
 
 Market cap uses Futu's exact value rather than Finviz's coarse `"6.96M"`/`"1.23B"` strings — the latter easily mis-buckets names near the $2B / $10B boundaries.
 
@@ -123,7 +123,7 @@ Thresholds align with the US Longs baseline, so a name graduates seamlessly once
 
 ### HK Shorts
 
-Same methodology as US Shorts, with the data source switched to the HKEX stock list (~2,400 main-board names) plus yfinance, and all thresholds in native HKD: **single 3M RS ≥ 90 gate** (vs HSI, aligned with US Shorts; applied as a universe pre-filter before the yfinance batch, missing tickers kept), cap ≥ HKD 300M, avg vol ≥ 1M shares/day (a shorts-only floor; long side uses 500K), dollar volume ≥ HKD 100M (aligned with the US $100M), ADR% ≥ 4.0%, perf 50/200/300% by the HKD 10B / 2B / 300M cap tiers, ≥ 3 consecutive up days; output in `HKEX:NNN` format with leading zeros stripped. Re-enabled 2026-05-06.
+Same methodology as US Shorts, with the data source switched to the HKEX stock list (~2,400 main-board names) plus yfinance, and all thresholds in native HKD: **single 3M RS ≥ 90 gate** (vs HSI, aligned with US Shorts; applied as a universe pre-filter before the yfinance batch, missing tickers kept), cap ≥ HKD 50M (lowered from 300M on 2026-08-24, in step with the US $50M floor), avg vol ≥ 1M shares/day (a shorts-only floor; long side uses 500K), dollar volume ≥ HKD 100M (aligned with the US $100M), ADR% ≥ 4.0%, perf 50/200/300% by the HKD 10B / 2B / 50M cap tiers, ≥ 3 consecutive up days; output in `HKEX:NNN` format with leading zeros stripped. Re-enabled 2026-05-06.
 
 ### HK long side: EarningsGap / HighVolume / GapUp / Leaders / RS
 
