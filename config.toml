@@ -149,7 +149,7 @@ perf_large_cap = 50     # ≥ $10B
 perf_mid_cap = 200      # $2B–$10B
 perf_small_cap = 300    # $50M–$2B
 
-# RS: 条件触发，仅当 SPY 和 QQQ 当日都跌 ≥ 1.2% 时运行。
+# RS: 条件触发，仅当 SPY 和 QQQ 当日都跌 ≥ 1.0% 时运行。
 [rs]
 name = "Relative Strength"
 filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_perf_dup","ta_sma200_pa","ta_sma50_pa"]

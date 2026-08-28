@@ -91,7 +91,7 @@ Market cap uses Futu's exact value rather than Finviz's coarse `"6.96M"`/`"1.23B
 
 ### RS — Relative Strength (conditionally triggered)
 
-Oliver Kell's relative-strength play: stocks holding up in a weak tape. **Runs only when both SPY and QQQ are down ≥ 1.2% on the day** (`check_market_down`, threshold hardcoded).
+Oliver Kell's relative-strength play: stocks holding up in a weak tape. **Runs only when both SPY and QQQ are down ≥ 1.0% on the day** (`check_market_down`, threshold hardcoded).
 
 Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 3M ≥ 90** (the 12M layer `min_rs_percentile_rs` is currently 0/off).
 

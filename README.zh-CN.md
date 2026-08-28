@@ -91,7 +91,7 @@ Kullamägi 抛物线 blow-off setup。分两阶段:先用 Finviz Ownership 预�
 
 ### RS — Relative Strength(条件触发)
 
-Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 和 QQQ 当日都跌 ≥ 1.2% 时才运行**(`check_market_down`,阈值写在代码里)。
+Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 和 QQQ 当日都跌 ≥ 1.0% 时才运行**(`check_market_down`,阈值写在代码里)。
 
 过滤:Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, Dollar Volume ≥ $100M, ADR% ≥ 4.0%, **IBD RS 3M ≥ 90**(12M 层 `min_rs_percentile_rs` 当前设 0 关闭)。
 
