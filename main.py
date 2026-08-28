@@ -1819,6 +1819,13 @@ def main() -> int:
                 logger.warning(
                     f"[net-ready] Skipping {args.mode} run — network never came up"
                 )
+                # Best-effort alert so the lost scan window is visible
+                # (2026-08-27: Clash DNS flap silently killed all three
+                # pre-market scans). Swallows failure — clean-exit stands.
+                from notify import notify_scan_skipped
+                notify_scan_skipped(
+                    args.mode, "network never came up within 300s", config
+                )
                 return 0
             return 1
 

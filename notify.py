@@ -128,3 +128,27 @@ def notify_morning_catalyst_ready(
     title = f"Catalyst Report Ready ({sign}{offset_min}min, {n_tickers} tickers)"
     body = str(report_path)
     _ntfy_post(server, topic, title, body, priority="default")
+
+
+def notify_scan_skipped(mode: str, reason: str, config: dict) -> None:
+    """Push a high-priority ntfy alert when a scheduled scan is skipped.
+
+    Used by the net-ready gate: a morning-gap run that clean-exits because
+    the network never came up loses its scan window silently (observed
+    2026-08-27 — Clash DNS flap killed all three pre-market scans with no
+    trace outside the log). Best-effort: if the network is still down the
+    POST fails and is swallowed by `_ntfy_post`, preserving the clean-exit
+    contract.
+    """
+    notify_cfg = config.get("notify") or {}
+    if not notify_cfg.get("enabled", False):
+        return
+
+    topic = notify_cfg.get("ntfy_topic")
+    if not topic:
+        logger.warning("[Notify] ntfy_topic missing for scan-skipped alert")
+        return
+
+    server = notify_cfg.get("ntfy_server", "https://ntfy.sh").rstrip("/")
+    title = f"SKIPPED: {mode} scan"
+    _ntfy_post(server, topic, title, reason, priority="high")
