@@ -189,8 +189,8 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 | Universe   | NASDAQ / NYSE / AMEX, listed, `stock_type = STOCK`  | Futu `get_stock_basicinfo` |
 | Market Cap | ≥ $300M                                             | `total_market_val`         |
 | Price      | ≥ $20                                               | `last_price`               |
-| Gap(盤前)  | `pre_change_rate` ≥ 3%(且 `pre_volume > 0`)         | `pre_change_rate`          |
-| Gap(盤後)  | `(last_price − prev_close) / prev_close × 100` ≥ 3% | 由快照推導                 |
+| Gap(盤前)  | `pre_change_rate` ≥ 5%(且 `pre_volume > 0`)         | `pre_change_rate`          |
+| Gap(盤後)  | `(last_price − prev_close) / prev_close × 100` ≥ 5% | 由快照推導                 |
 
 **Phase 2 — yfinance 後處理 + Futu 盤中量:**
 

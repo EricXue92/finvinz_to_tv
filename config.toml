@@ -164,7 +164,7 @@ filters = ["ind_stocksonly","cap_smallover","sh_avgvol_o500","sh_price_o20","ta_
 [morning_gap]
 name = "Morning Gap Up"
 exchanges = ["US_NASDAQ", "US_NYSE", "US_AMEX"]
-min_gap_percent = 3.0           # 盘后 discovery
+min_gap_percent = 5.0           # 盘后 discovery
 min_gap_percent_pre = 5.0       # 盘前 discovery (负 offset); 不设则回落到 min_gap_percent
 min_market_cap = 300_000_000    # USD; = Finviz cap_smallover
 min_price = 20.0                # USD; = Finviz sh_price_o20

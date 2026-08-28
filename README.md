@@ -189,8 +189,8 @@ A two-stage intraday gap scanner. **Pre-market (20/10/5 minutes before the open)
 | Universe   | NASDAQ / NYSE / AMEX, listed, `stock_type = STOCK`  | Futu `get_stock_basicinfo` |
 | Market Cap | ≥ $300M                                             | `total_market_val`         |
 | Price      | ≥ $20                                               | `last_price`               |
-| Gap (pre)  | `pre_change_rate` ≥ 3% (and `pre_volume > 0`)       | `pre_change_rate`          |
-| Gap (post) | `(last_price − prev_close) / prev_close × 100` ≥ 3% | derived from the snapshot  |
+| Gap (pre)  | `pre_change_rate` ≥ 5% (and `pre_volume > 0`)       | `pre_change_rate`          |
+| Gap (post) | `(last_price − prev_close) / prev_close × 100` ≥ 5% | derived from the snapshot  |
 
 **Phase 2 — yfinance post-processing + Futu intraday volume:**
 
