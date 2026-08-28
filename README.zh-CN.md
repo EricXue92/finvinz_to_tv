@@ -362,6 +362,8 @@ Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 
 ## 参考资料 (References)
 
+这里只列出了一些关键资源,并不完整——还有不少参考过的材料没有列出。
+
 **书籍:**
 
 - _How to Make Money in Stocks_ — William O'Neil(CANSLIM 与 IBD RS 体系的源头)
@@ -371,6 +373,7 @@ Python ≥ 3.12(见 `pyproject.toml`)—— [finviz](https://github.com/mariosto
 - _A Complete Guide to Volume Price Analysis_ — Anna Coulling
 - _The Power of Japanese Candlestick Charts_ — Fred K.H. Tam
 - _The Trader's Handbook: Winning Habits and Routines of Successful Traders_ — Richard Moglen, Nick Schmidt, et al.
+- _Market Wizards: The Next Generation: The World's Top Young Traders Reveal How They Beat the Market_ — Jack D. Schwager, George F. Coyle
 
 **网站与频道:**
 
