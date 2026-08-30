@@ -153,6 +153,31 @@ def render_report(
     return "\n".join(lines)
 
 
+def write_top_n(
+    buckets: dict,
+    market: str,
+    as_of: str,
+    output_dir: Path,
+    top_n: int,
+) -> Path | None:
+    """Write the strongest-N snapshot (``rs_us_<date>.txt`` / ``hk_rs_<date>.txt``).
+
+    Takes the head of ``keeps_ranked`` minus unknowns (no score → never in a
+    "strongest" list; they also never pad a short list). Returns the path, or
+    None when there is nothing scored to write (empty-list convention: no
+    0-byte artifacts). Same-day rerun overwrites — the file is a ranking
+    snapshot, not a dedup-bearing watchlist.
+    """
+    unknown = set(buckets["unknowns"])
+    top = [i for i in buckets["keeps_ranked"] if i not in unknown][:top_n]
+    if not top:
+        return None
+    stem = "rs_us" if market == "us" else "hk_rs"
+    out = output_dir / f"{stem}_{as_of}.txt"
+    out.write_text(",".join(top) + "\n")
+    return out
+
+
 def _load_seen(path: Path) -> list[str]:
     if not path.exists():
         return []
@@ -264,6 +289,12 @@ def _audit_market(
         ",".join(buckets["keeps_ranked"]) + ("\n" if buckets["keeps_ranked"] else "")
     )
     logger.info(f"[rs-line-audit] wrote {keep_file} ({len(buckets['keeps_ranked'])} ids)")
+
+    top_file = write_top_n(
+        buckets, market, as_of, output_dir, rs_line.top_n_from_config(config)
+    )
+    if top_file is not None:
+        logger.info(f"[rs-line-audit] wrote {top_file} (strongest top-N)")
 
     print("\n" + text + "\n")
 

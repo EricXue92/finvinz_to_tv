@@ -54,4 +54,12 @@ set +e
 "$UV" run --directory "$PROJECT" main.py --mode report --market hk
 set -e
 
+# Daily strongest-RS snapshot (output/hk_rs_<date>.txt): the rs-line audit in
+# report-only mode. --dry-run is load-bearing — it skips the y/N prompt AND
+# guarantees the scheduled run never prunes eod_seen_HK.txt (pruning stays a
+# manual, operator-triggered action). Soft side-effect like the report.
+set +e
+"$UV" run --directory "$PROJECT" main.py --mode rs-line-audit --market hk --dry-run
+set -e
+
 exit $EOD_STATUS

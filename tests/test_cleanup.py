@@ -183,6 +183,38 @@ def test_cleanup_keeps_recent_rs_rating_3m(tmp_path):
     assert not drop.exists()
 
 
+def test_cleanup_top_n_snapshots_five_day_window(tmp_path: Path) -> None:
+    out = tmp_path / "output"
+    out.mkdir()
+    _touch(out / "rs_us_2026-05-15.txt")
+    _touch(out / "rs_us_2026-05-11.txt")
+    _touch(out / "rs_us_2026-05-10.txt")
+    _touch(out / "hk_rs_2026-05-15.txt")
+    _touch(out / "hk_rs_2026-05-10.txt")
+    cleanup_old_outputs(out, date(2026, 5, 15))
+    assert (out / "rs_us_2026-05-15.txt").exists()
+    assert (out / "rs_us_2026-05-11.txt").exists()
+    assert not (out / "rs_us_2026-05-10.txt").exists()
+    assert (out / "hk_rs_2026-05-15.txt").exists()
+    assert not (out / "hk_rs_2026-05-10.txt").exists()
+
+
+def test_cleanup_audit_reports_fourteen_day_window(tmp_path: Path) -> None:
+    out = tmp_path / "output"
+    out.mkdir()
+    _touch(out / "rs_line_audit_US_2026-05-15.txt")
+    _touch(out / "rs_line_audit_US_2026-05-02.txt")          # 14th day — kept
+    _touch(out / "rs_line_audit_US_2026-05-01.txt")          # 15th day — pruned
+    _touch(out / "rs_line_audit_HK_2026-05-01_drop.txt")
+    _touch(out / "rs_line_audit_HK_2026-05-01_keep_ranked.txt")
+    cleanup_old_outputs(out, date(2026, 5, 15))
+    assert (out / "rs_line_audit_US_2026-05-15.txt").exists()
+    assert (out / "rs_line_audit_US_2026-05-02.txt").exists()
+    assert not (out / "rs_line_audit_US_2026-05-01.txt").exists()
+    assert not (out / "rs_line_audit_HK_2026-05-01_drop.txt").exists()
+    assert not (out / "rs_line_audit_HK_2026-05-01_keep_ranked.txt").exists()
+
+
 def test_cleanup_removes_old_hk_metrics_state_cache(tmp_path: Path) -> None:
     state = tmp_path / "state"
     state.mkdir(parents=True)

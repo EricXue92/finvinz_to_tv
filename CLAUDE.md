@@ -128,7 +128,15 @@ local (throttle-prone) k-line fetch.
   Confirmed prunes back the master up first as `eod_seen_<MKT>.txt.bak.<stamp>`.
   `--yes` skips the prompt (auto-prune, legacy non-interactive behavior);
   `--dry-run` writes the report + sidecars but does NOT touch the master
-  (no prompt, no backup). Manual, operator-triggered; not on the launchd schedule.
+  (no prompt, no backup). **Pruning** stays manual/operator-triggered, but a
+  `--dry-run` audit is chained daily as a soft step at the end of
+  `run_eod.sh` / `run_hk_eod.sh` (after the report) to produce the
+  strongest-RS snapshot below.
+- **Daily strongest-RS snapshot:** every audit run also writes the top
+  `[rs_line].top_n` (10) of `keep_ranked` (unknowns excluded, never padded) to
+  `output/rs_us_<date>.txt` / `output/hk_rs_<date>.txt` — dated, skipped when
+  empty, overwritten on same-day rerun (ranking snapshot, no dedup semantics).
+  Cleanup: snapshots 5-day window; audit report + sidecars 14-day.
 
 ## Futu sync
 

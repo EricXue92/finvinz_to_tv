@@ -23,6 +23,7 @@ DEFAULT_LOOKBACK = 5
 DEFAULT_TOLERANCE = 0.005
 DEFAULT_ADR_MULT = 1.5
 DEFAULT_ADR_DAYS = 20
+DEFAULT_TOP_N = 10
 
 # Single-bar close-to-close |return| ≥ this fraction is treated as a data
 # anomaly (stock split, reverse split, bad quote, halt-resume gap). The audit
@@ -285,6 +286,13 @@ def tolerance_from_config(config: dict) -> float:
     Not a compute kwarg — used by the audit/gate to flag weak direction."""
     cfg = config.get("rs_line", {}) or {}
     return float(cfg.get("tolerance", DEFAULT_TOLERANCE))
+
+
+def top_n_from_config(config: dict) -> int:
+    """Size of the daily strongest-RS snapshot (rs_us_/hk_rs_<date>.txt)
+    written by the audit, from ``[rs_line]``."""
+    cfg = config.get("rs_line", {}) or {}
+    return int(cfg.get("top_n", DEFAULT_TOP_N))
 
 
 def is_enabled(config: dict) -> bool:

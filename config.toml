@@ -59,6 +59,7 @@ min_history = 42        # 对齐后不足此根数 → unknown (排除, 不标�
 lookback  = 5           # TUNE ⭐ EMA 斜率回看天数 (5 bar = 一个交易周)
 tolerance = 0.005       # TUNE ⭐ 破位线: chg < -0.5% 即方向转弱 (噪声带, 工作假设)
 adr_mult  = 1.0         # TUNE ⭐ 反转豁免: 5日涨幅 ≥ adr_mult×ADR% 则暂留。调高=更严苛/只留最强反转(代价:可能误砍真反转); 调低=更宽容/少被洗出
+top_n     = 10          # 每日 RS 最强快照条数 (audit 写 output/rs_us_<date>.txt / hk_rs_<date>.txt)
 # ================================================================
 # EOD 标注路径目前只输出三列, 未引入硬阈值。待观察真实分布后在 v2 加:
 #   drop_days_below = ...   # 连续在均线下方天数

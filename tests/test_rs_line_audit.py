@@ -1,6 +1,6 @@
 import pandas as pd
 
-from rs_line_audit import classify, render_report, _hk_master_to_futu
+from rs_line_audit import classify, render_report, write_top_n, _hk_master_to_futu
 
 
 def _frame(d):
@@ -109,6 +109,41 @@ def test_classify_splits_drops_exempts_and_ranks_keeps_desc():
     assert b["unknowns"] == ["ZZZ"]
     # strongest first across kept (AAA +6, DDD -0.4, CCC -2.0), then unknowns
     assert b["keeps_ranked"] == ["AAA", "DDD", "CCC", "ZZZ"]
+
+
+def test_write_top_n_takes_strongest_scored_only(tmp_path):
+    # keeps_ranked is strongest-first with unknowns appended; unknowns have no
+    # score and must never appear in the top-N file.
+    buckets = {"keeps_ranked": ["AAA", "BBB", "CCC", "ZZZ"], "unknowns": ["ZZZ"]}
+    p = write_top_n(buckets, "us", "2026-08-30", tmp_path, top_n=3)
+    assert p == tmp_path / "rs_us_2026-08-30.txt"
+    assert p.read_text() == "AAA,BBB,CCC\n"
+
+
+def test_write_top_n_unknown_never_pads_short_list(tmp_path):
+    buckets = {"keeps_ranked": ["AAA", "ZZZ"], "unknowns": ["ZZZ"]}
+    p = write_top_n(buckets, "us", "2026-08-30", tmp_path, top_n=10)
+    assert p.read_text() == "AAA\n"
+
+
+def test_write_top_n_hk_filename(tmp_path):
+    buckets = {"keeps_ranked": ["HKEX:2099", "HKEX:1548"], "unknowns": []}
+    p = write_top_n(buckets, "hk", "2026-08-30", tmp_path, top_n=10)
+    assert p == tmp_path / "hk_rs_2026-08-30.txt"
+    assert p.read_text() == "HKEX:2099,HKEX:1548\n"
+
+
+def test_write_top_n_skips_empty(tmp_path):
+    # Empty-list convention: no 0-byte artifacts.
+    buckets = {"keeps_ranked": ["ZZZ"], "unknowns": ["ZZZ"]}
+    assert write_top_n(buckets, "us", "2026-08-30", tmp_path, top_n=10) is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_top_n_from_config_default_and_override():
+    from rs_line import top_n_from_config
+    assert top_n_from_config({}) == 10
+    assert top_n_from_config({"rs_line": {"top_n": 5}}) == 5
 
 
 def test_hk_master_to_futu_pads_and_prefixes():
