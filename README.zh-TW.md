@@ -99,6 +99,8 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 雲端腳本會把 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` 三列寫進 `data/{us_rs_3m,hk_rs}/<date>.csv`(TraderLion 式 **RS line** = 價 ÷ 基準,再與它自己的 EMA21 比較)。EOD 日誌據此*標註*那些 RS line 持續處於均線下方(走弱)的長線側 survivors。這一步**只寫日誌**,不影響 `.txt` 輸出,也不進 dedup;跨日 master 的手動裁剪走 `--mode rs-line-audit`。配置見 `[rs_line]`。
 
+**每日 RS 最強快照:** 每個 EOD wrapper(`run_eod.sh` / `run_hk_eod.sh`)結尾會以 soft 步驟追加跑一次 `--dry-run` audit,按 RS 線趨勢給跨日 master 打分,並把最強的 `[rs_line].top_n`(10)隻寫入 `output/rs_us_<date>.txt`(美股,10:00 slot 之後)和 `output/hk_rs_<date>.txt`(港股,20:00 slot 之後)。帶日期、逗號分隔、結果為空不寫文件、同日重跑覆蓋;定時跑絕不裁剪 master。保留期:快照 5 天,audit 報告及 sidecar 14 天。
+
 ### IPO(自動收集的 sidecar)
 
 收集那些通過了某個 Longs/Leaders/RS 的 Finviz 篩選、卻因日線歷史不足被 yfinance 丟棄的長線候選——典型就是最近幾個月剛上市的新股。這批候選再過一道按歷史深度分級的 ladder(實現於 `us_ipo.filter_us_ipo_candidates`,與 HK 的 `filter_hk_ipo_candidates` 對應),這樣上市第 30 天的新股仍能浮現,而上市第 200 天的則要通過幾乎完整的長線基線:
@@ -239,6 +241,8 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 - **Longs 內部** — 5 個策略互斥(優先級 `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`)。
 - **跨組** — 長線側優先級 `Longs > Leaders > RS`。
 - **跨日 master** — `output/state/eod_seen_{US,HK,IPO,HKIPO}.txt`。每隻 ticker 首次出現時進且僅進一個長線側分組;後續運行只發*新*票。兩個市場互相獨立;IPO/HKIPO 各有自己的 master,這樣一隻晉升的票之後能出現在它本該屬於的分組。刪文件即重置。
+- **SMA50 自動清理(僅美股)** — 每次 `us-eod` 開頭、加載 master 之前,master 裡凡是收盤價**連續 2 個完整交易日低於 SMA50**(`[sma50_prune] consecutive_days`)的票會被自動從 `eod_seen_US.txt` 移除,之後可在未來的 EOD 重新合格、重新出現。移除前先備份(`eod_seen_US.txt.bak.<stamp>`)。軟失敗:yfinance 整體失敗則跳過本次清理;歷史缺失/過短的票保留不動。
+- **RS-line audit 裁剪(手動)** — `--mode rs-line-audit` 按 RS 線趨勢給 master 打分並 y/N 確認後裁剪(見 RS-line 章節)。每日定時跑的是 `--dry-run`,絕不動 master。
 - **不進跨日 master**:Shorts, Morning Gap。對它們來說重新檢測才有意義。
 
 ## 輸出 (Output)
@@ -254,6 +258,9 @@ output/
 ├── Reports/                   # 每日 CANSLIM 簡報(Markdown + 獨立 HTML)+ 盤前 catalyst 報告
 │   ├── <date>_{us,hk}.{md,html}
 │   └── <date>_us_premarket.md
+├── rs_us_<date>.txt           # 每日 RS 最強 top-10 快照,美股(來自定時 rs-line audit)
+├── hk_rs_<date>.txt           # 每日 RS 最強 top-10 快照,港股
+├── rs_line_audit_{US,HK}_<date>{,_drop,_keep_ranked}.txt   # audit 報告 + sidecar
 └── state/                     # 跨日 "seen" master、RS 表緩存、morning-gap 每日 seen、EDGAR 緩存
     ├── eod_seen_US.txt        # US 長線側 master(5 Longs 組 + Leaders + RS)
     ├── eod_seen_HK.txt        # HK 長線側 master(EarningsGap/HighVolume/GapUp/Leaders/RS)
@@ -268,7 +275,7 @@ output/
     └── edgar_cache/                 # SEC EDGAR companyfacts 緩存(CANSLIM 報告用)
 ```
 
-每次運行都會為每個分組寫一個全新的帶日期 `.txt`(結果為空時寫 0 字節文件)。結果為空時 Futu 同步會**跳過**,以免在休市日清掉已有分組。
+每次運行都會為每個分組寫一個全新的帶日期 `.txt`;結果為空時**不寫文件**(不留 0 字節文件),Futu 同步也會**跳過**,以免在休市日清掉已有分組。
 
 **TradingView ticker 格式:** US 分組用 `NASDAQ:AAPL` / `NYSE:WMT` / `AMEX:GLD`(Finviz 派生)。HK 分組用 `HKEX:NNN` 並**去掉前導零**——TradingView 會靜默拒絕 `HKEX:0148` 這種,必須是 `HKEX:148`。≥ 1000 的代碼(4 位)原樣寫:`HKEX:1810`(小米)、`HKEX:9988`(阿里)。< 1000 的代碼去掉補位:`HKEX:148`(建滔集團)、`HKEX:522`(ASMPT)、`HKEX:700`(騰訊)。
 

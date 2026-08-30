@@ -99,6 +99,8 @@ Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, 
 
 The cloud scripts write `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` as extra columns in `data/{us_rs_3m,hk_rs}/<date>.csv` (TraderLion-style **RS line** = price ÷ benchmark, compared to its own EMA21). The EOD log uses these to _annotate_ long-side survivors whose RS line sits persistently below its MA (weakening). This step **writes to the log only** — no effect on `.txt` output or dedup; manual pruning of the cross-day master goes through `--mode rs-line-audit`. Config: `[rs_line]`.
 
+**Daily strongest-RS snapshot:** a `--dry-run` audit is chained as a soft step at the end of each EOD wrapper (`run_eod.sh` / `run_hk_eod.sh`), scoring the cross-day master by RS-line trend and writing the strongest `[rs_line].top_n` (10) names to `output/rs_us_<date>.txt` (US, after the 10:00 slot) and `output/hk_rs_<date>.txt` (HK, after the 20:00 slot). Dated, comma-separated, skipped when empty, overwritten on a same-day rerun; the scheduled run never prunes the master. Retention: snapshots 5 days, audit report + sidecars 14 days.
+
 ### IPO (auto-collected sidecar)
 
 Collects long-side candidates that passed a Longs/Leaders/RS Finviz screen but were dropped by yfinance for insufficient daily history — typically stocks that listed in the last few months. These candidates then pass a history-depth-tiered ladder (implemented in `us_ipo.filter_us_ipo_candidates`, mirroring HK's `filter_hk_ipo_candidates`), so a stock 30 days post-IPO can still surface while one 200 days post-IPO must pass a nearly full long-side baseline:
@@ -239,6 +241,8 @@ A **standalone** short report. When a pre-market scan finds new US gappers, the 
 - **Within Longs** — the 5 strategies are mutually exclusive (priority `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`).
 - **Cross-group** — long-side priority `Longs > Leaders > RS`.
 - **Cross-day master** — `output/state/eod_seen_{US,HK,IPO,HKIPO}.txt`. Each ticker enters exactly one long-side group on first appearance; subsequent runs emit only _new_ names. Markets are independent; IPO/HKIPO have their own masters, so a graduated name can later appear in the group it belongs to. Delete the file to reset.
+- **SMA50 auto-prune (US only)** — at the top of every `us-eod` run, before the master is loaded, any master ticker whose close has been **below its SMA50 for 2 consecutive completed days** (`[sma50_prune] consecutive_days`) is automatically removed from `eod_seen_US.txt`, so it can re-qualify and re-surface on a future EOD run. The master is backed up first (`eod_seen_US.txt.bak.<stamp>`). Soft-fail: a total yfinance failure skips the prune; tickers with missing/short history are kept.
+- **RS-line audit prune (manual)** — `--mode rs-line-audit` scores the master by RS-line trend and prompts y/N before pruning (see the RS-line section). The scheduled daily run is `--dry-run` and never touches the master.
 - **Not in the cross-day master**: Shorts, Morning Gap. For these, re-detection is the point.
 
 ## Output
@@ -254,6 +258,9 @@ output/
 ├── Reports/                   # daily CANSLIM briefings (Markdown + standalone HTML) + pre-market catalyst report
 │   ├── <date>_{us,hk}.{md,html}
 │   └── <date>_us_premarket.md
+├── rs_us_<date>.txt           # daily strongest-RS top-10 snapshot, US (from the scheduled rs-line audit)
+├── hk_rs_<date>.txt           # daily strongest-RS top-10 snapshot, HK
+├── rs_line_audit_{US,HK}_<date>{,_drop,_keep_ranked}.txt   # audit report + sidecars
 └── state/                     # cross-day "seen" masters, RS table caches, morning-gap daily seen, EDGAR cache
     ├── eod_seen_US.txt        # US long-side master (5 Longs groups + Leaders + RS)
     ├── eod_seen_HK.txt        # HK long-side master (EarningsGap/HighVolume/GapUp/Leaders/RS)
@@ -268,7 +275,7 @@ output/
     └── edgar_cache/                 # SEC EDGAR companyfacts cache (for the CANSLIM report)
 ```
 
-Every run writes a fresh dated `.txt` per group (a 0-byte file when empty). On empty results Futu sync is **skipped**, so an off-day never wipes an existing group.
+Every run writes a fresh dated `.txt` per group; empty lists write **no file** (no 0-byte artifacts), and Futu sync is **skipped** on empty results, so an off-day never wipes an existing group.
 
 **TradingView ticker format:** US groups use `NASDAQ:AAPL` / `NYSE:WMT` / `AMEX:GLD` (Finviz-derived). HK groups use `HKEX:NNN` with **leading zeros stripped** — TradingView silently rejects forms like `HKEX:0148`; it must be `HKEX:148`. Codes ≥ 1000 (4 digits) are written as-is: `HKEX:1810` (Xiaomi), `HKEX:9988` (Alibaba). Codes < 1000 lose the padding: `HKEX:148` (Kingboard), `HKEX:522` (ASMPT), `HKEX:700` (Tencent).
 
