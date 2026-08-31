@@ -185,15 +185,20 @@ def test_cleanup_keeps_recent_rs_rating_3m(tmp_path):
 
 def test_cleanup_top_n_snapshots_five_day_window(tmp_path: Path) -> None:
     out = tmp_path / "output"
-    out.mkdir()
-    _touch(out / "rs_us_2026-05-15.txt")
-    _touch(out / "rs_us_2026-05-11.txt")
+    tv_us = out / "TV" / "US"
+    tv_us.mkdir(parents=True)
+    # US snapshots live in TV/US; root-level ones are pre-move leftovers that
+    # must still age out. HK stays at the output root.
+    _touch(tv_us / "rs_us_2026-05-15.txt")
+    _touch(tv_us / "rs_us_2026-05-11.txt")
+    _touch(tv_us / "rs_us_2026-05-10.txt")
     _touch(out / "rs_us_2026-05-10.txt")
     _touch(out / "hk_rs_2026-05-15.txt")
     _touch(out / "hk_rs_2026-05-10.txt")
     cleanup_old_outputs(out, date(2026, 5, 15))
-    assert (out / "rs_us_2026-05-15.txt").exists()
-    assert (out / "rs_us_2026-05-11.txt").exists()
+    assert (tv_us / "rs_us_2026-05-15.txt").exists()
+    assert (tv_us / "rs_us_2026-05-11.txt").exists()
+    assert not (tv_us / "rs_us_2026-05-10.txt").exists()
     assert not (out / "rs_us_2026-05-10.txt").exists()
     assert (out / "hk_rs_2026-05-15.txt").exists()
     assert not (out / "hk_rs_2026-05-10.txt").exists()

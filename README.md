@@ -99,7 +99,7 @@ Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, 
 
 The cloud scripts write `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` as extra columns in `data/{us_rs_3m,hk_rs}/<date>.csv` (TraderLion-style **RS line** = price ÷ benchmark, compared to its own EMA21). The EOD log uses these to _annotate_ long-side survivors whose RS line sits persistently below its MA (weakening). This step **writes to the log only** — no effect on `.txt` output or dedup; manual pruning of the cross-day master goes through `--mode rs-line-audit`. Config: `[rs_line]`.
 
-**Daily strongest-RS snapshot:** a `--dry-run` audit is chained as a soft step at the end of each EOD wrapper (`run_eod.sh` / `run_hk_eod.sh`), scoring the cross-day master by RS-line trend and writing the strongest `[rs_line].top_n` (10) names to `output/rs_us_<date>.txt` (US, after the 10:00 slot) and `output/hk_rs_<date>.txt` (HK, after the 20:00 slot). Dated, comma-separated, skipped when empty, overwritten on a same-day rerun; the scheduled run never prunes the master. Retention: snapshots 5 days, audit report + sidecars 14 days.
+**Daily strongest-RS snapshot:** a `--dry-run` audit is chained as a soft step at the end of each EOD wrapper (`run_eod.sh` / `run_hk_eod.sh`), scoring the cross-day master by RS-line trend and writing the strongest `[rs_line].top_n` (10) names to `output/TV/US/rs_us_<date>.txt` (US, after the 10:00 slot; lands in the TradingView folder for direct import) and `output/hk_rs_<date>.txt` (HK, after the 20:00 slot). Dated, comma-separated, skipped when empty, overwritten on a same-day rerun; the scheduled run never prunes the master. Retention: snapshots 5 days, audit report + sidecars 14 days.
 
 ### IPO (auto-collected sidecar)
 
@@ -251,6 +251,7 @@ A **standalone** short report. When a pre-market scan finds new US gappers, the 
 output/
 ├── TV/                        # comma-separated, for TradingView "Import list..."
 │   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   ├── US/rs_us_<date>.txt    # daily strongest-RS top-10 snapshot, US (from the scheduled rs-line audit)
 │   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap}.txt
 ├── Webull/                    # newline-separated mirror, for Webull "Upload as File"
 │   ├── US/<date>_*.txt
@@ -258,7 +259,6 @@ output/
 ├── Reports/                   # daily CANSLIM briefings (Markdown + standalone HTML) + pre-market catalyst report
 │   ├── <date>_{us,hk}.{md,html}
 │   └── <date>_us_premarket.md
-├── rs_us_<date>.txt           # daily strongest-RS top-10 snapshot, US (from the scheduled rs-line audit)
 ├── hk_rs_<date>.txt           # daily strongest-RS top-10 snapshot, HK
 ├── rs_line_audit_{US,HK}_<date>{,_drop,_keep_ranked}.txt   # audit report + sidecars
 └── state/                     # cross-day "seen" masters, RS table caches, morning-gap daily seen, EDGAR cache

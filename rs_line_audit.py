@@ -166,14 +166,18 @@ def write_top_n(
     "strongest" list; they also never pad a short list). Returns the path, or
     None when there is nothing scored to write (empty-list convention: no
     0-byte artifacts). Same-day rerun overwrites — the file is a ranking
-    snapshot, not a dedup-bearing watchlist.
+    snapshot, not a dedup-bearing watchlist. The US snapshot lands in
+    ``TV/US/`` (importable straight into TradingView alongside the
+    watchlists); HK stays at the output root.
     """
     unknown = set(buckets["unknowns"])
     top = [i for i in buckets["keeps_ranked"] if i not in unknown][:top_n]
     if not top:
         return None
     stem = "rs_us" if market == "us" else "hk_rs"
-    out = output_dir / f"{stem}_{as_of}.txt"
+    target = output_dir / "TV" / "US" if market == "us" else output_dir
+    target.mkdir(parents=True, exist_ok=True)
+    out = target / f"{stem}_{as_of}.txt"
     out.write_text(",".join(top) + "\n")
     return out
 

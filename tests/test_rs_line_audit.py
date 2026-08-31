@@ -113,10 +113,11 @@ def test_classify_splits_drops_exempts_and_ranks_keeps_desc():
 
 def test_write_top_n_takes_strongest_scored_only(tmp_path):
     # keeps_ranked is strongest-first with unknowns appended; unknowns have no
-    # score and must never appear in the top-N file.
+    # score and must never appear in the top-N file. US snapshots land in
+    # TV/US so they import straight into TradingView.
     buckets = {"keeps_ranked": ["AAA", "BBB", "CCC", "ZZZ"], "unknowns": ["ZZZ"]}
     p = write_top_n(buckets, "us", "2026-08-30", tmp_path, top_n=3)
-    assert p == tmp_path / "rs_us_2026-08-30.txt"
+    assert p == tmp_path / "TV" / "US" / "rs_us_2026-08-30.txt"
     assert p.read_text() == "AAA,BBB,CCC\n"
 
 

@@ -99,7 +99,7 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 雲端腳本會把 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` 三列寫進 `data/{us_rs_3m,hk_rs}/<date>.csv`(TraderLion 式 **RS line** = 價 ÷ 基準,再與它自己的 EMA21 比較)。EOD 日誌據此*標註*那些 RS line 持續處於均線下方(走弱)的長線側 survivors。這一步**只寫日誌**,不影響 `.txt` 輸出,也不進 dedup;跨日 master 的手動裁剪走 `--mode rs-line-audit`。配置見 `[rs_line]`。
 
-**每日 RS 最強快照:** 每個 EOD wrapper(`run_eod.sh` / `run_hk_eod.sh`)結尾會以 soft 步驟追加跑一次 `--dry-run` audit,按 RS 線趨勢給跨日 master 打分,並把最強的 `[rs_line].top_n`(10)隻寫入 `output/rs_us_<date>.txt`(美股,10:00 slot 之後)和 `output/hk_rs_<date>.txt`(港股,20:00 slot 之後)。帶日期、逗號分隔、結果為空不寫文件、同日重跑覆蓋;定時跑絕不裁剪 master。保留期:快照 5 天,audit 報告及 sidecar 14 天。
+**每日 RS 最強快照:** 每個 EOD wrapper(`run_eod.sh` / `run_hk_eod.sh`)結尾會以 soft 步驟追加跑一次 `--dry-run` audit,按 RS 線趨勢給跨日 master 打分,並把最強的 `[rs_line].top_n`(10)隻寫入 `output/TV/US/rs_us_<date>.txt`(美股,10:00 slot 之後;直接落在 TradingView 資料夾,方便導入)和 `output/hk_rs_<date>.txt`(港股,20:00 slot 之後)。帶日期、逗號分隔、結果為空不寫文件、同日重跑覆蓋;定時跑絕不裁剪 master。保留期:快照 5 天,audit 報告及 sidecar 14 天。
 
 ### IPO(自動收集的 sidecar)
 
@@ -251,6 +251,7 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 output/
 ├── TV/                        # 逗號分隔,供 TradingView "Import list..."
 │   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   ├── US/rs_us_<date>.txt    # 每日 RS 最強 top-10 快照,美股(來自定時 rs-line audit)
 │   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap}.txt
 ├── Webull/                    # 換行分隔鏡像,供 Webull "Upload as File"
 │   ├── US/<date>_*.txt
@@ -258,7 +259,6 @@ output/
 ├── Reports/                   # 每日 CANSLIM 簡報(Markdown + 獨立 HTML)+ 盤前 catalyst 報告
 │   ├── <date>_{us,hk}.{md,html}
 │   └── <date>_us_premarket.md
-├── rs_us_<date>.txt           # 每日 RS 最強 top-10 快照,美股(來自定時 rs-line audit)
 ├── hk_rs_<date>.txt           # 每日 RS 最強 top-10 快照,港股
 ├── rs_line_audit_{US,HK}_<date>{,_drop,_keep_ranked}.txt   # audit 報告 + sidecar
 └── state/                     # 跨日 "seen" master、RS 表緩存、morning-gap 每日 seen、EDGAR 緩存
