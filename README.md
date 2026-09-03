@@ -199,7 +199,7 @@ A two-stage intraday gap scanner. **Pre-market (20/10/5 minutes before the open)
 | Filter               | Threshold                                                     | Pre | Post |
 | -------------------- | ------------------------------------------------------------- | --- | ---- |
 | Dollar Volume        | ≥ $100M (20-day avg volume)                                   | ✓   | ✓    |
-| ADR%                 | ≥ 4.0% (20-day)                                               | ✓   | ✓    |
+| ADR%                 | ≥ 4.0% (20-day); floor relaxed to 3.0% when gap ≥ 10%         | ✓   | ✓    |
 | SMA50 / SMA200       | latest close above both                                       | ✓   | ✓    |
 | 20-day Avg Volume    | ≥ 500K shares/day                                             | ✓   | ✓    |
 | Intraday cum. volume | RTH cumulative volume since 9:30 ET ≥ 20-day avg daily volume | —   | ✓    |

@@ -809,12 +809,23 @@ def run_morning_gap(
     if not tickers:
         return offset, []
 
-    # Phase 3b: ADR% filter (replaces dropped Finviz beta filter)
+    # Phase 3b: ADR% filter (replaces dropped Finviz beta filter). A gap above
+    # `adr_bypass_gap_percent` relaxes the floor to `adr_bypass_min_percent`
+    # — otherwise a low-ADR large cap's earnings gap can never alert.
     min_adr = config.get("min_adr_percent", 0)
     if min_adr > 0:
         adr_days = config.get("adr_days", 20)
-        tickers = _filter_adr_percent(tickers, daily_data, min_adr, adr_days, today_et)
-        logger.info(f"  {len(tickers)} after ADR% filter (>= {min_adr}%, {adr_days}d)")
+        adr_bypass_pct = config.get("adr_bypass_gap_percent", 0)
+        adr_bypass_min = config.get("adr_bypass_min_percent", 0)
+        tickers = _filter_adr_percent(
+            tickers, daily_data, min_adr, adr_days, today_et,
+            gaps={t: q.gap for t, q in quotes.items()},
+            bypass_gap_pct=adr_bypass_pct, bypass_min_pct=adr_bypass_min,
+        )
+        logger.info(
+            f"  {len(tickers)} after ADR% filter (>= {min_adr}%, {adr_days}d, "
+            f"floor {adr_bypass_min}% at gap>={adr_bypass_pct}%)"
+        )
     if not tickers:
         return offset, []
 
@@ -1009,14 +1020,21 @@ def run_hk_morning_gap(
     if not tickers:
         return offset, []
 
-    # Phase 3b: ADR% filter
+    # Phase 3b: ADR% filter — same big-gap floor relaxation as US.
     min_adr = config.get("min_adr_percent", 0)
     if min_adr > 0:
         adr_days = config.get("adr_days", 20)
+        adr_bypass_pct = config.get("adr_bypass_gap_percent", 0)
+        adr_bypass_min = config.get("adr_bypass_min_percent", 0)
         tickers = _filter_adr_percent(
-            tickers, daily_data, min_adr, adr_days, today_hk
+            tickers, daily_data, min_adr, adr_days, today_hk,
+            gaps={t: q.gap for t, q in quotes.items()},
+            bypass_gap_pct=adr_bypass_pct, bypass_min_pct=adr_bypass_min,
         )
-        logger.info(f"  {len(tickers)} after ADR% filter (>= {min_adr}%, {adr_days}d)")
+        logger.info(
+            f"  {len(tickers)} after ADR% filter (>= {min_adr}%, {adr_days}d, "
+            f"floor {adr_bypass_min}% at gap>={adr_bypass_pct}%)"
+        )
     if not tickers:
         return offset, []
 
@@ -1327,6 +1345,9 @@ def _filter_adr_percent(
     market_open: bool = True,
     single: bool | None = None,
     ipo_drops: set[str] | None = None,
+    gaps: dict[str, float] | None = None,
+    bypass_gap_pct: float | None = None,
+    bypass_min_pct: float | None = None,
 ) -> list[str]:
     """Keep tickers whose ADR% over the last `days` completed daily bars
     is >= min_pct. ADR% = mean((High - Low) / Close) * 100. When
@@ -1335,7 +1356,14 @@ def _filter_adr_percent(
     tickers with insufficient data are dropped. When `ipo_drops` is given,
     tickers dropped for missing/insufficient yfinance history are recorded
     there (real ADR% < min_pct rejections are NOT recorded — that's a
-    legitimate filter, not a data gap)."""
+    legitimate filter, not a data gap).
+
+    Morning-gap only: a ticker whose live gap (from `gaps`) is
+    >= `bypass_gap_pct` is judged against the relaxed `bypass_min_pct` floor
+    instead of `min_pct` — ADR% is a static 20d property that a
+    low-volatility large cap's earnings gap can never move, so the gap itself
+    stands in as the volatility evidence. EOD call sites pass none of the
+    three and are unaffected."""
     if not tickers:
         return []
     if single is None:
@@ -1369,10 +1397,25 @@ def _filter_adr_percent(
             ranges = (highs.values - lows.values) / closes.values
             adr_pct = float(ranges.mean()) * 100
 
-            if adr_pct >= min_pct:
+            gap = gaps.get(ticker) if gaps else None
+            bypassed = (
+                bypass_gap_pct is not None
+                and bypass_gap_pct > 0
+                and bypass_min_pct is not None
+                and gap is not None
+                and gap >= bypass_gap_pct
+            )
+            floor = bypass_min_pct if bypassed else min_pct
+            if adr_pct >= floor:
+                if bypassed and adr_pct < min_pct:
+                    logger.info(
+                        f"  {ticker}: ADR% {adr_pct:.2f}% < {min_pct}% but gap "
+                        f"{gap:.1f}% >= {bypass_gap_pct}%, floor relaxed to "
+                        f"{bypass_min_pct}%, keeping"
+                    )
                 result.append(ticker)
             else:
-                logger.info(f"  {ticker}: ADR% {adr_pct:.2f}% < {min_pct}%, dropping")
+                logger.info(f"  {ticker}: ADR% {adr_pct:.2f}% < {floor}%, dropping")
         except (KeyError, TypeError, ValueError, ZeroDivisionError) as e:
             logger.warning(f"  {ticker}: ADR% check failed ({e}), dropping")
             if ipo_drops is not None:

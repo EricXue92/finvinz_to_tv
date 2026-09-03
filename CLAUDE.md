@@ -71,7 +71,11 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   only the comparison basis moved. `sma_bypass_gap_percent` (in `[morning_gap]`
   US / `[hk_morning_gap]` HK) waives **SMA50 only** for big gappers — SMA200 is
   never waived. Both knobs are per-market config; `sma_use_live_price = false`
-  restores the old basis.
+  restores the old basis. Separately, the **ADR% floor relaxes for big
+  gappers**: gap ≥ `adr_bypass_gap_percent` → floor drops from
+  `min_adr_percent` to `adr_bypass_min_percent` (US: 10% → 3.0; HK wired but
+  off — its base is already 3.0). Morning-gap only; EOD ADR% calls are
+  untouched.
   Consequence, and it is intended: the gate drifts intraday, but each scan
   writes its own per-offset `.txt` (not cumulative, and morning-gap never
   touches `eod_seen_*`), so drift only affects the one-time ntfy/catalyst
