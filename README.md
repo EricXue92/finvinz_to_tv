@@ -55,6 +55,10 @@ Oliver Kell's momentum/breakout setups. Ordered by priority: earlier strategies 
 
 These 5 groups also pass the global Dollar Volume / ADR% gates and IBD RS 12M ≥ 90. **Longs has no 3M layer** — the event filters themselves select fresh momentum.
 
+### EOD Repeat (US, read-only sidecar)
+
+Tickers already in the cross-day master that fire one of the 4 _event_ Longs groups again today (`[eod_repeat] keys` = EarningsGap/HighVolume/GapUp/TopGainers; NewHigh52W and Leaders are deliberately excluded — they are persistent states that would re-fire daily) are collected into `<date>_Repeat.txt` for daily re-review. Read-only with respect to the master: no write-back, and each group's own `.txt` keeps its "new names only" meaning. The Futu/TV sync mappings ship commented out (the `Repeat` group/list would have to be hand-created first), so sync is a no-op until enabled.
+
 ### Leaders (5 strategies, merged)
 
 Long-term trend leaders above SMA50 and SMA200. The five strategies share one base filter set and differ only in the performance window.
@@ -99,7 +103,7 @@ Filters: Small Cap+, Avg Vol > 500K, Price > $20, Day Up, Above SMA50 & SMA200, 
 
 The cloud scripts write `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` as extra columns in `data/{us_rs_3m,hk_rs}/<date>.csv` (TraderLion-style **RS line** = price ÷ benchmark, compared to its own EMA21). The EOD log uses these to _annotate_ long-side survivors whose RS line sits persistently below its MA (weakening). This step **writes to the log only** — no effect on `.txt` output or dedup; manual pruning of the cross-day master goes through `--mode rs-line-audit`. Config: `[rs_line]`.
 
-**Daily strongest-RS snapshot:** a `--dry-run` audit is chained as a soft step at the end of each EOD wrapper (`run_eod.sh` / `run_hk_eod.sh`), scoring the cross-day master by RS-line trend and writing the strongest `[rs_line].top_n` (10) names to `output/TV/US/rs_us_<date>.txt` (US, after the 10:00 slot; lands in the TradingView folder for direct import) and `output/hk_rs_<date>.txt` (HK, after the 20:00 slot). Dated, comma-separated, skipped when empty, overwritten on a same-day rerun; the scheduled run never prunes the master. Retention: snapshots 5 days, audit report + sidecars 14 days.
+**Daily strongest-RS snapshot:** a `--dry-run` audit is chained as a soft step at the end of each EOD wrapper (`run_eod.sh` / `run_hk_eod.sh`), scoring the cross-day master by RS-line trend and writing the strongest `[rs_line].top_n` (10) names to `output/TV/US/rs_us_<date>.txt` (US, after the 10:00 slot; lands in the TradingView folder for direct import) and `output/hk_rs_<date>.txt` (HK, after the 20:00 slot). Dated, comma-separated, skipped when empty, overwritten on a same-day rerun; the scheduled run never prunes the master. Retention: snapshots and the audit report + sidecars all share a 4-day window (today + 3 prior).
 
 ### IPO (auto-collected sidecar)
 
@@ -161,18 +165,19 @@ Five strategies, sourced from **yfinance** (k-lines + HSI) plus **Futu** (market
 
 The counterpart of the US IPO sidecar. Collects tickers in the HKEX main-board universe that yfinance returns but with fewer than 253 daily closes (not enough for the IBD 12-month RS computation) — almost always HK new issues that recently appeared on yfinance and haven't accumulated 12 months of data yet.
 
-- **The baseline is history-depth-tiered, enabled gate by gate.** Each gate takes effect only once the ticker has enough data — a stock on listing day 1 can still surface, while one 200 days post-IPO must pass a nearly full long-side baseline:
+- **The baseline is history-depth-tiered, enabled gate by gate.** Each gate takes effect only once the ticker has enough data — past the 20-trading-day floor (mirroring the US sidecar) a young issue can still surface early, while one 200 days post-IPO must pass a nearly full long-side baseline:
 
-  | Gate         | Threshold         | Condition                                               |
-  | ------------ | ----------------- | ------------------------------------------------------- |
-  | cap          | ≥ HK$300M         | always                                                  |
-  | price        | ≥ HK$20           | always                                                  |
-  | avg vol      | ≥ 500K shares/day | only when ≥ 20 trading days                             |
-  | $vol         | ≥ HK$100M         | only when ≥ 20 trading days                             |
-  | ADR%         | ≥ 3.0%            | only when ≥ 20 trading days                             |
-  | above SMA50  | —                 | only when ≥ 50 trading days                             |
-  | above SMA200 | —                 | only when ≥ 200 trading days                            |
-  | 3M RS        | ≥ 90 (vs HSI)     | only when ≥ 64 trading days (12M skipped by definition) |
+  | Gate         | Threshold         | Condition                                                                                                        |
+  | ------------ | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+  | min history  | ≥ 20 trading days | always (first 19 days are too volume-noisy)                                                                      |
+  | cap          | ≥ HK$300M         | always                                                                                                           |
+  | price        | ≥ HK$20           | always                                                                                                           |
+  | avg vol      | ≥ 500K shares/day | only when ≥ 20 trading days                                                                                      |
+  | $vol         | ≥ HK$100M         | only when ≥ 20 trading days                                                                                      |
+  | ADR%         | ≥ 3.0%            | only when ≥ 20 trading days                                                                                      |
+  | above SMA50  | —                 | only when ≥ 50 trading days                                                                                      |
+  | above SMA200 | —                 | only when ≥ 200 trading days                                                                                     |
+  | 3M RS        | ≥ 90 (vs HSI)     | only when ≥ 64 trading days (12M skipped by definition; a ≥ 64-day name missing from the cloud table is dropped) |
 
   All tier thresholds read directly from `[hk_settings]`, consistent with the HK long-side baseline, so a name graduates seamlessly at 253 rows of history.
 
@@ -182,7 +187,7 @@ The counterpart of the US IPO sidecar. Collects tickers in the HKEX main-board u
 
 ### Morning Gap (pre-market + post-open, 9 scans daily)
 
-A two-stage intraday gap scanner. **Pre-market (20/10/5 minutes before the open)** writes `MorningGapPre.txt`; **post-open (5/10/15/20/25/30 minutes after the open)** writes `MorningGap.txt` with one extra intraday cumulative-volume gate, selecting stocks whose volume in the first 30 minutes already matches their 20-day average daily volume — per Kullamägi, the signature of catalyst-driven institutional buying.
+A two-stage intraday gap scanner. Each scan writes its own per-offset snapshot (a scan that finds nothing writes no file): **pre-market (20/10/5 minutes before the open)** writes `MorningGapPre{20,10,5}.txt`; **post-open (5/10/15/20/25/30 minutes after the open)** writes `MorningGap{5..30}.txt` with one extra intraday cumulative-volume gate, selecting stocks whose volume in the first 30 minutes already matches their 20-day average daily volume — per Kullamägi, the signature of catalyst-driven institutional buying.
 
 **Phase 1 — Futu snapshot discovery (replacing Finviz `ta_topgainers`, which ranks by regular-session perf and misses pre-market gappers):**
 
@@ -196,13 +201,17 @@ A two-stage intraday gap scanner. **Pre-market (20/10/5 minutes before the open)
 
 **Phase 2 — yfinance post-processing + Futu intraday volume:**
 
-| Filter               | Threshold                                                     | Pre | Post |
-| -------------------- | ------------------------------------------------------------- | --- | ---- |
-| Dollar Volume        | ≥ $100M (20-day avg volume)                                   | ✓   | ✓    |
-| ADR%                 | ≥ 4.0% (20-day); floor relaxed to 3.0% when gap ≥ 10%         | ✓   | ✓    |
-| SMA50 / SMA200       | latest close above both                                       | ✓   | ✓    |
-| 20-day Avg Volume    | ≥ 500K shares/day                                             | ✓   | ✓    |
-| Intraday cum. volume | RTH cumulative volume since 9:30 ET ≥ 20-day avg daily volume | —   | ✓    |
+| Filter               | Threshold                                                                                                         | Pre | Post |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | --- | ---- |
+| Dollar Volume        | ≥ $100M (20-day avg volume)                                                                                       | ✓   | ✓    |
+| ADR%                 | ≥ 4.0% (20-day); floor relaxed to 3.0% when gap ≥ 10%                                                             | ✓   | ✓    |
+| SMA50 / SMA200 trend | **live price** (pre-market print / `last_price`) above both; gap ≥ 10% waives SMA50 only — SMA200 is never waived | ✓   | ✓    |
+| 20-day Avg Volume    | ≥ 500K shares/day                                                                                                 | ✓   | ✓    |
+| Intraday cum. volume | RTH cumulative volume since 9:30 ET ≥ 20-day avg daily volume                                                     | —   | ✓    |
+
+The trend gate's comparison basis is the live price (`sma_use_live_price`, set `false` to restore the old previous-close basis); the SMA50/SMA200 averages themselves are always computed from completed daily bars. The SMA50 waiver (`sma_bypass_gap_percent`) and the ADR% relaxation (`adr_bypass_gap_percent` / `adr_bypass_min_percent`) are per-market morning-gap-only knobs — EOD gates are untouched.
+
+**HK variant (`hk-morning-gap`)**: post-open only (Futu has no HK pre-market data) — 6 scans at +10…+60 minutes after the 09:30 HKT open, each writing `HKMorningGap{10..60}.txt`. Baseline aligns with `[hk_settings]` (gap ≥ 5%, ADR% ≥ 3.0%), same live-price trend gate and SMA50 waiver; the cumulative-volume gate uses the Futu snapshot's day volume (no yfinance 1-minute fallback). The ADR bypass is wired but left off in config — the HK base floor is already 3.0%.
 
 Requires FutuOpenD online with US Lv1 BBO real-time quote entitlement; otherwise Phase 1 discovery and the post-open volume filter both return empty, with no Finviz fallback. Whenever a scan finds _new_ names (not seen in an earlier scan that day), it pushes an ntfy notification.
 
@@ -244,15 +253,16 @@ A **standalone** short report. When a pre-market scan finds new US gappers, the 
 - **SMA50 auto-prune (US only)** — at the top of every `us-eod` run, before the master is loaded, any master ticker whose close has been **below its SMA50 for 2 consecutive completed days** (`[sma50_prune] consecutive_days`) is automatically removed from `eod_seen_US.txt`, so it can re-qualify and re-surface on a future EOD run. The master is backed up first (`eod_seen_US.txt.bak.<stamp>`). Soft-fail: a total yfinance failure skips the prune; tickers with missing/short history are kept.
 - **RS-line audit prune (manual)** — `--mode rs-line-audit` scores the master by RS-line trend and prompts y/N before pruning (see the RS-line section). The scheduled daily run is `--dry-run` and never touches the master.
 - **Not in the cross-day master**: Shorts, Morning Gap. For these, re-detection is the point.
+- **EOD Repeat (US)** — old names the master would suppress that re-fired an event group today are surfaced in `<date>_Repeat.txt` (read-only w.r.t. the master; see the EOD Repeat section).
 
 ## Output
 
 ```
 output/
 ├── TV/                        # comma-separated, for TradingView "Import list..."
-│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,Repeat,MorningGapPre{20,10,5},MorningGap{5..30}}.txt
 │   ├── US/rs_us_<date>.txt    # daily strongest-RS top-10 snapshot, US (from the scheduled rs-line audit)
-│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap}.txt
+│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap{10..60}}.txt
 ├── Webull/                    # newline-separated mirror, for Webull "Upload as File"
 │   ├── US/<date>_*.txt
 │   └── HK/<date>_*.txt
@@ -272,6 +282,7 @@ output/
     ├── rs_rating_<date>.csv         # US 12M IBD RS percentile cache (from Fred6725/rs-log)
     ├── rs_rating_3m_<date>.csv      # local cache of the US 3M RS cloud CSV (raw_score + percentile, vs SPY)
     ├── hk_rs_rating_<date>.csv      # local cache of the HK RS cloud CSV (12M + 3M, vs HSI)
+    ├── hk_metrics_<date>.csv        # local cache of the HK long-side metrics frame (cloud data/hk_metrics/)
     └── edgar_cache/                 # SEC EDGAR companyfacts cache (for the CANSLIM report)
 ```
 
@@ -293,15 +304,18 @@ Most EOD groups are append-only — clear them manually in the client when they 
 
 ## TradingView auto-sync (optional, `tv_sync.py`)
 
-`[tv_sync]` (default **`enabled = false`**) syncs the same watchlists to TradingView lists via its **unofficial REST API**, authenticated with the `sessionid` cookie. Credential lookup order: environment variables (`TV_SESSIONID`, `TV_SESSIONID_SIGN`) first, then `~/.config/momentum-scanner/tv_cookie.json`. The 18 lists must be created manually on the TV website first (names are case-sensitive, exact match); unmatched names log a warning and are skipped. Same soft-fail contract as Futu — an expired cookie never blocks `.txt` output. Append-only semantics reuse `[futu].append_only_groups`; note TV keeps `MorningGap` as a separate list, while on the Futu side it's merged into `EarningsGap`.
+`[tv_sync]` (default **`enabled = false`**) syncs the same watchlists to TradingView lists via its **unofficial REST API**, authenticated with the `sessionid` cookie. Credential lookup order: environment variables (`TV_SESSIONID`, `TV_SESSIONID_SIGN`) first, then `~/.config/momentum-scanner/tv_cookie.json`. The 18 lists must be created manually on the TV website first (names are case-sensitive, exact match); unmatched names log a warning and are skipped. Same soft-fail contract as Futu — an expired cookie never blocks `.txt` output. Append-only semantics use TV's own `[tv_sync].append_only_lists` key (same meaning as `[futu].append_only_groups`; keep the two in step to avoid behavior split); note TV keeps `MorningGap` as a separate list, while on the Futu side it's merged into `EarningsGap`.
 
 ## Push notifications (ntfy)
 
-The morning-gap scans push three kinds of notifications via [ntfy.sh](https://ntfy.sh):
+The morning-gap scans push four kinds of notifications via [ntfy.sh](https://ntfy.sh):
 
 - **Regular** — pushed when a scan finds **new** names (not seen in an earlier same-phase scan that day), body lists all selected names;
 - **PROMOTED (high priority)** — pushed separately when a pre-market gapper first passes the cumulative-volume gate post-open (the pre-market gap confirmed by RTH volume);
-- **Catalyst Report Ready** — pushed when the pre-market catalyst report is written, with the report path.
+- **Catalyst Report Ready** — pushed when the pre-market catalyst report is written, with the report path;
+- **SKIPPED (high priority)** — pushed when a scheduled scan clean-exits without scanning because the network never came up within the net-ready gate, so a lost window doesn't pass silently.
+
+The RS-workflow self-triggers (see "Automation") reuse the same topic for their failure alerts, so all pipeline alerts land in one channel.
 
 Configure `[notify]` in `config.toml` and subscribe to the topic in the ntfy iOS/Android app. On the Mac itself, a resident launchd subscriber bridges the same topic to macOS Notification Center (see "Automation").
 

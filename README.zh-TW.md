@@ -55,6 +55,10 @@ Oliver Kell 的動量/突破 setup。按優先級排序,靠前的策略優先命
 
 這 5 組同樣要過全局的 Dollar Volume / ADR% 閘以及 IBD RS 12M ≥ 90。**Longs 不加 3M 層**——事件過濾本身選的就是新鮮動量。
 
+### EOD Repeat(美股,只讀 sidecar)
+
+已在跨日 master 裡、今天又命中 4 個*事件類* Longs 子組之一的老票(`[eod_repeat] keys` = EarningsGap/HighVolume/GapUp/TopGainers;NewHigh52W 和 Leaders 刻意排除——它們是持續狀態,會天天復燃刷屏),彙總寫入 `<date>_Repeat.txt` 供每日複查。對 master 只讀:不寫回,各組自身的 `.txt` 仍保持「只出新票」的語義。Futu/TV 同步映射默認註釋掉(`Repeat` 分組/列表須先手動建好),啟用前同步是 no-op。
+
 ### Leaders(5 個策略,合併)
 
 站上 SMA50 與 SMA200 的長期趨勢領頭羊。五個策略共用同一套基礎過濾,只在 perf 窗口上有所不同。
@@ -99,7 +103,7 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 雲端腳本會把 `rs_below_ma` / `rs_days_below_ma` / `rs_frac_below_ma` 三列寫進 `data/{us_rs_3m,hk_rs}/<date>.csv`(TraderLion 式 **RS line** = 價 ÷ 基準,再與它自己的 EMA21 比較)。EOD 日誌據此*標註*那些 RS line 持續處於均線下方(走弱)的長線側 survivors。這一步**只寫日誌**,不影響 `.txt` 輸出,也不進 dedup;跨日 master 的手動裁剪走 `--mode rs-line-audit`。配置見 `[rs_line]`。
 
-**每日 RS 最強快照:** 每個 EOD wrapper(`run_eod.sh` / `run_hk_eod.sh`)結尾會以 soft 步驟追加跑一次 `--dry-run` audit,按 RS 線趨勢給跨日 master 打分,並把最強的 `[rs_line].top_n`(10)隻寫入 `output/TV/US/rs_us_<date>.txt`(美股,10:00 slot 之後;直接落在 TradingView 資料夾,方便導入)和 `output/hk_rs_<date>.txt`(港股,20:00 slot 之後)。帶日期、逗號分隔、結果為空不寫文件、同日重跑覆蓋;定時跑絕不裁剪 master。保留期:快照 5 天,audit 報告及 sidecar 14 天。
+**每日 RS 最強快照:** 每個 EOD wrapper(`run_eod.sh` / `run_hk_eod.sh`)結尾會以 soft 步驟追加跑一次 `--dry-run` audit,按 RS 線趨勢給跨日 master 打分,並把最強的 `[rs_line].top_n`(10)隻寫入 `output/TV/US/rs_us_<date>.txt`(美股,10:00 slot 之後;直接落在 TradingView 資料夾,方便導入)和 `output/hk_rs_<date>.txt`(港股,20:00 slot 之後)。帶日期、逗號分隔、結果為空不寫文件、同日重跑覆蓋;定時跑絕不裁剪 master。保留期:快照與 audit 報告及 sidecar 統一 4 天窗口(今天 + 前 3 天)。
 
 ### IPO(自動收集的 sidecar)
 
@@ -161,18 +165,19 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 與 US IPO sidecar 對應。收集 HKEX 主板 universe 裡 yfinance 有返回、但日線收盤不足 253 行(不夠做 IBD 12 個月 RS 計算)的 ticker——幾乎都是剛進 yfinance、還沒攢滿 12 個月數據的 HK 新股。
 
-- **基線按歷史深度分級、逐檔啟用。** 每道閘門只在 ticker 攢夠數據後才生效——上市第 1 天的新股仍能浮現,上市 200 天的則要通過幾乎完整的長線基線:
+- **基線按歷史深度分級、逐檔啟用。** 每道閘門只在 ticker 攢夠數據後才生效——過了 20 交易日底線(與 US sidecar 對齊)的新股仍能較早浮現,上市 200 天的則要通過幾乎完整的長線基線:
 
-  | 閘門         | 閾值         | 條件                             |
-  | ------------ | ------------ | -------------------------------- |
-  | cap          | ≥ HK$300M    | 總是                             |
-  | price        | ≥ HK$20      | 總是                             |
-  | avg vol      | ≥ 500K 股/天 | 僅當 ≥ 20 交易日                 |
-  | $vol         | ≥ HK$100M    | 僅當 ≥ 20 交易日                 |
-  | ADR%         | ≥ 3.0%       | 僅當 ≥ 20 交易日                 |
-  | above SMA50  | —            | 僅當 ≥ 50 交易日                 |
-  | above SMA200 | —            | 僅當 ≥ 200 交易日                |
-  | 3M RS        | ≥ 90(vs HSI) | 僅當 ≥ 64 交易日(12M 按定義跳過) |
+  | 閘門         | 閾值         | 條件                                                               |
+  | ------------ | ------------ | ------------------------------------------------------------------ |
+  | min history  | ≥ 20 交易日  | 總是(頭 19 天成交量噪聲太大)                                       |
+  | cap          | ≥ HK$300M    | 總是                                                               |
+  | price        | ≥ HK$20      | 總是                                                               |
+  | avg vol      | ≥ 500K 股/天 | 僅當 ≥ 20 交易日                                                   |
+  | $vol         | ≥ HK$100M    | 僅當 ≥ 20 交易日                                                   |
+  | ADR%         | ≥ 3.0%       | 僅當 ≥ 20 交易日                                                   |
+  | above SMA50  | —            | 僅當 ≥ 50 交易日                                                   |
+  | above SMA200 | —            | 僅當 ≥ 200 交易日                                                  |
+  | 3M RS        | ≥ 90(vs HSI) | 僅當 ≥ 64 交易日(12M 按定義跳過;≥ 64 天卻不在雲端表裡的票會被丟棄) |
 
   各檔閾值直接讀 `[hk_settings]`,與 HK 長線側基線保持一致,歷史攢滿 253 行時可無縫晉升。
 
@@ -182,7 +187,7 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 ### Morning Gap(盤前 + 盤中,每日 9 次掃描)
 
-兩階段盤中缺口掃描器。**盤前(開盤前 20/10/5 分鐘)**寫 `MorningGapPre.txt`;**盤後(開盤後 5/10/15/20/25/30 分鐘)**寫 `MorningGap.txt`,並多加一層盤中累計量閘門,專挑開盤頭 30 分鐘成交量就已追平 20 日均日量的股票——按 Kullamägi 的判斷,這是催化劑驅動、機構進場的信號。
+兩階段盤中缺口掃描器。每輪掃描各寫各的按 offset 留檔文件(0 結果的掃描不生成文件):**盤前(開盤前 20/10/5 分鐘)**寫 `MorningGapPre{20,10,5}.txt`;**盤後(開盤後 5/10/15/20/25/30 分鐘)**寫 `MorningGap{5..30}.txt`,並多加一層盤中累計量閘門,專挑開盤頭 30 分鐘成交量就已追平 20 日均日量的股票——按 Kullamägi 的判斷,這是催化劑驅動、機構進場的信號。
 
 **Phase 1 — Futu 快照 discovery(取代 Finviz `ta_topgainers`——後者按常規盤 perf 排名、錯過盤前 gapper):**
 
@@ -196,13 +201,17 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 
 **Phase 2 — yfinance 後處理 + Futu 盤中量:**
 
-| 過濾             | 閾值                                     | 盤前 | 盤後 |
-| ---------------- | ---------------------------------------- | ---- | ---- |
-| Dollar Volume    | ≥ $100M(20 日均量)                       | ✓    | ✓    |
-| ADR%             | ≥ 4.0%(20 日);gap ≥ 10% 時門檻放寬到 3.0% | ✓    | ✓    |
-| SMA50 / SMA200   | 最新收盤站上兩者                         | ✓    | ✓    |
-| 20 日 Avg Volume | ≥ 500K 股/天                             | ✓    | ✓    |
-| 盤中累計量       | 自 9:30 ET 起的 RTH 累計量 ≥ 20 日均日量 | —    | ✓    |
+| 過濾                | 閾值                                                                              | 盤前 | 盤後 |
+| ------------------- | --------------------------------------------------------------------------------- | ---- | ---- |
+| Dollar Volume       | ≥ $100M(20 日均量)                                                                | ✓    | ✓    |
+| ADR%                | ≥ 4.0%(20 日);gap ≥ 10% 時門檻放寬到 3.0%                                         | ✓    | ✓    |
+| SMA50 / SMA200 趨勢 | **實時價**(盤前價 / `last_price`)站上兩者;gap ≥ 10% 僅豁免 SMA50——SMA200 永不豁免 | ✓    | ✓    |
+| 20 日 Avg Volume    | ≥ 500K 股/天                                                                      | ✓    | ✓    |
+| 盤中累計量          | 自 9:30 ET 起的 RTH 累計量 ≥ 20 日均日量                                          | —    | ✓    |
+
+趨勢閘的比較基準是實時價(`sma_use_live_price`,設 `false` 恢復舊的昨收基準);SMA50/SMA200 均線本身始終由已完成日線計算。SMA50 豁免(`sma_bypass_gap_percent`)和 ADR% 放寬(`adr_bypass_gap_percent` / `adr_bypass_min_percent`)都是按市場配置、僅作用於 morning-gap 的旋鈕——EOD 閘門不受影響。
+
+**HK 變體(`hk-morning-gap`)**:僅盤後(Futu 無港股盤前數據)——09:30 HKT 開盤後 +10…+60 分鐘共 6 輪掃描,各寫 `HKMorningGap{10..60}.txt`。基線對齊 `[hk_settings]`(gap ≥ 5%、ADR% ≥ 3.0%),同樣使用實時價趨勢閘和 SMA50 豁免;累計量閘門用 Futu 快照的當日成交量(無 yfinance 1 分鐘兜底)。ADR 旁路代碼已接線但配置未啟用——HK 基線本來就是 3.0%。
 
 需要 FutuOpenD 在線,並具備 US Lv1 BBO 實時報價權限;否則 Phase 1 discovery 和盤後量過濾都會返回空,且沒有 Finviz 兜底。每輪掃描一旦發現*新*票(當天更早的掃描裡沒出現過),就推一條 ntfy 通知。
 
@@ -244,15 +253,16 @@ Oliver Kell 的相對強度打法,專挑弱市裡扛住的股票。**只在 SPY 
 - **SMA50 自動清理(僅美股)** — 每次 `us-eod` 開頭、加載 master 之前,master 裡凡是收盤價**連續 2 個完整交易日低於 SMA50**(`[sma50_prune] consecutive_days`)的票會被自動從 `eod_seen_US.txt` 移除,之後可在未來的 EOD 重新合格、重新出現。移除前先備份(`eod_seen_US.txt.bak.<stamp>`)。軟失敗:yfinance 整體失敗則跳過本次清理;歷史缺失/過短的票保留不動。
 - **RS-line audit 裁剪(手動)** — `--mode rs-line-audit` 按 RS 線趨勢給 master 打分並 y/N 確認後裁剪(見 RS-line 章節)。每日定時跑的是 `--dry-run`,絕不動 master。
 - **不進跨日 master**:Shorts, Morning Gap。對它們來說重新檢測才有意義。
+- **EOD Repeat(美股)** — 會被 master 壓掉、但今天又命中事件組的老票,彙總浮現在 `<date>_Repeat.txt`(對 master 只讀;見 EOD Repeat 一節)。
 
 ## 輸出 (Output)
 
 ```
 output/
 ├── TV/                        # 逗號分隔,供 TradingView "Import list..."
-│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,MorningGapPre,MorningGap}.txt
+│   ├── US/<date>_{EarningsGap,HighVolume,GapUp,NewHigh52W,TopGainers,Leaders,Shorts,RS,IPO,Repeat,MorningGapPre{20,10,5},MorningGap{5..30}}.txt
 │   ├── US/rs_us_<date>.txt    # 每日 RS 最強 top-10 快照,美股(來自定時 rs-line audit)
-│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap}.txt
+│   └── HK/<date>_{EarningsGap,HighVolume,GapUp,Leaders,Shorts,RS,IPO,HKMorningGap{10..60}}.txt
 ├── Webull/                    # 換行分隔鏡像,供 Webull "Upload as File"
 │   ├── US/<date>_*.txt
 │   └── HK/<date>_*.txt
@@ -272,6 +282,7 @@ output/
     ├── rs_rating_<date>.csv         # US 12M IBD RS 百分位緩存(來自 Fred6725/rs-log)
     ├── rs_rating_3m_<date>.csv      # US 3M RS 雲端 CSV 的本地緩存(raw_score + 百分位, vs SPY)
     ├── hk_rs_rating_<date>.csv      # HK RS 雲端 CSV 的本地緩存(12M + 3M, vs HSI)
+    ├── hk_metrics_<date>.csv        # HK 長線 metrics 幀本地緩存(雲端 data/hk_metrics/)
     └── edgar_cache/                 # SEC EDGAR companyfacts 緩存(CANSLIM 報告用)
 ```
 
@@ -293,15 +304,18 @@ output/
 
 ## TradingView 自動同步(可選,`tv_sync.py`)
 
-`[tv_sync]`(默認 **`enabled = false`**)把同一批自選同步到 TradingView 列表,走其**非官方 REST API**,用 `sessionid` cookie 認證。憑證讀取順序:先看環境變量(`TV_SESSIONID`、`TV_SESSIONID_SIGN`),再看 `~/.config/momentum-scanner/tv_cookie.json`。18 個列表須先在 TV 網頁手動建好(名字區分大小寫、精確匹配),找不到的名字會記 warning 並跳過。軟失敗契約與 Futu 一致——cookie 過期也絕不阻塞 `.txt` 輸出。Append-only 語義沿用 `[futu].append_only_groups`;注意 TV 把 `MorningGap` 保留為獨立列表,而 Futu 那邊併入了 `EarningsGap`。
+`[tv_sync]`(默認 **`enabled = false`**)把同一批自選同步到 TradingView 列表,走其**非官方 REST API**,用 `sessionid` cookie 認證。憑證讀取順序:先看環境變量(`TV_SESSIONID`、`TV_SESSIONID_SIGN`),再看 `~/.config/momentum-scanner/tv_cookie.json`。18 個列表須先在 TV 網頁手動建好(名字區分大小寫、精確匹配),找不到的名字會記 warning 並跳過。軟失敗契約與 Futu 一致——cookie 過期也絕不阻塞 `.txt` 輸出。Append-only 語義走 TV 自己的 `[tv_sync].append_only_lists` 鍵(與 `[futu].append_only_groups` 同語義;建議兩邊保持一致,避免行為分裂);注意 TV 把 `MorningGap` 保留為獨立列表,而 Futu 那邊併入了 `EarningsGap`。
 
 ## 推送通知 (ntfy)
 
-Morning-gap 掃描通過 [ntfy.sh](https://ntfy.sh) 推送三類通知:
+Morning-gap 掃描通過 [ntfy.sh](https://ntfy.sh) 推送四類通知:
 
 - **常規**——本輪出現**新**票(當天同階段更早的掃描裡沒見過的)時推一條,正文列出全部入選票;
 - **PROMOTED(高優先級)**——盤前見過的 gapper 在盤後首次通過累計量閘門(盤前缺口被 RTH 成交量確認)時單獨推一條;
-- **Catalyst Report Ready**——盤前 catalyst 報告寫完後推一條,附報告路徑。
+- **Catalyst Report Ready**——盤前 catalyst 報告寫完後推一條,附報告路徑;
+- **SKIPPED(高優先級)**——定時掃描因網絡遲遲不通(net-ready 閘)而乾淨退出、錯過窗口時推一條,避免窗口丟失得無聲無息。
+
+RS workflow 自觸發器(見「自動化」一節)的失敗告警也複用同一 topic,所有 pipeline 告警落在同一頻道。
 
 在 `config.toml` 裡配 `[notify]`,並在 ntfy 的 iOS/Android app 裡訂閱對應 topic。Mac 本機還有一個常駐 launchd 訂閱器,把同一 topic 的消息橋接到 macOS 通知中心(見「自動化」一節)。
 
