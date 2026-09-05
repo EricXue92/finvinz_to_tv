@@ -141,7 +141,7 @@ local (throttle-prone) k-line fetch.
   `output/TV/US/rs_us_<date>.txt` / `output/hk_rs_<date>.txt` — dated, skipped
   when empty, overwritten on same-day rerun (ranking snapshot, no dedup
   semantics; not Webull-mirrored, no eod_seen effect).
-  Cleanup: snapshots 5-day window; audit report + sidecars 14-day.
+  Cleanup: snapshots and audit report + sidecars all 4-day window.
 
 ## Futu sync
 

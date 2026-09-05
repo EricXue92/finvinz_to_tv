@@ -60,18 +60,17 @@ _RETENTION_RULES: tuple[_Rule, ...] = (
     _Rule("state", re.compile(rf"^rs_rating_3m_{_DATE_D}\.csv$"),
           "%Y-%m-%d", 4),
     # Daily strongest-RS snapshots written by the (now scheduled) rs-line
-    # audit — same 5-day window as the dated watchlists. US lives in TV/US
+    # audit — 4-day window (today + 3 prior). US lives in TV/US
     # (TradingView-importable); HK stays at the output root. The root rs_us
     # pattern is kept so pre-move leftovers still age out.
     _Rule("TV/US", re.compile(rf"^rs_us_{_DATE_D}\.txt$"),
-          "%Y-%m-%d", 5),
+          "%Y-%m-%d", 4),
     _Rule("", re.compile(rf"^(?:rs_us|hk_rs)_{_DATE_D}\.txt$"),
-          "%Y-%m-%d", 5),
+          "%Y-%m-%d", 4),
     # Audit report + sidecars accumulate daily now that the audit is on the
-    # EOD schedule. Wider 14-day window: the operator tunes [rs_line] knobs
-    # against these, so keep a fortnight for comparison.
+    # EOD schedule. Same 4-day window as the snapshots above.
     _Rule("", re.compile(rf"^rs_line_audit_(?:US|HK)_{_DATE_D}(?:_drop|_keep_ranked)?\.txt$"),
-          "%Y-%m-%d", 14),
+          "%Y-%m-%d", 4),
 )
 
 
