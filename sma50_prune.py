@@ -2,9 +2,10 @@
 
 Runs at the top of the us-eod pipeline (before the master is loaded): any
 ticker whose close has been below its SMA50 for ``consecutive_days`` completed
-trading days in a row is removed from the master, so it can re-qualify on a
-future EOD run once it recovers. The master is backed up first
-(``eod_seen_US.txt.bak.<stamp>``, same scheme as rs-line-audit).
+trading days in a row AND whose latest close is below the prior day's close
+(still declining, not rebounding under the line) is removed from the master,
+so it can re-qualify on a future EOD run once it recovers. The master is
+backed up first (``eod_seen_US.txt.bak.<stamp>``, same scheme as rs-line-audit).
 
 Soft-fail by design: a total yfinance failure skips the prune with a warning;
 tickers with missing data or fewer than ``sma_period`` bars are KEPT.
@@ -54,7 +55,9 @@ def find_sma50_drops(
     consecutive_days: int = 2,
     sma_period: int = 50,
 ) -> list[str]:
-    """Tickers whose close sat below SMA50 on each of the last N completed days.
+    """Tickers whose close sat below SMA50 on each of the last N completed days
+    AND whose latest close is below the prior day's close (still declining — a
+    ticker rebounding under the line is kept).
 
     The SMA is evaluated per-day (rolling, includes that day's close). Tickers
     with fewer than ``sma_period + consecutive_days - 1`` bars are kept — the
@@ -67,8 +70,11 @@ def find_sma50_drops(
         tail_sma = sma.iloc[-consecutive_days:]
         if len(tail_close) < consecutive_days or tail_sma.isna().any():
             continue  # insufficient history -> keep
-        if (tail_close.values < tail_sma.values).all():
-            drops.append(ticker)
+        if not (tail_close.values < tail_sma.values).all():
+            continue
+        if closes.iloc[-1] >= closes.iloc[-2]:
+            continue  # flat/rebounding under the line -> keep
+        drops.append(ticker)
     return sorted(drops)
 
 
@@ -102,7 +108,7 @@ def prune_us_master(seen_path: Path, cfg: dict) -> list[str]:
     logger.info(
         f"[{_LABEL}] checked {len(closes)}/{len(tickers)} tickers "
         f"(missing data: {missing}, kept) | close < SMA50 for "
-        f"{consecutive_days} consecutive day(s): {len(drops)}"
+        f"{consecutive_days} consecutive day(s) + still declining: {len(drops)}"
         + (f" -> {','.join(drops)}" if drops else "")
     )
     _prune_master(seen_path, drops, label=_LABEL)

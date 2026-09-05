@@ -1,5 +1,6 @@
 """Tests for sma50_prune — daily prune of eod_seen_US.txt tickers whose close
-has been below SMA50 for N consecutive completed days.
+has been below SMA50 for N consecutive completed days and is still declining
+(latest close below the prior day's close).
 
 yfinance is never hit: the fetch layer is monkeypatched.
 """
@@ -20,10 +21,22 @@ def _series(closes: list[float]) -> pd.Series:
 # --- find_sma50_drops (pure logic) ---
 
 
-def test_two_consecutive_closes_below_sma50_is_dropped():
-    closes = [100.0] * 58 + [90.0, 90.0]  # SMA50 ~99.6/99.8, both closes below
+def test_two_declining_closes_below_sma50_is_dropped():
+    closes = [100.0] * 58 + [92.0, 90.0]  # both below SMA50, day 2 lower
     drops = sma50_prune.find_sma50_drops({"AAA": _series(closes)})
     assert drops == ["AAA"]
+
+
+def test_two_below_sma50_but_flat_is_kept():
+    closes = [100.0] * 58 + [90.0, 90.0]  # both below, but no further decline
+    drops = sma50_prune.find_sma50_drops({"AAA": _series(closes)})
+    assert drops == []
+
+
+def test_two_below_sma50_but_rebounding_is_kept():
+    closes = [100.0] * 58 + [88.0, 90.0]  # both below, day 2 back up
+    drops = sma50_prune.find_sma50_drops({"AAA": _series(closes)})
+    assert drops == []
 
 
 def test_only_latest_close_below_sma50_is_kept():
@@ -45,8 +58,9 @@ def test_insufficient_history_is_kept():
 
 
 def test_consecutive_days_knob():
-    # below for exactly 2 days: dropped at consecutive_days=2, kept at 3
-    closes = [100.0] * 58 + [90.0, 90.0]
+    # below (and declining) for exactly 2 days: dropped at consecutive_days=2,
+    # kept at 3
+    closes = [100.0] * 58 + [92.0, 90.0]
     assert sma50_prune.find_sma50_drops(
         {"AAA": _series(closes)}, consecutive_days=3
     ) == []
@@ -63,7 +77,7 @@ def _write_master(tmp_path: Path, tickers: list[str]) -> Path:
 
 def test_prune_removes_drops_and_backs_up(tmp_path, monkeypatch):
     seen = _write_master(tmp_path, ["AAA", "BBB", "CCC"])
-    weak = [100.0] * 58 + [90.0, 90.0]
+    weak = [100.0] * 58 + [92.0, 90.0]
     strong = [100.0] * 60
     monkeypatch.setattr(
         sma50_prune,
@@ -93,7 +107,7 @@ def test_fetch_failure_skips_prune(tmp_path, monkeypatch):
 
 def test_ticker_missing_from_fetch_is_kept(tmp_path, monkeypatch):
     seen = _write_master(tmp_path, ["AAA", "BBB"])
-    weak = [100.0] * 58 + [90.0, 90.0]
+    weak = [100.0] * 58 + [92.0, 90.0]
     monkeypatch.setattr(
         sma50_prune,
         "_fetch_daily_closes",

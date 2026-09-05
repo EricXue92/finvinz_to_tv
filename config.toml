@@ -66,7 +66,8 @@ top_n     = 10          # 每日 RS 最强快照条数 (audit 写 output/rs_us_<
 #   drop_frac_below = ...   # persistence_window 内占比
 
 # SMA50 剪除: us-eod 开跑前排查 eod_seen_US.txt, 收盘价连续 N 天低于 SMA50
-# 的股票从 master 移除 (先备份 .bak.<stamp>), 走弱票未来重新走强可再入选。
+# 且最新收盘低于前一日收盘 (仍在下跌, 线下反弹的票保留) 的股票从 master 移除
+# (先备份 .bak.<stamp>), 走弱票未来重新走强可再入选。
 # 软失败: yfinance 整体失败则跳过; 单票数据缺失/历史不足 50 根 → 保留。仅 US。
 [sma50_prune]
 enabled = true

@@ -44,7 +44,9 @@ mirrored to `output/Webull/{US,HK}/` (newline-sep), then Futu sync.
   (both back up as `.bak.<stamp>` first): manual `rs-line-audit`, and the
   automatic **SMA50 prune** (`sma50_prune.py`, `[sma50_prune]` config) that runs
   at the top of every us-eod before the master is loaded — close below SMA50 for
-  `consecutive_days` (2) completed days → removed, can re-qualify later.
+  `consecutive_days` (2) completed days AND latest close below the prior day's
+  close (still declining; a rebound under the line is kept) → removed, can
+  re-qualify later.
   Soft-fail: total yfinance failure skips the prune; missing/short-history
   tickers are KEPT. US only.
 - **EOD Repeat (US):** tickers the master would drop that still fired an

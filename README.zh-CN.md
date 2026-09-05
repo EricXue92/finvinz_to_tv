@@ -250,7 +250,7 @@ Oliver Kell 的相对强度打法,专挑弱市里扛住的股票。**只在 SPY 
 - **Longs 内部** — 5 个策略互斥(优先级 `EarningsGap > HighVolume > GapUp > NewHigh52W > TopGainers`)。
 - **跨组** — 长线侧优先级 `Longs > Leaders > RS`。
 - **跨日 master** — `output/state/eod_seen_{US,HK,IPO,HKIPO}.txt`。每只 ticker 首次出现时进且仅进一个长线侧分组;后续运行只发*新*票。两个市场互相独立;IPO/HKIPO 各有自己的 master,这样一只晋升的票之后能出现在它本该属于的分组。删文件即重置。
-- **SMA50 自动清理(仅美股)** — 每次 `us-eod` 开头、加载 master 之前,master 里凡是收盘价**连续 2 个完整交易日低于 SMA50**(`[sma50_prune] consecutive_days`)的票会被自动从 `eod_seen_US.txt` 移除,之后可在未来的 EOD 重新合格、重新出现。移除前先备份(`eod_seen_US.txt.bak.<stamp>`)。软失败:yfinance 整体失败则跳过本次清理;历史缺失/过短的票保留不动。
+- **SMA50 自动清理(仅美股)** — 每次 `us-eod` 开头、加载 master 之前,master 里凡是收盘价**连续 2 个完整交易日低于 SMA50**(`[sma50_prune] consecutive_days`)**且最新收盘低于前一日收盘**(仍在下跌——线下反弹的票保留)的票会被自动从 `eod_seen_US.txt` 移除,之后可在未来的 EOD 重新合格、重新出现。移除前先备份(`eod_seen_US.txt.bak.<stamp>`)。软失败:yfinance 整体失败则跳过本次清理;历史缺失/过短的票保留不动。
 - **RS-line audit 裁剪(手动)** — `--mode rs-line-audit` 按 RS 线趋势给 master 打分并 y/N 确认后裁剪(见 RS-line 章节)。每日定时跑的是 `--dry-run`,绝不动 master。
 - **不进跨日 master**:Shorts, Morning Gap。对它们来说重新检测才有意义。
 - **EOD Repeat(美股)** — 会被 master 压掉、但今天又命中事件组的老票,汇总浮现在 `<date>_Repeat.txt`(对 master 只读;见 EOD Repeat 一节)。
